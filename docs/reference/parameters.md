@@ -1,23 +1,23 @@
-# Подсистема параметров
+# Parameter Subsystem
 
-Этот документ описывает все production-сущности пакета
-`vrp_parser.parameters`: модели данных, протоколы расширения, readers,
-recognizers, validators, реестр и встроенные типы.
+This document describes every production entity in the
+`vrp_parser.parameters` package: data models, extension protocols, readers,
+recognizers, validators, the registry, and built-in types.
 
-Подсистема отвечает на три разных вопроса:
+The subsystem answers three separate questions:
 
-1. Является ли фрагмент шаблона объявлением параметра, например
-   `INTEGER<1-15>`?
-2. Как извлечь значение параметра из реальной CLI-строки?
-3. Подходит ли извлечённое значение типу, прошло ли оно ограничения и каким
-   должно быть его нормализованное представление?
+1. Is a pattern fragment a parameter declaration such as `INTEGER<1-15>`?
+2. How should the parameter value be extracted from a real CLI line?
+3. Does the extracted value match the type, does it satisfy its constraints,
+   and what should its normalized representation be?
 
-Эти обязанности намеренно разделены. Новый тип можно добавить композицией
-`ParameterType`, не изменяя lexer шаблонов, граф команд или matcher.
+These responsibilities are deliberately separated. A new type can be added by
+composing a `ParameterType` without changing the pattern lexer, command graph,
+or matcher.
 
-## Публичный импорт
+## Public Imports
 
-Все публичные сущности экспортируются из `vrp_parser.parameters`:
+All public entities are exported from `vrp_parser.parameters`:
 
 ```python
 from vrp_parser.parameters import (
@@ -55,14 +55,15 @@ from vrp_parser.parameters import (
 )
 ```
 
-Часть этих объектов нужна только при разработке custom-типа. При обычном
-использовании достаточно `default_parameter_registry()` либо вообще не
-передавать реестр в `CommandLineParser`: parser создаст стандартный сам.
+Some of these objects are needed only when developing a custom type. For
+ordinary use, calling `default_parameter_registry()` is sufficient, or the
+registry can be omitted entirely when constructing `CommandLineParser`: the
+parser creates the default registry itself.
 
-## Общий поток данных
+## General Data Flow
 
 ```text
-строка шаблона
+pattern string
     │
     ▼
 DeclarationRecognizer.recognize()
@@ -71,7 +72,7 @@ DeclarationRecognizer.recognize()
 ParameterType.recognize()
     │ ParameterDeclaration
     ▼
-ParameterReader.read() ───────────── реальная CLI-строка
+ParameterReader.read() ───────────── real CLI line
     │ ParameterToken
     ▼
 ParameterValidator.probe()
@@ -80,21 +81,21 @@ ParameterValidator.probe()
 VALID / INVALID / NOT_APPLICABLE
 ```
 
-`ParameterTypeRegistry` выбирает нужный `ParameterType` и делегирует ему все
-три операции.
+`ParameterTypeRegistry` selects the appropriate `ParameterType` and delegates
+all three operations to it.
 
-## Tri-state: три результата проверки
+## Tri-State Validation Results
 
-Каждый validator возвращает не `bool`, а `ParameterResult` с одним из трёх
-статусов:
+Each validator returns a `ParameterResult` with one of three statuses rather
+than a `bool`:
 
-| Статус | Значение | Смысл |
+| Status | Value | Meaning |
 |---|---|---|
-| `ParameterStatus.VALID` | `"valid"` | Тип применим, значение прошло проверку. |
-| `ParameterStatus.INVALID` | `"invalid"` | Тип применим по форме, но значение нарушает ограничение. Обязательно содержит `ParameterIssue`. |
-| `ParameterStatus.NOT_APPLICABLE` | `"not_applicable"` | Значение лексически не относится к этому типу. Это не ошибка валидации данного типа. |
+| `ParameterStatus.VALID` | `"valid"` | The type is applicable and the value passed validation. |
+| `ParameterStatus.INVALID` | `"invalid"` | The type is applicable by shape, but the value violates a constraint. This status must contain a `ParameterIssue`. |
+| `ParameterStatus.NOT_APPLICABLE` | `"not_applicable"` | The value does not lexically belong to this type. This is not a validation error for the type. |
 
-Различие важно при выборе ветки дерева. Например:
+The distinction matters when selecting a tree branch. For example:
 
 ```python
 registry = default_parameter_registry()
@@ -103,77 +104,77 @@ registry.evaluate("INTEGER<1-15>", "7").status
 # ParameterStatus.VALID
 
 registry.evaluate("INTEGER<1-15>", "16").status
-# ParameterStatus.INVALID: это целое число, но оно больше maximum
+# ParameterStatus.INVALID: this is an integer, but it exceeds the maximum
 
 registry.evaluate("INTEGER<1-15>", "Vlanif").status
-# ParameterStatus.NOT_APPLICABLE: строка вообще не похожа на integer
+# ParameterStatus.NOT_APPLICABLE: the string does not resemble an integer
 ```
 
-`INVALID` позволяет parser сообщить точную ошибку ограничения вместо
-безусловного перехода на менее специфичную ветку. `NOT_APPLICABLE` разрешает
-искать другую подходящую ветку.
+`INVALID` lets the parser report the precise constraint error instead of
+unconditionally moving to a less specific branch. `NOT_APPLICABLE` permits
+searching for another suitable branch.
 
-## Форматы встроенных параметров
+## Built-in Parameter Formats
 
-`builtin_parameter_types()` создаёт 17 типов:
+`builtin_parameter_types()` creates 17 types:
 
-| Placeholder в шаблоне | `type_id` | Family | Входное значение | `normalized` при успехе |
+| Pattern placeholder | `type_id` | Family | Input value | Successful `normalized` value |
 |---|---|---|---|---|
-| `HEX<min-max>` | `hex` | `numeric` | Hex-число, с необязательным `0x`/`0X` | `int` |
-| `STRING<min-max>` | `string` | `generic` | Один непустой token без пробелов | Исходный `str` |
-| `INTEGER<min-max>` | `integer` | `numeric` | Знаковое десятичное целое | `int` |
-| `ENUM{a,b,...}` | `enum` | `enum` | Один из явно перечисленных вариантов, без учёта ASCII-регистра | Вариант в том регистре, в котором он записан в шаблоне |
-| `PASSWORDEX<min-max>` | `passwordex` | `generic` | Один непустой token без пробелов | Исходный `str` |
-| `H-H-H` | `mac` | `structured` | Три группы по 1–4 hex-цифры | Три lowercase-группы по 4 цифры |
-| `X.X.X.X` | `ipv4-address` | `structured` | Четыре decimal-октета `0..255` | Decimal IPv4 без ведущих нулей |
-| `X:X::X:X` | `ipv6-address` | `structured` | Стандартный IPv6, включая compressed и IPv4-mapped | Канонический lowercase/compressed IPv6 |
-| `X:X::X:X/M` | `ipv6-prefix` | `structured` | IPv6 с decimal prefix length `0..128` | Канонический адрес и prefix; host bits сохранены |
-| `TEXT<min-max>` | `text` | `remainder` | Непустой остаток строки с длиной в заданном диапазоне | Исходный `str` |
-| `YYYY/MM/DD` | `date-slash` | `structured` | Календарная дата точной ширины | Исходный `str` |
-| `YYYY-MM-DD` | `date-iso` | `structured` | Календарная дата точной ширины | Исходный `str` |
-| `MM-DD` | `month-day` | `structured` | Месяц и день точной ширины | Исходный `str` |
-| `MM-DD-YYYY` | `date-us` | `structured` | Календарная дата точной ширины | Исходный `str` |
-| `YYYY/MM/DD,HH:MM:SS` | `datetime-slash` | `structured` | Дата и время точной ширины | Исходный `str` |
-| `HH:MM:SS` | `time-seconds` | `structured` | Время точной ширины | Исходный `str` |
-| `<hh:mm>` | `time` | `structured` | Время точной ширины | Исходный `str` |
+| `HEX<min-max>` | `hex` | `numeric` | Hexadecimal number with optional `0x`/`0X` | `int` |
+| `STRING<min-max>` | `string` | `generic` | One non-empty token without whitespace | Original `str` |
+| `INTEGER<min-max>` | `integer` | `numeric` | Signed decimal integer | `int` |
+| `ENUM{a,b,...}` | `enum` | `enum` | One explicitly listed choice, compared without ASCII case sensitivity | The choice with the spelling used in the pattern |
+| `PASSWORDEX<min-max>` | `passwordex` | `generic` | One non-empty token without whitespace | Original `str` |
+| `H-H-H` | `mac` | `structured` | Three groups of 1–4 hexadecimal digits | Three lowercase groups of four digits |
+| `X.X.X.X` | `ipv4-address` | `structured` | Four decimal octets in `0..255` | Decimal IPv4 without leading zeros |
+| `X:X::X:X` | `ipv6-address` | `structured` | Standard IPv6, including compressed and IPv4-mapped forms | Canonical lowercase/compressed IPv6 |
+| `X:X::X:X/M` | `ipv6-prefix` | `structured` | IPv6 with a decimal prefix length in `0..128` | Canonical address and prefix; host bits retained |
+| `TEXT<min-max>` | `text` | `remainder` | Non-empty remainder with length in the configured range | Original `str` |
+| `YYYY/MM/DD` | `date-slash` | `structured` | Fixed-width calendar date | Original `str` |
+| `YYYY-MM-DD` | `date-iso` | `structured` | Fixed-width calendar date | Original `str` |
+| `MM-DD` | `month-day` | `structured` | Fixed-width month and day | Original `str` |
+| `MM-DD-YYYY` | `date-us` | `structured` | Fixed-width calendar date | Original `str` |
+| `YYYY/MM/DD,HH:MM:SS` | `datetime-slash` | `structured` | Fixed-width date and time | Original `str` |
+| `HH:MM:SS` | `time-seconds` | `structured` | Fixed-width time | Original `str` |
+| `<hh:mm>` | `time` | `structured` | Fixed-width time | Original `str` |
 
-Важные детали форматов:
+Important format details:
 
-- `min` и `max` у `INTEGER` — десятичные числовые границы.
-- `min` и `max` у `HEX` записываются и интерпретируются в hex. Например,
-  `HEX<80-FD>` означает диапазон от `0x80` до `0xFD`.
-- `min` и `max` у `STRING`, `PASSWORDEX` и `TEXT` — количество Python-символов
-  согласно `len(value)`, а не байтов.
-- `PASSWORDEX` в этой подсистеме проверяет только token и длину. Специальной
-  криптографической обработки или проверки сложности пароля нет.
-- Для `MM-DD` календарная корректность проверяется с условным високосным
-  2000 годом, поэтому `02-29` допустимо.
-- `TEXT<min-max>` на уровне `RemainderReader` считывает весь переданный ему
-  остаток, включая внутренние и завершающие пробелы. Поэтому конструкция
-  `description TEXT<1-80>` принимает многословное описание как один параметр.
-  Публичный `CommandLineParser` перед matching удаляет завершающий whitespace
-  всей команды. Ограничение верхнего уровня применяется только к `TEXT`,
-  сопоставляемому в позиции `0` на bare/root route: такая ветвь принимает лишь
-  CLI-строки, начинающиеся с `!`. Вложенный `TEXT`, которому предшествует
-  keyword, этого ограничения не имеет. Правило реализовано вне parameter
-  validator. В bare/root-варианте ведущий `!` входит в `raw` и учитывается
-  функцией `len()` при проверке bounds.
-- IPv4 разрешает ведущие нули в октетах: `192.168.001.001` нормализуется в
+- `min` and `max` for `INTEGER` are decimal numeric bounds.
+- `min` and `max` for `HEX` are written and interpreted as hexadecimal. For
+  example, `HEX<80-FD>` means the range from `0x80` through `0xFD`.
+- `min` and `max` for `STRING`, `PASSWORDEX`, and `TEXT` count Python
+  characters according to `len(value)`, not bytes.
+- In this subsystem, `PASSWORDEX` validates only the token and its length.
+  There is no special cryptographic processing or password complexity check.
+- Calendar validity for `MM-DD` is checked using the arbitrary leap year 2000,
+  so `02-29` is accepted.
+- At the `RemainderReader` level, `TEXT<min-max>` reads the complete remainder
+  passed to it, including internal and trailing whitespace. Consequently,
+  `description TEXT<1-80>` accepts a multiword description as one parameter.
+  Before matching, the public `CommandLineParser` removes trailing whitespace
+  from the complete command. The top-level restriction applies only to `TEXT`
+  matched at position `0` on a bare/root route: that branch accepts only CLI
+  lines starting with `!`. A nested `TEXT` preceded by a keyword has no such
+  restriction. The rule is implemented outside the parameter validator. In
+  the bare/root case, the leading `!` is included in `raw` and counted by
+  `len()` when checking bounds.
+- IPv4 permits leading zeros in octets: `192.168.001.001` is normalized to
   `192.168.1.1`.
-- IPv6 использует стандартные правила `ipaddress.IPv6Address`, включая
-  compressed и IPv4-mapped формы. Zone identifiers с `%` запрещены.
-- IPv6 prefix не превращается в network: host bits сохраняются. Например,
-  `2001:0DB8::0001/064` нормализуется в `2001:db8::1/64`, а не
+- IPv6 follows the standard `ipaddress.IPv6Address` rules, including compressed
+  and IPv4-mapped forms. Zone identifiers containing `%` are forbidden.
+- An IPv6 prefix is not converted into a network: host bits are retained. For
+  example, `2001:0DB8::0001/064` is normalized to `2001:db8::1/64`, not
   `2001:db8::/64`.
-- Все IP-типы относятся к `STRUCTURED`, поэтому при совпадении они
-  предпочтительнее generic `STRING`. Address-like некорректное значение
-  возвращает `INVALID`; лексически посторонний token — `NOT_APPLICABLE`.
-- `STRING<min-max>/<min-max>` не входит во встроенный реестр.
+- All IP types belong to `STRUCTURED`, so a matching IP type is preferred over
+  a generic `STRING`. An invalid address-like value returns `INVALID`; a
+  lexically unrelated token returns `NOT_APPLICABLE`.
+- `STRING<min-max>/<min-max>` is not included in the built-in registry.
 
-## `models.py`: модели и интерфейсы
+## `models.py`: Models and Interfaces
 
-Все dataclass-модели в этом модуле объявлены как `frozen=True, slots=True`.
-После создания их поля нельзя изменять.
+All dataclass models in this module are declared with
+`frozen=True, slots=True`. Their fields cannot be modified after construction.
 
 ### `ParameterStatus`
 
@@ -184,8 +185,8 @@ class ParameterStatus(StrEnum):
     INVALID = "invalid"
 ```
 
-Строковый enum результата `probe()`. Поскольку это `StrEnum`, его значения
-можно сериализовать как обычные строки.
+A string enum for the result of `probe()`. Because it is a `StrEnum`, its
+values can be serialized as ordinary strings.
 
 ### `ParameterFamily`
 
@@ -198,23 +199,23 @@ class ParameterFamily(StrEnum):
     REMAINDER = "remainder"
 ```
 
-Широкая категория поведения типа. Matcher использует family для
-детерминированного предпочтения более специфичных параметров:
-`ENUM`, затем `STRUCTURED`, `NUMERIC`, `GENERIC`, `REMAINDER`. Literal-ветка
-команды находится ещё выше и не является `ParameterFamily`.
+A broad category describing the type’s behavior. The matcher uses the family
+to prefer more specific parameters deterministically: `ENUM`, followed by
+`STRUCTURED`, `NUMERIC`, `GENERIC`, and `REMAINDER`. A command’s literal branch
+ranks even higher and is not a `ParameterFamily`.
 
-- `ENUM` — конечный набор известных значений.
-- `STRUCTURED` — значение с фиксированной структурой, например дата или MAC.
-- `NUMERIC` — числа и числовые диапазоны.
-- `GENERIC` — произвольный token.
-- `REMAINDER` — оставшаяся часть строки.
+- `ENUM` — a finite set of known values.
+- `STRUCTURED` — a value with a fixed structure, such as a date or MAC address.
+- `NUMERIC` — numbers and numeric ranges.
+- `GENERIC` — an arbitrary token.
+- `REMAINDER` — the remaining portion of a line.
 
-`family` — часть контракта custom-типа: неверно выбранная family может изменить
-то, какая ветка будет считаться более специфичной.
+`family` is part of a custom type’s contract: choosing the wrong family can
+change which branch is considered more specific.
 
 ### `ParameterIssue`
 
-Конструктор:
+Constructor:
 
 ```python
 ParameterIssue(
@@ -225,20 +226,19 @@ ParameterIssue(
 )
 ```
 
-Машиночитаемое описание ошибки:
+A machine-readable error description:
 
-- `code` — стабильный короткий идентификатор причины;
-- `message` — текст для человека;
-- `expected` — необязательное описание ожидаемого ограничения или формата;
-- `actual` — необязательное фактическое значение либо его измеримая
-  характеристика.
+- `code` — a stable short identifier for the cause;
+- `message` — human-readable text;
+- `expected` — an optional description of the expected constraint or format;
+- `actual` — an optional actual value or measurable property of it.
 
-Объект не навязывает список кодов. Встроенные validators используют коды,
-перечисленные в разделе об ошибках ниже.
+The object does not prescribe a list of codes. Built-in validators use the codes
+listed in the error section below.
 
 ### `ParameterResult`
 
-Конструктор:
+Constructor:
 
 ```python
 ParameterResult(
@@ -248,49 +248,50 @@ ParameterResult(
 )
 ```
 
-Поля:
+Fields:
 
-- `status` — один из трёх результатов;
-- `normalized` — нормализованное значение для `VALID`;
-- `issue` — описание причины для `INVALID`.
+- `status` — one of the three results;
+- `normalized` — the normalized value for `VALID`;
+- `issue` — the reason for `INVALID`.
 
-Обычно прямой конструктор не нужен: безопаснее пользоваться classmethod’ами.
+The direct constructor is usually unnecessary; using the class methods is
+safer.
 
 #### `__post_init__() -> None`
 
-Проверяет инварианты после создания:
+Validates these invariants after construction:
 
-- `INVALID` обязан содержать `issue`;
-- `VALID` и `NOT_APPLICABLE` не могут содержать `issue`;
-- `NOT_APPLICABLE` не может содержать `normalized`.
+- `INVALID` must contain an `issue`;
+- `VALID` and `NOT_APPLICABLE` cannot contain an `issue`;
+- `NOT_APPLICABLE` cannot contain `normalized`.
 
-Нарушение приводит к `ValueError`. Текущий контракт допускает
-`ParameterResult.success(None)`: это всё равно `VALID`; определять успех по
-полю `normalized` нельзя.
+A violation raises `ValueError`. The current contract permits
+`ParameterResult.success(None)`: it is still `VALID`, so success cannot be
+determined from the `normalized` field.
 
 #### `applicable: bool`
 
-Read-only property. Возвращает `True` для `VALID` и `INVALID`, `False` только
-для `NOT_APPLICABLE`.
+Read-only property. Returns `True` for `VALID` and `INVALID`, and `False` only
+for `NOT_APPLICABLE`.
 
 #### `valid: bool`
 
-Read-only property. Возвращает `True` только для `VALID`.
+Read-only property. Returns `True` only for `VALID`.
 
 #### `message: str | None`
 
-Read-only property. Возвращает `issue.message`, если issue есть, иначе `None`.
-По инвариантам непустое сообщение бывает только у `INVALID`.
+Read-only property. Returns `issue.message` when an issue exists, otherwise
+`None`. By invariant, a non-empty message occurs only for `INVALID`.
 
 #### `not_applicable() -> ParameterResult`
 
-Classmethod-конструктор:
+Class-method constructor:
 
 ```python
 ParameterResult.not_applicable()
 ```
 
-Создаёт результат:
+Creates:
 
 ```python
 ParameterResult(
@@ -302,8 +303,8 @@ ParameterResult(
 
 #### `success(normalized: object) -> ParameterResult`
 
-Classmethod-конструктор успешного результата. `normalized` может иметь любой
-тип, включая `str`, `int`, `bool` и `None`.
+Class-method constructor for a successful result. `normalized` can have any
+type, including `str`, `int`, `bool`, and `None`.
 
 ```python
 ParameterResult.success(42)
@@ -311,7 +312,7 @@ ParameterResult.success(42)
 
 #### `failure(...) -> ParameterResult`
 
-Сигнатура:
+Signature:
 
 ```python
 ParameterResult.failure(
@@ -323,12 +324,12 @@ ParameterResult.failure(
 ) -> ParameterResult
 ```
 
-Создаёт `INVALID` и вложенный `ParameterIssue`. `expected` и `actual`
+Creates `INVALID` with a nested `ParameterIssue`. `expected` and `actual` are
 keyword-only.
 
 ### `ParameterDeclaration`
 
-Конструктор:
+Constructor:
 
 ```python
 ParameterDeclaration(
@@ -343,33 +344,35 @@ ParameterDeclaration(
 )
 ```
 
-Это уже распознанный placeholder внутри полного шаблона команды.
+This represents an already recognized placeholder inside a complete command
+pattern.
 
-- `type_id` — ID зарегистрированного `ParameterType`;
-- `source` — точная подстрока placeholder’а;
-- `start` — индекс первого символа в полном шаблоне;
-- `end` — исключающая правая граница;
-- `minimum`, `maximum` — разобранные границы, если они есть;
-- `choices` — варианты enum;
-- `metadata` — неизменяемые custom-атрибуты в виде пар ключ/значение.
+- `type_id` — the ID of the registered `ParameterType`;
+- `source` — the exact placeholder substring;
+- `start` — the index of its first character in the complete pattern;
+- `end` — its exclusive right boundary;
+- `minimum`, `maximum` — parsed bounds when present;
+- `choices` — enum choices;
+- `metadata` — immutable custom attributes represented as key/value pairs.
 
-Индексы считаются в Python-символах, не в байтах. Span полуоткрытый:
+Indices count Python characters, not bytes. The span is half-open:
 `pattern[start:end] == source`.
 
 #### `__post_init__() -> None`
 
-Проверяет:
+Validates:
 
 - `0 <= start <= end`;
 - `end - start == len(source)`.
 
-При нарушении выбрасывает `ValueError`. Метод не проверяет, что `type_id`
-зарегистрирован, что `minimum <= maximum` или что span действительно относится
-к конкретной внешней строке: это ответственность источника объекта.
+A violation raises `ValueError`. The method does not verify that `type_id` is
+registered, that `minimum <= maximum`, or that the span actually refers to a
+particular external string; the code that creates the object is responsible
+for those conditions.
 
 ### `DeclarationRecognition`
 
-Конструктор:
+Constructor:
 
 ```python
 DeclarationRecognition(
@@ -381,18 +384,19 @@ DeclarationRecognition(
 )
 ```
 
-Промежуточный результат recognizer’а. Он ещё не содержит `type_id`, `source`
-и `start`: их добавляет `ParameterType.recognize()`.
+An intermediate recognizer result. It does not yet contain `type_id`, `source`,
+or `start`; `ParameterType.recognize()` adds them.
 
-- `end` — исключающая позиция конца объявления в полном шаблоне;
-- остальные поля переносятся в `ParameterDeclaration` без изменений.
+- `end` — the exclusive end position of the declaration in the complete
+  pattern;
+- the remaining fields are copied to `ParameterDeclaration` unchanged.
 
-У класса нет дополнительной runtime-валидации полей. Custom recognizer должен
-возвращать корректный `end`.
+The class performs no additional runtime field validation. A custom recognizer
+must return a valid `end`.
 
 ### `ParameterToken`
 
-Конструктор:
+Constructor:
 
 ```python
 ParameterToken(
@@ -403,30 +407,32 @@ ParameterToken(
 )
 ```
 
-Результат чтения значения из реальной CLI-строки:
+The result of reading a value from a real CLI line:
 
-- `raw` — извлечённый текст;
-- `start`, `end` — полуоткрытый span значения;
-- `next_position` — позиция, с которой matcher должен продолжить чтение.
+- `raw` — the extracted text;
+- `start`, `end` — the value’s half-open span;
+- `next_position` — the position from which the matcher should continue
+  reading.
 
-Обычные readers возвращают `next_position == end`. Custom reader может
-пропустить собственный разделитель и вернуть позицию больше `end`.
+Ordinary readers return `next_position == end`. A custom reader can skip its
+own delimiter and return a position greater than `end`.
 
 #### `__post_init__() -> None`
 
-Проверяет:
+Validates:
 
 - `0 <= start <= end`;
 - `end - start == len(raw)`;
 - `next_position >= end`.
 
-Иначе выбрасывает `ValueError`. Как и `ParameterDeclaration`, объект сам не
-хранит исходную строку и не может проверить соответствие span этой строке.
+Otherwise, it raises `ValueError`. Like `ParameterDeclaration`, the object does
+not retain the source string and cannot verify that the span corresponds to
+that string.
 
 ### `DeclarationRecognizer`
 
-Structural-typing protocol. Наследоваться от него необязательно: достаточно
-метода с совместимой сигнатурой.
+A structural-typing protocol. Inheriting from it is optional; a method with a
+compatible signature is sufficient.
 
 ```python
 recognize(
@@ -435,34 +441,35 @@ recognize(
 ) -> DeclarationRecognition | None
 ```
 
-Вход:
+Input:
 
-- `pattern` — полный шаблон команды;
-- `position` — точная позиция, с которой ожидается placeholder.
+- `pattern` — the complete command pattern;
+- `position` — the exact position where a placeholder is expected.
 
-Результат:
+Result:
 
-- `DeclarationRecognition`, если объявление начинается ровно в `position`;
-- `None`, если recognizer к этому фрагменту неприменим;
-- `ParameterDeclarationError`, если фрагмент начинается как известное этому
-  recognizer’у объявление, но синтаксически испорчен.
+- `DeclarationRecognition` if a declaration starts exactly at `position`;
+- `None` if the recognizer does not apply to this fragment;
+- `ParameterDeclarationError` if the fragment begins like a declaration known
+  to this recognizer but is syntactically malformed.
 
 ### `ParameterReader`
 
-Structural-typing protocol:
+A structural-typing protocol:
 
 ```python
 read(text: str, position: int) -> ParameterToken | None
 ```
 
-`text` — полная реальная CLI-команда, `position` — позиция начала поиска.
-Возвращает token либо `None`, когда значения больше нет.
+`text` is the complete real CLI command, and `position` is where the search
+starts. Returns a token or `None` when no value remains.
 
-Reader не валидирует смысл значения. Он лишь определяет его границы.
+A reader does not validate the value’s meaning. It only determines its
+boundaries.
 
 ### `ParameterValidator`
 
-Structural-typing protocol:
+A structural-typing protocol:
 
 ```python
 probe(
@@ -471,15 +478,15 @@ probe(
 ) -> ParameterResult
 ```
 
-Validator обязан следовать tri-state-контракту:
+A validator must follow the tri-state contract:
 
-- правильное значение → `success(...)`;
-- форма относится к типу, но ограничение нарушено → `failure(...)`;
-- форма вообще не относится к типу → `not_applicable()`.
+- valid value → `success(...)`;
+- shape belongs to the type but violates a constraint → `failure(...)`;
+- shape does not belong to the type → `not_applicable()`.
 
 ### `ParameterType`
 
-Конструктор:
+Constructor:
 
 ```python
 ParameterType(
@@ -491,75 +498,77 @@ ParameterType(
 )
 ```
 
-Композиционный корень одного типа:
+The composition root for one type:
 
-- recognizer понимает его запись в шаблоне;
-- reader выделяет значение из CLI;
-- validator проверяет и нормализует значение;
-- family сообщает matcher’у специфичность.
+- the recognizer understands its spelling in a pattern;
+- the reader extracts its value from the CLI;
+- the validator validates and normalizes the value;
+- the family communicates specificity to the matcher.
 
-Сам dataclass не проверяет формат `type_id`; это делает
-`ParameterTypeRegistry.register()`.
+The dataclass itself does not validate the `type_id` format;
+`ParameterTypeRegistry.register()` does.
 
 #### `recognize(pattern: str, position: int = 0) -> ParameterDeclaration | None`
 
-Вызывает `declaration_recognizer.recognize(pattern, position)`.
+Calls `declaration_recognizer.recognize(pattern, position)`.
 
-- При `None` возвращает `None`.
-- При успехе присоединяет собственный `type_id`, вычисляет
-  `source=pattern[position:recognized.end]` и переносит bounds, choices,
-  metadata в неизменяемый `ParameterDeclaration`.
-- Ошибки recognizer’а не перехватывает.
+- Returns `None` when recognition returns `None`.
+- On success, attaches its own `type_id`, calculates
+  `source=pattern[position:recognized.end]`, and copies bounds, choices, and
+  metadata into an immutable `ParameterDeclaration`.
+- Does not catch errors from the recognizer.
 
 #### `read(text: str, position: int = 0) -> ParameterToken | None`
 
-Делегирует чтение `reader.read(text, position)` без дополнительной обработки.
+Delegates directly to `reader.read(text, position)` without additional
+processing.
 
 #### `probe(raw: str, declaration: ParameterDeclaration) -> ParameterResult`
 
-Если `declaration.type_id != self.type_id`, validator не вызывается и
-возвращается `NOT_APPLICABLE`. Иначе вызов делегируется validator’у.
+If `declaration.type_id != self.type_id`, the validator is not called and the
+method returns `NOT_APPLICABLE`. Otherwise, it delegates to the validator.
 
-## `readers.py`: чтение CLI-значений
+## `readers.py`: Reading CLI Values
 
 ### `_skip_whitespace(text: str, position: int) -> int`
 
-Private module-level helper. Проверяет, что
-`0 <= position <= len(text)`, иначе выбрасывает `ValueError` с сообщением
+A private module-level helper. It verifies that
+`0 <= position <= len(text)` and otherwise raises `ValueError` with the message
 `parameter position is outside the command line`.
 
-Затем пропускает все символы, для которых Python `str.isspace()` возвращает
-`True`, и возвращает позицию первого непробельного символа либо `len(text)`.
+It then skips every character for which Python `str.isspace()` returns `True`
+and returns the position of the first non-whitespace character, or `len(text)`.
 
 ### `SingleTokenReader`
 
-Reader одного непробельного token.
+A reader for one non-whitespace token.
 
 #### `read(text: str, position: int) -> ParameterToken | None`
 
-1. Пропускает leading whitespace через `_skip_whitespace()`.
-2. Если достигнут конец строки, возвращает `None`.
-3. Читает до следующего Unicode-whitespace или конца строки.
+1. Skips leading whitespace through `_skip_whitespace()`.
+2. Returns `None` if the end of the string has been reached.
+3. Reads through the next Unicode whitespace character or the end of the
+   string.
 
-Пунктуация не имеет специального смысла и остаётся частью `raw`.
+Punctuation has no special meaning and remains part of `raw`.
 
 ```python
 token = SingleTokenReader().read("  Vlanif100 next", 0)
 # ParameterToken(raw="Vlanif100", start=2, end=11, next_position=11)
 ```
 
-Неверная позиция приводит к `ValueError` из `_skip_whitespace()`.
+An invalid position causes `_skip_whitespace()` to raise `ValueError`.
 
 ### `RemainderReader`
 
-Reader всего непустого остатка строки.
+A reader for the complete non-empty remainder of a line.
 
 #### `read(text: str, position: int) -> ParameterToken | None`
 
-Пропускает whitespace перед значением. Если после него ничего нет, возвращает
-`None`. Иначе читает до физического конца `text`.
+Skips whitespace before the value. Returns `None` if nothing remains.
+Otherwise, it reads through the physical end of `text`.
 
-Внутренние и завершающие пробелы входят в `raw`:
+Internal and trailing whitespace is included in `raw`:
 
 ```python
 token = RemainderReader().read("  description with spaces  ", 0)
@@ -568,29 +577,29 @@ token = RemainderReader().read("  description with spaces  ", 0)
 # end == next_position == len(text)
 ```
 
-## `recognizers.py`: объявления в шаблонах
+## `recognizers.py`: Pattern Declarations
 
 ### `_is_boundary(pattern: str, end: int) -> bool`
 
-Private helper, проверяющий правую границу placeholder’а. Возвращает `True`,
-если `end` находится:
+A private helper that checks a placeholder’s right boundary. Returns `True` if
+`end` is:
 
-- ровно в конце шаблона;
-- перед whitespace;
-- перед одним из символов `|`, `}`, `]`, `*`, `&`.
+- exactly at the end of the pattern;
+- before whitespace;
+- before one of `|`, `}`, `]`, `*`, or `&`.
 
-Это предотвращает частичное распознавание: recognizer `YES` не должен принять
-начало литерала `YES-NO`.
+This prevents partial recognition: a recognizer for `YES` must not accept the
+beginning of the literal `YES-NO`.
 
 ### `_ascii_lower(value: str) -> str`
 
-Private helper ASCII-case-folding. Заменяет только `A`–`Z` на `a`–`z`.
-Не выполняет Unicode case folding. Используется для проверки уникальности
-enum-вариантов.
+A private ASCII case-folding helper. It replaces only `A`–`Z` with `a`–`z` and
+does not perform Unicode case folding. It is used to check enum-choice
+uniqueness.
 
 ### `ExactDeclarationRecognizer`
 
-Конструктор:
+Constructor:
 
 ```python
 ExactDeclarationRecognizer(
@@ -601,24 +610,24 @@ ExactDeclarationRecognizer(
 )
 ```
 
-Распознаёт одну точную запись placeholder’а. Дополнительные поля позволяют
-прикрепить к фиксированной записи bounds или metadata.
+Recognizes one exact placeholder spelling. The additional fields attach bounds
+or metadata to a fixed spelling.
 
 #### `recognize(pattern: str, position: int) -> DeclarationRecognition | None`
 
-Успех возможен, только если:
+Recognition succeeds only when:
 
 1. `pattern.startswith(placeholder, position)`;
-2. сразу после placeholder находится допустимая `_is_boundary()`.
+2. a valid `_is_boundary()` immediately follows the placeholder.
 
-При успехе возвращает `DeclarationRecognition` с
-`end=position + len(placeholder)` и настроенными `minimum`, `maximum`,
-`metadata`. Иначе возвращает `None`. Этот recognizer не выбрасывает
+On success, it returns a `DeclarationRecognition` with
+`end=position + len(placeholder)` and the configured `minimum`, `maximum`, and
+`metadata`. Otherwise, it returns `None`. This recognizer never raises
 `ParameterDeclarationError`.
 
 ### `BoundedDeclarationRecognizer`
 
-Конструктор:
+Constructor:
 
 ```python
 BoundedDeclarationRecognizer(
@@ -628,53 +637,56 @@ BoundedDeclarationRecognizer(
 )
 ```
 
-Распознаёт `NAME<minimum-maximum>`.
+Recognizes `NAME<minimum-maximum>`.
 
-- `name` — регистрозависимый префикс, например `INTEGER`;
-- `base` — система счисления границ; поддержаны только `10` и `16`;
-- `allow_negative` — для base 10 разрешает знаки `+` и `-` в границах.
+- `name` — a case-sensitive prefix such as `INTEGER`;
+- `base` — the numeral base for the bounds; only `10` and `16` are supported;
+- `allow_negative` — permits `+` and `-` signs in base-10 bounds.
 
-Этот флаг относится к синтаксису границ объявления. Синтаксис реального
-значения определяет отдельный validator.
+This flag controls the declaration-bound syntax. A separate validator controls
+the syntax of an actual value.
 
 #### `recognize(pattern: str, position: int) -> DeclarationRecognition | None`
 
-Поведение:
+Behavior:
 
-- если в `position` нет точного префикса `f"{name}<"`, возвращает `None`;
-- ищет первый закрывающий `>`;
-- разбирает две границы, разделённые `-`;
-- конвертирует их в `int`;
-- требует `minimum <= maximum`;
-- требует корректную правую boundary.
+- returns `None` if `position` does not contain the exact `f"{name}<"` prefix;
+- finds the first closing `>`;
+- parses two bounds separated by `-`;
+- converts them to `int`;
+- requires `minimum <= maximum`;
+- requires a valid right boundary.
 
-При успехе возвращает `DeclarationRecognition(end, minimum, maximum)`.
+On success, it returns
+`DeclarationRecognition(end, minimum, maximum)`.
 
-Ошибки `ParameterDeclarationError`:
+`ParameterDeclarationError` messages:
 
-- `unclosed NAME declaration` — нет `>`;
-- `invalid bounds in NAME declaration` — формат bounds не соответствует base;
+- `unclosed NAME declaration` — no `>` is present;
+- `invalid bounds in NAME declaration` — the bounds do not conform to the
+  configured base;
 - `minimum is greater than maximum in NAME declaration`.
 
-Если само объявление корректно, но после `>` нет boundary, возвращается `None`,
-а не ошибка.
+If the declaration itself is valid but there is no boundary after `>`, the
+method returns `None` rather than an error.
 
 #### `_number_pattern() -> str`
 
-Private method, возвращающий regex одного bound:
+A private method returning the regex for one bound:
 
-- base 10: `[0-9]+`, либо `[+-]?[0-9]+` при `allow_negative=True`;
-- base 16: необязательный `0x`/`0X` и одна или больше hex-цифр.
+- base 10: `[0-9]+`, or `[+-]?[0-9]+` when `allow_negative=True`;
+- base 16: an optional `0x`/`0X` and one or more hexadecimal digits.
 
-Для иной base выбрасывает `ValueError("unsupported declaration bound base: …")`.
+For any other base, it raises
+`ValueError("unsupported declaration bound base: …")`.
 
 #### `_parse_number(value: str) -> int`
 
-Private method. Вызывает `int(value, self.base)` и возвращает Python `int`.
+A private method. Calls `int(value, self.base)` and returns the Python `int`.
 
 ### `EnumDeclarationRecognizer`
 
-Конструктор без аргументов:
+Constructor without arguments:
 
 ```python
 EnumDeclarationRecognizer()
@@ -682,134 +694,137 @@ EnumDeclarationRecognizer()
 
 #### `recognize(pattern: str, position: int) -> DeclarationRecognition | None`
 
-Распознаёт полную регистрозависимую запись `ENUM{choice1,choice2,...}`.
+Recognizes the complete, case-sensitive spelling
+`ENUM{choice1,choice2,...}`.
 
-Алгоритм:
+Algorithm:
 
-1. Проверяет точный префикс `ENUM{`.
-2. Ищет первый `}`.
-3. Проверяет boundary после `}`.
-4. Разделяет содержимое по запятым и удаляет whitespace по краям каждого
-   варианта.
-5. Разрешает одну завершающую запятую.
-6. Проверяет непустоту и case-insensitive уникальность вариантов.
+1. Checks the exact `ENUM{` prefix.
+2. Finds the first `}`.
+3. Checks the boundary after `}`.
+4. Splits the contents at commas and strips whitespace around each choice.
+5. Permits one trailing comma.
+6. Requires non-empty, case-insensitively unique choices.
 
-Возвращает `DeclarationRecognition(end=end, choices=tuple(choices))`.
+Returns `DeclarationRecognition(end=end, choices=tuple(choices))`.
 
-Ошибки `ParameterDeclarationError`:
+`ParameterDeclarationError` messages:
 
 - `unclosed ENUM declaration`;
 - `ENUM must contain non-empty choices`;
 - `ENUM cannot contain the abbreviated '...' choice`;
 - `ENUM choices must be unique (case-insensitive)`.
 
-Сравнение уникальности использует только ASCII-case-folding. Порядок и
-исходный регистр вариантов сохраняются.
+Uniqueness comparison uses ASCII case folding only. Choice order and original
+case are retained.
 
-## `validators.py`: проверка и нормализация
+## `validators.py`: Validation and Normalization
 
 ### `_bounded_number(value: int, declaration: ParameterDeclaration) -> ParameterResult | None`
 
-Private helper числовых границ:
+A private numeric-bound helper:
 
-- ниже `minimum` → `INVALID`, code `below_minimum`;
-- выше `maximum` → `INVALID`, code `above_maximum`;
-- в диапазоне либо граница отсутствует → `None`.
+- below `minimum` → `INVALID`, code `below_minimum`;
+- above `maximum` → `INVALID`, code `above_maximum`;
+- within the range or when the relevant bound is absent → `None`.
 
-`expected` содержит `>= minimum` или `<= maximum`, `actual` — десятичную строку
-нормализованного `int`.
+`expected` contains `>= minimum` or `<= maximum`, while `actual` contains the
+normalized `int` as a decimal string.
 
 ### `_bounded_length(value: str, declaration: ParameterDeclaration) -> ParameterResult | None`
 
-Private helper длины:
+A private length-bound helper:
 
-- короче `minimum` → `INVALID`, code `too_short`;
-- длиннее `maximum` → `INVALID`, code `too_long`;
-- допустимая длина → `None`.
+- shorter than `minimum` → `INVALID`, code `too_short`;
+- longer than `maximum` → `INVALID`, code `too_long`;
+- valid length → `None`.
 
-Длина вычисляется через `len(value)`. `actual` содержит длину как десятичную
-строку, а не исходное значение.
+Length is calculated with `len(value)`. `actual` contains the length as a
+decimal string, not the original value.
 
 ### `_ascii_lower(value: str) -> str`
 
-Private ASCII-only приведение `A`–`Z` к `a`–`z`. Используется
-`EnumValidator`. Unicode-регистр не нормализуется.
+A private ASCII-only conversion from `A`–`Z` to `a`–`z`, used by
+`EnumValidator`. Unicode case is not normalized.
 
 ### `_looks_like_ipv6(value: str) -> bool`
 
-Private эвристика применимости IPv6 validators. Возвращает `True`, если
-значение содержит не менее двух двоеточий. Это не полная проверка IPv6:
-окончательную валидацию выполняет `ipaddress.IPv6Address`.
+A private applicability heuristic for IPv6 validators. Returns `True` when a
+value contains at least two colons. This is not complete IPv6 validation:
+`ipaddress.IPv6Address` performs the final check.
 
-Эвристика позволяет отличить malformed address-like token
-`2001:db8::gg` (`INVALID`) от постороннего имени `foo:bar`
+The heuristic distinguishes a malformed address-like token such as
+`2001:db8::gg` (`INVALID`) from an unrelated name such as `foo:bar`
 (`NOT_APPLICABLE`).
 
 ### `IntegerValidator`
 
-Конструктор без аргументов.
+Constructor without arguments.
 
 #### `probe(raw: str, declaration: ParameterDeclaration) -> ParameterResult`
 
-- Не соответствует `[+-]?[0-9]+` → `NOT_APPLICABLE`.
-- Соответствует, но `int(raw, 10)` вне bounds → `INVALID` от
+- Does not match `[+-]?[0-9]+` → `NOT_APPLICABLE`.
+- Matches, but `int(raw, 10)` is outside the bounds → `INVALID` from
   `_bounded_number()`.
-- Допустимо → `VALID`, `normalized` — Python `int`.
+- Valid → `VALID`, with a Python `int` as `normalized`.
 
-Примеры: `+7` и `-15` лексически применимы; `1.0` и `12ms` неприменимы.
+For example, `+7` and `-15` are lexically applicable; `1.0` and `12ms` are not.
 
 ### `HexValidator`
 
-Конструктор без аргументов.
+Constructor without arguments.
 
 #### `probe(raw: str, declaration: ParameterDeclaration) -> ParameterResult`
 
-- Не соответствует `(?:0[xX])?[0-9A-Fa-f]+` → `NOT_APPLICABLE`.
-- Hex-число вне bounds → `INVALID`.
-- Допустимо → `VALID`, `normalized=int(raw, 16)`.
+- Does not match `(?:0[xX])?[0-9A-Fa-f]+` → `NOT_APPLICABLE`.
+- Hexadecimal number is outside the bounds → `INVALID`.
+- Valid → `VALID`, with `normalized=int(raw, 16)`.
 
-Префикс `0x` необязателен. Поэтому raw `10` нормализуется в `16`, а не `10`.
+The `0x` prefix is optional. Therefore, raw `10` is normalized to `16`, not
+`10`.
 
 ### `TokenStringValidator`
 
-Используется `STRING` и `PASSWORDEX`.
+Used by `STRING` and `PASSWORDEX`.
 
 #### `probe(raw: str, declaration: ParameterDeclaration) -> ParameterResult`
 
-- Пустой raw или наличие любого `str.isspace()` → `INVALID`,
+- Empty raw or any character for which `str.isspace()` is true → `INVALID`,
   code `invalid_token`;
-- token короче/длиннее bounds → `INVALID` с `too_short`/`too_long`;
-- иначе → `VALID`, `normalized` равен исходному raw.
+- token shorter or longer than the bounds → `INVALID` with
+  `too_short`/`too_long`;
+- otherwise → `VALID`, with `normalized` equal to the original raw.
 
-Этот validator считает пробельную строку применимой, но некорректной. В
-обычном parser-потоке `SingleTokenReader` заранее выделяет один token, однако
-правило важно при прямом вызове `evaluate()` или custom reader.
+This validator considers a whitespace-containing string applicable but
+invalid. In the normal parser flow, `SingleTokenReader` extracts one token in
+advance, but the rule matters when calling `evaluate()` directly or using a
+custom reader.
 
 ### `TextValidator`
 
 #### `probe(raw: str, declaration: ParameterDeclaration) -> ParameterResult`
 
-Не предъявляет требований к структуре и whitespace. Проверяет только
+Imposes no structural or whitespace requirements. It checks only
 `_bounded_length()`:
 
-- нарушение длины → `INVALID`;
-- иначе → `VALID` с исходным raw.
+- invalid length → `INVALID`;
+- otherwise → `VALID` with the original raw.
 
-Validator сам не проверяет начальный `!`: это правило command parser’а только
-для bare/root `TEXT<min-max>`, сопоставляемого в позиции `0`. В паттерне
-`description TEXT<1-80>` validator обычно получает многословный remainder без
-keyword `description`.
+The validator itself does not check for a leading `!`: that command-parser
+rule applies only to bare/root `TEXT<min-max>` matched at position `0`. In the
+pattern `description TEXT<1-80>`, the validator normally receives a multiword
+remainder without the `description` keyword.
 
 ### `EnumValidator`
 
 #### `probe(raw: str, declaration: ParameterDeclaration) -> ParameterResult`
 
-Ищет raw в `declaration.choices` без учёта ASCII-регистра.
+Searches for raw in `declaration.choices` without ASCII case sensitivity.
 
-- Совпадение → `VALID`; `normalized` — исходный вариант из declaration.
-- Нет совпадения → `NOT_APPLICABLE`.
+- Match → `VALID`; `normalized` is the original choice from the declaration.
+- No match → `NOT_APPLICABLE`.
 
-`INVALID` этот validator не возвращает.
+This validator never returns `INVALID`.
 
 ```python
 registry.evaluate("ENUM{Eth-trunk,Vlanif,}", "vLaNiF").normalized
@@ -818,7 +833,7 @@ registry.evaluate("ENUM{Eth-trunk,Vlanif,}", "vLaNiF").normalized
 
 ### `DateTimeValidator`
 
-Конструктор:
+Constructor:
 
 ```python
 DateTimeValidator(
@@ -829,27 +844,29 @@ DateTimeValidator(
 )
 ```
 
-- `expression` — regex полной лексической формы;
-- `datetime_format` — формат `datetime.strptime`;
-- `description` — текст ожидаемого формата для issue;
-- `prefix_for_parsing` — добавка только перед календарной проверкой. Например,
-  `MM-DD` проверяется как `"2000-" + raw`.
+- `expression` — a regex for the complete lexical form;
+- `datetime_format` — a `datetime.strptime` format;
+- `description` — the expected-format text used in an issue;
+- `prefix_for_parsing` — a prefix added only for calendar validation. For
+  example, `MM-DD` is checked as `"2000-" + raw`.
 
 #### `probe(raw: str, declaration: ParameterDeclaration) -> ParameterResult`
 
-`declaration` намеренно не используется.
+`declaration` is deliberately unused.
 
-1. `re.fullmatch(expression, raw)` не совпал → `NOT_APPLICABLE`.
-2. Форма совпала, но `datetime.strptime(prefix + raw, format)` отверг
-   календарное значение → `_failure(raw)`.
-3. Значение корректно → `VALID`, `normalized` равен исходному raw.
+1. If `re.fullmatch(expression, raw)` does not match → `NOT_APPLICABLE`.
+2. If the shape matches but `datetime.strptime(prefix + raw, format)` rejects
+   the calendar value → `_failure(raw)`.
+3. If the value is valid → `VALID`, with `normalized` equal to the original
+   raw.
 
-Таким образом, `2025-2-3` для ISO-типа — `NOT_APPLICABLE` из-за ширины, а
-`2025-02-30` — `INVALID`, потому что форма правильна, но даты не существует.
+Thus, `2025-2-3` is `NOT_APPLICABLE` to the ISO type because of its width,
+while `2025-02-30` is `INVALID` because its shape is correct but the date does
+not exist.
 
 #### `_failure(raw: str) -> ParameterResult`
 
-Private method. Создаёт:
+A private method. Creates:
 
 ```python
 ParameterResult.failure(
@@ -864,115 +881,117 @@ ParameterResult.failure(
 
 #### `probe(raw: str, declaration: ParameterDeclaration) -> ParameterResult`
 
-`declaration` не используется. Полный допустимый формат:
+`declaration` is unused. The complete accepted format is:
 
 ```text
-1–4 hex-цифры - 1–4 hex-цифры - 1–4 hex-цифры
+1–4 hexadecimal digits - 1–4 hexadecimal digits - 1–4 hexadecimal digits
 ```
 
-Результаты:
+Results:
 
-- корректная форма → `VALID`; каждая группа приводится к lowercase и
-  дополняется нулями слева до четырёх символов;
-- строка состоит из hex-символов/дефисов и содержит дефис, но группировка
-  неверна → `INVALID`, code `invalid_mac`;
-- строка содержит иные символы либо вообще не содержит дефиса →
-  `NOT_APPLICABLE`.
+- valid shape → `VALID`; every group is converted to lowercase and padded on
+  the left with zeros to four characters;
+- the string consists of hexadecimal characters and hyphens and contains a
+  hyphen, but grouping is invalid → `INVALID`, code `invalid_mac`;
+- the string contains other characters or no hyphen → `NOT_APPLICABLE`.
 
-Пример: `1-aB-CD09` нормализуется в `0001-00ab-cd09`.
+For example, `1-aB-CD09` is normalized to `0001-00ab-cd09`.
 
 ### `IPv4AddressValidator`
 
-Проверяет placeholder `X.X.X.X`.
+Validates the `X.X.X.X` placeholder.
 
 #### `probe(raw: str, declaration: ParameterDeclaration) -> ParameterResult`
 
-`declaration` не используется.
+`declaration` is unused.
 
-1. `_looks_like_address(raw)` определяет, относится ли token к IPv4-ветке.
-   Если нет, возвращается `NOT_APPLICABLE`.
-2. Значение разделяется по точкам. Требуются ровно четыре непустых компонента,
-   каждый из `1..3` decimal-цифр.
-3. Каждый октет преобразуется в `int` и должен находиться в `0..255`.
-4. При успехе возвращается `VALID`; `normalized` собирается из decimal
-   значений, поэтому ведущие нули удаляются.
+1. `_looks_like_address(raw)` determines whether the token belongs to the IPv4
+   branch. If it does not, the result is `NOT_APPLICABLE`.
+2. The value is split at periods. Exactly four non-empty components are
+   required, each containing `1..3` decimal digits.
+3. Each octet is converted to `int` and must be within `0..255`.
+4. On success, the result is `VALID`; `normalized` is assembled from the
+   decimal values, so leading zeros are removed.
 
-Пример: raw `192.168.001.001` сохраняется вызывающим parser-ом, а validator
-возвращает normalized `192.168.1.1`.
+For example, the calling parser preserves raw `192.168.001.001`, while the
+validator returns normalized `192.168.1.1`.
 
 #### `_looks_like_address(raw: str) -> bool`
 
-Static private эвристика. Возвращает `True`, когда raw содержит точку и
-полностью состоит из цифр, точек, `+` и `-`. Этого достаточно только для
-определения применимости: строки `1.2.3` и `-1.2.3.4` затем становятся
-`INVALID`, а hostname `router.example.com` — `NOT_APPLICABLE`.
+A static private heuristic. Returns `True` when raw contains a period and
+consists entirely of digits, periods, `+`, and `-`. This is sufficient only to
+determine applicability: `1.2.3` and `-1.2.3.4` subsequently become `INVALID`,
+while the hostname `router.example.com` is `NOT_APPLICABLE`.
 
 #### `_failure(raw: str) -> ParameterResult`
 
-Static private factory результата `INVALID`:
+A static private factory for an `INVALID` result:
 
 - code: `invalid_ipv4_address`;
 - message: `value must be a valid IPv4 address`;
 - expected: `four decimal octets from 0 to 255`;
-- actual: исходный raw.
+- actual: the original raw.
 
 ### `IPv6AddressValidator`
 
-Проверяет placeholder `X:X::X:X`. Поддерживает полную стандартную IPv6-форму:
-восемь групп, `::` compression и IPv4-mapped адреса.
+Validates the `X:X::X:X` placeholder. It supports the complete standard IPv6
+form: eight groups, `::` compression, and IPv4-mapped addresses.
 
 #### `probe(raw: str, declaration: ParameterDeclaration) -> ParameterResult`
 
-`declaration` не используется.
+`declaration` is unused.
 
-1. Если `_looks_like_ipv6(raw)` вернул `False`, результат —
+1. If `_looks_like_ipv6(raw)` returns `False`, the result is
    `NOT_APPLICABLE`.
-2. Наличие `%` делает address-like token `INVALID`: zone identifier не
-   поддерживается.
-3. `ipaddress.IPv6Address(raw)` выполняет синтаксическую проверку.
-4. При успехе `str(address)` становится normalized: регистр lowercase,
-   допустимое сжатие `::` применяется канонически.
+2. The presence of `%` makes an address-like token `INVALID`: zone identifiers
+   are not supported.
+3. `ipaddress.IPv6Address(raw)` performs syntactic validation.
+4. On success, `str(address)` becomes `normalized`: case is lowercase, and
+   valid `::` compression is applied canonically.
 
-Например, `2001:0DB8:0:0:0:0:0:1` нормализуется в `2001:db8::1`.
+For example, `2001:0DB8:0:0:0:0:0:1` is normalized to `2001:db8::1`.
 
 #### `_failure(raw: str) -> ParameterResult`
 
-Static private factory результата `INVALID`:
+A static private factory for an `INVALID` result:
 
 - code: `invalid_ipv6_address`;
 - message: `value must be a valid IPv6 address`;
 - expected: `IPv6 colon-hexadecimal notation`;
-- actual: исходный raw.
+- actual: the original raw.
 
 ### `IPv6PrefixValidator`
 
-Проверяет placeholder `X:X::X:X/M`.
+Validates the `X:X::X:X/M` placeholder.
 
 #### `probe(raw: str, declaration: ParameterDeclaration) -> ParameterResult`
 
-`declaration` не используется.
+`declaration` is unused.
 
-1. Token применим к типу, если `_looks_like_ipv6(raw)` вернул `True` или raw
-   начинается с `/`; иначе результат — `NOT_APPLICABLE`.
-2. Требуется ровно один `/`, непустой IPv6 слева и только decimal-цифры справа.
-   Запись prefix length длиннее трёх символов отклоняется.
-3. Zone identifier `%` в адресной части запрещён.
-4. Адрес проверяется через `IPv6Address`, prefix length — через диапазон
-   `0..128`.
-5. При успехе normalized имеет вид `f"{address}/{prefix_length}"`.
+1. The token applies to the type when `_looks_like_ipv6(raw)` returns `True` or
+   raw starts with `/`; otherwise, the result is `NOT_APPLICABLE`.
+2. Exactly one `/`, a non-empty IPv6 value on the left, and only decimal digits
+   on the right are required. A prefix-length spelling longer than three
+   characters is rejected.
+3. A zone identifier `%` is forbidden in the address portion.
+4. The address is validated with `IPv6Address`, and the prefix length must be
+   in `0..128`.
+5. On success, `normalized` has the form
+   `f"{address}/{prefix_length}"`.
 
-Используется `IPv6Address`, а не `IPv6Network`, поэтому host bits намеренно
-сохраняются. Raw `2001:0DB8::0001/064` даёт normalized
-`2001:db8::1/64`. Формы `::/0`, `::1/128` и IPv4-mapped prefix допустимы.
+`IPv6Address`, rather than `IPv6Network`, is used, so host bits are
+deliberately retained. Raw `2001:0DB8::0001/064` produces normalized
+`2001:db8::1/64`. The forms `::/0`, `::1/128`, and an IPv4-mapped prefix are
+accepted.
 
 #### `_failure(raw: str) -> ParameterResult`
 
-Static private factory результата `INVALID`:
+A static private factory for an `INVALID` result:
 
 - code: `invalid_ipv6_prefix`;
 - message: `value must be a valid IPv6 prefix`;
 - expected: `IPv6 address followed by /0 through /128`;
-- actual: исходный raw.
+- actual: the original raw.
 
 ## `registry.py`: `ParameterTypeRegistry`
 
@@ -984,92 +1003,95 @@ ParameterTypeRegistry(
 )
 ```
 
-Создаёт изменяемый реестр и последовательно регистрирует переданные типы через
-`register()`. Поэтому к constructor input применяются те же проверки ID и
-дубликатов.
+Creates a mutable registry and registers the supplied types in sequence through
+`register()`. The same ID-format and duplicate-ID checks therefore apply to
+constructor input.
 
-Порядок вставки сохраняется в `parameter_types`, но распознавание объявления
-выбирает самое длинное совпадение, а не первый тип.
+Insertion order is retained in `parameter_types`, but declaration recognition
+selects the longest match rather than the first type.
 
 ### `is_frozen: bool`
 
-Read-only property. `False` у нового реестра, `True` после `freeze()`.
+Read-only property. `False` for a new registry and `True` after `freeze()`.
 
 ### `parameter_types: tuple[ParameterType, ...]`
 
-Read-only property. Возвращает новый tuple зарегистрированных объектов в
-порядке регистрации. Изменение tuple невозможно, но сами стратегии внутри
-`ParameterType` должны проектироваться как stateless или безопасные для
-совместного использования.
+Read-only property. Returns a new tuple of registered objects in registration
+order. The tuple cannot be modified, but the strategies inside
+`ParameterType` should themselves be designed as stateless or safe for shared
+use.
 
 ### `register(parameter_type: ParameterType) -> ParameterTypeRegistry`
 
-Регистрирует тип и возвращает тот же `self`, что позволяет chaining:
+Registers a type and returns the same `self`, permitting chaining:
 
 ```python
 registry.register(first).register(second)
 ```
 
-Требования к `type_id`:
+Requirements for `type_id`:
 
 ```text
 [a-z][a-z0-9-]*
 ```
 
-То есть первая буква lowercase ASCII, затем lowercase ASCII, цифры или дефис.
+The first character must be a lowercase ASCII letter, followed by lowercase
+ASCII letters, digits, or hyphens.
 
-`ParameterRegistryError` выбрасывается, если:
+`ParameterRegistryError` is raised when:
 
-- реестр frozen;
-- ID имеет неверный формат;
-- такой ID уже зарегистрирован.
+- the registry is frozen;
+- the ID has an invalid format;
+- the ID is already registered.
 
-Метод не проверяет пересечение синтаксиса разных recognizers. Неоднозначность
-обнаружится в `recognize()`.
+The method does not check for overlap between the syntax of different
+recognizers. Any ambiguity is detected by `recognize()`.
 
 ### `freeze() -> ParameterTypeRegistry`
 
-Запрещает последующие `register()` и возвращает тот же `self`. Повторный
-`freeze()` безопасен.
+Prevents subsequent calls to `register()` and returns the same `self`.
+Repeated calls to `freeze()` are safe.
 
-Операция не создаёт глубоких копий типов.
+The operation does not create deep copies of the types.
 
 ### `clone() -> ParameterTypeRegistry`
 
-Создаёт новый **незамороженный** реестр с теми же `ParameterType`-объектами и
-тем же порядком. Состояние `is_frozen` исходного реестра не переносится.
+Creates a new **unfrozen** registry with the same `ParameterType` objects and
+the same order. The source registry’s `is_frozen` state is not copied.
 
-`CommandLineParser` использует именно `source_registry.clone().freeze()`.
-Поэтому дальнейшая регистрация в исходном реестре не изменит уже созданный
-parser.
+`CommandLineParser` uses exactly `source_registry.clone().freeze()`.
+Therefore, subsequent registration in the source registry does not change an
+already constructed parser.
 
 ### `get(type_id: str) -> ParameterType | None`
 
-Возвращает зарегистрированный тип по точному ID или `None`.
+Returns the registered type for the exact ID, or `None`.
 
 ### `family_of(type_id: str) -> ParameterFamily | None`
 
-Возвращает family зарегистрированного типа либо `None` для неизвестного ID.
+Returns the registered type’s family, or `None` for an unknown ID.
 
 ### `recognize(pattern: str, position: int = 0) -> ParameterDeclaration | None`
 
-Запускает recognizer каждого зарегистрированного типа точно в `position`.
+Runs the recognizer of every registered type exactly at `position`.
 
-- Нет совпадений → `None`.
-- Есть совпадения разной длины → выбирается объявление с наибольшим `end`.
-- Несколько совпадений с одинаковым наибольшим `end` →
+- No matches → `None`.
+- Matches of different lengths → the declaration with the greatest `end` is
+  selected.
+- Multiple matches with the same greatest `end` →
   `ParameterRegistryError("ambiguous declaration at character …")`.
 
-Longest-match нужен, например, чтобы точный
-`YYYY/MM/DD,HH:MM:SS` не был ошибочно сокращён до другого префикса.
+Longest-match behavior is needed, for example, so that the exact
+`YYYY/MM/DD,HH:MM:SS` placeholder is not mistakenly shortened to another
+prefix.
 
-`ParameterDeclarationError` от конкретного recognizer’а проходит наружу.
-Позиция должна быть допустима для используемых recognizers; registry отдельно
-её не валидирует.
+A `ParameterDeclarationError` from an individual recognizer propagates. The
+position must be valid for the recognizers being used; the registry does not
+validate it separately.
 
 ### `read(declaration, text, position=0) -> ParameterToken | None`
 
-Полная сигнатура:
+Complete signature:
 
 ```python
 read(
@@ -1079,8 +1101,8 @@ read(
 ) -> ParameterToken | None
 ```
 
-Находит тип по `declaration.type_id` и делегирует `ParameterType.read()`.
-Неизвестный type ID → `None`.
+Finds the type by `declaration.type_id` and delegates to
+`ParameterType.read()`. An unknown type ID produces `None`.
 
 ### `probe(raw, declaration) -> ParameterResult`
 
@@ -1091,8 +1113,8 @@ probe(
 ) -> ParameterResult
 ```
 
-Находит тип и делегирует `ParameterType.probe()`. Неизвестный type ID →
-`NOT_APPLICABLE`.
+Finds the type and delegates to `ParameterType.probe()`. An unknown type ID
+produces `NOT_APPLICABLE`.
 
 ### `evaluate(declaration_pattern, raw) -> ParameterResult`
 
@@ -1103,29 +1125,27 @@ evaluate(
 ) -> ParameterResult
 ```
 
-Удобный объединённый вызов для одного полного placeholder’а:
+A convenient combined call for one complete placeholder:
 
 1. `recognize(declaration_pattern, position=0)`;
-2. проверка, что declaration заканчивается ровно в конце строки;
-3. `probe(raw, declaration)`.
+2. verifies that the declaration ends exactly at the end of the string;
+3. calls `probe(raw, declaration)`.
 
-Результаты:
+Results:
 
-- полный известный placeholder и значение → результат validator’а;
-- неизвестный либо распознанный только частично placeholder →
-  `NOT_APPLICABLE`;
-- `ParameterDeclarationError` → `INVALID` с code
-  `invalid_declaration`, `message=error.message`,
+- a complete known placeholder and value → the validator’s result;
+- an unknown or only partially recognized placeholder → `NOT_APPLICABLE`;
+- `ParameterDeclarationError` → `INVALID` with code
+  `invalid_declaration`, `message=error.message`, and
   `actual=declaration_pattern`.
 
-`ParameterRegistryError`, включая неоднозначность recognizers, не
-перехватывается.
+`ParameterRegistryError`, including recognizer ambiguity, is not caught.
 
-## `errors.py`: исключения определения типов
+## `errors.py`: Type-Definition Exceptions
 
 ### `ParameterDeclarationError`
 
-Наследуется от `ValueError`.
+Inherits from `ValueError`.
 
 #### `__init__(message: str, start: int, end: int) -> None`
 
@@ -1137,38 +1157,38 @@ ParameterDeclarationError(
 )
 ```
 
-Публичные атрибуты:
+Public attributes:
 
-- `message` — причина без координат;
-- `start`, `end` — span проблемного объявления.
+- `message` — the cause without coordinates;
+- `start`, `end` — the malformed declaration’s span.
 
-Строковое представление формируется как:
+Its string representation is:
 
 ```text
 {message} at characters {start}:{end}
 ```
 
-Исключение означает: recognizer узнал начало своего placeholder’а, но
-объявление синтаксически испорчено.
+The exception means that a recognizer identified the beginning of its
+placeholder, but the declaration is syntactically malformed.
 
 ### `ParameterRegistryError`
 
-Наследуется от `ValueError` и не добавляет собственных полей или методов.
-Используется для неверной регистрации, изменения frozen-реестра и
-неоднозначного распознавания объявления.
+Inherits from `ValueError` and adds no fields or methods. It is used for
+invalid registration, mutation of a frozen registry, and ambiguous declaration
+recognition.
 
-## `builtins.py`: сборка стандартного реестра
+## `builtins.py`: Building the Default Registry
 
 ### `_date_time_types(reader: SingleTokenReader) -> tuple[ParameterType, ...]`
 
-Private factory семи date/time-типов. Все созданные типы:
+A private factory for seven date/time types. Every created type:
 
-- относятся к `ParameterFamily.STRUCTURED`;
-- используют переданный `SingleTokenReader`;
-- распознаются через `ExactDeclarationRecognizer`;
-- проверяются отдельными настроенными экземплярами `DateTimeValidator`.
+- belongs to `ParameterFamily.STRUCTURED`;
+- uses the supplied `SingleTokenReader`;
+- is recognized through `ExactDeclarationRecognizer`;
+- is validated by a separately configured `DateTimeValidator` instance.
 
-Возвращает типы в порядке:
+The types are returned in this order:
 
 1. `date-slash`;
 2. `date-iso`;
@@ -1180,16 +1200,16 @@ Private factory семи date/time-типов. Все созданные тип�
 
 ### `builtin_parameter_types() -> tuple[ParameterType, ...]`
 
-Создаёт свежий tuple всех 17 встроенных определений. Новый
-`SingleTokenReader` совместно используется token-based типами внутри одного
-вызова; `TEXT` распознаётся через `BoundedDeclarationRecognizer("TEXT")` и
-получает `RemainderReader`.
+Creates a fresh tuple containing all 17 built-in definitions. A new
+`SingleTokenReader` is shared by the token-based types within one call;
+`TEXT` is recognized through `BoundedDeclarationRecognizer("TEXT")` and uses
+`RemainderReader`.
 
-`ipv4-address`, `ipv6-address` и `ipv6-prefix` используют
-`ExactDeclarationRecognizer`, общий `SingleTokenReader`, family
-`STRUCTURED` и соответствующие специализированные validators.
+`ipv4-address`, `ipv6-address`, and `ipv6-prefix` use
+`ExactDeclarationRecognizer`, the shared `SingleTokenReader`, the
+`STRUCTURED` family, and their corresponding specialized validators.
 
-Порядок tuple:
+Tuple order:
 
 1. `hex`;
 2. `string`;
@@ -1201,44 +1221,44 @@ Private factory семи date/time-типов. Все созданные тип�
 8. `ipv6-address`;
 9. `ipv6-prefix`;
 10. `text`;
-11. семь date/time-типов в порядке `_date_time_types()`.
+11. the seven date/time types in `_date_time_types()` order.
 
-Функция не возвращает singleton: каждый вызов создаёт свежие immutable
-`ParameterType`-объекты и stateless стратегии.
+The function does not return a singleton: every call creates fresh immutable
+`ParameterType` objects and stateless strategies.
 
 ### `default_parameter_registry() -> ParameterTypeRegistry`
 
-Эквивалент:
+Equivalent to:
 
 ```python
 ParameterTypeRegistry(builtin_parameter_types())
 ```
 
-Возвращает новый **изменяемый** реестр. Его можно расширить перед передачей в
+Returns a new **mutable** registry. It can be extended before being passed to
 `CommandLineParser`.
 
-## Встроенные коды ошибок
+## Built-in Error Codes
 
-| Code | Источник | Когда возникает | `actual` |
+| Code | Source | When it occurs | `actual` |
 |---|---|---|---|
-| `invalid_declaration` | `ParameterTypeRegistry.evaluate()` | Известное объявление синтаксически испорчено | Строка объявления |
-| `below_minimum` | `_bounded_number()` | Число меньше minimum | Нормализованное число в decimal |
-| `above_maximum` | `_bounded_number()` | Число больше maximum | Нормализованное число в decimal |
-| `too_short` | `_bounded_length()` | Длина меньше minimum | Длина |
-| `too_long` | `_bounded_length()` | Длина больше maximum | Длина |
-| `invalid_token` | `TokenStringValidator` | Пустое значение или whitespace внутри | Исходное значение |
-| `invalid_datetime` | `DateTimeValidator` | Форма правильная, календарное значение невозможно | Исходное значение |
-| `invalid_mac` | `MacValidator` | Строка похожа на MAC, но имеет неверные группы | Исходное значение |
-| `invalid_ipv4_address` | `IPv4AddressValidator` | Token похож на IPv4, но не состоит из четырёх октетов `0..255` | Исходное значение |
-| `invalid_ipv6_address` | `IPv6AddressValidator` | Token похож на IPv6, но синтаксис неверен или содержит zone identifier | Исходное значение |
-| `invalid_ipv6_prefix` | `IPv6PrefixValidator` | Address-like token не имеет корректного IPv6 и `/0..128` | Исходное значение |
+| `invalid_declaration` | `ParameterTypeRegistry.evaluate()` | A known declaration is syntactically malformed | Declaration string |
+| `below_minimum` | `_bounded_number()` | Number is below `minimum` | Normalized decimal number |
+| `above_maximum` | `_bounded_number()` | Number is above `maximum` | Normalized decimal number |
+| `too_short` | `_bounded_length()` | Length is below `minimum` | Length |
+| `too_long` | `_bounded_length()` | Length is above `maximum` | Length |
+| `invalid_token` | `TokenStringValidator` | Empty value or internal whitespace | Original value |
+| `invalid_datetime` | `DateTimeValidator` | Shape is correct, but the calendar value is impossible | Original value |
+| `invalid_mac` | `MacValidator` | String resembles a MAC address but has invalid groups | Original value |
+| `invalid_ipv4_address` | `IPv4AddressValidator` | Token resembles IPv4 but does not contain four octets in `0..255` | Original value |
+| `invalid_ipv6_address` | `IPv6AddressValidator` | Token resembles IPv6 but has invalid syntax or contains a zone identifier | Original value |
+| `invalid_ipv6_prefix` | `IPv6PrefixValidator` | Address-like token does not contain valid IPv6 followed by `/0..128` | Original value |
 
-Custom validator может определять собственные стабильные коды.
+A custom validator can define its own stable codes.
 
-## Пример custom-типа
+## Custom Type Example
 
-Ниже добавлен placeholder `BOOLEAN`, который принимает `yes` и `no` и
-нормализует их в Python `bool`.
+The following example adds a `BOOLEAN` placeholder that accepts `yes` and `no`
+and normalizes them to Python `bool`.
 
 ```python
 from vrp_parser import CommandLineParser
@@ -1296,21 +1316,21 @@ disabled = parser.parse("feature no")
 invalid = parser.parse("feature maybe")
 ```
 
-Правила проектирования custom-типа:
+Design rules for a custom type:
 
-1. Используйте уникальный `type_id` формата `[a-z][a-z0-9-]*`.
-2. Recognizer должен принимать placeholder только с точной `position`.
-3. Reader должен возвращать корректные char-spans и позицию продолжения.
-4. Validator должен различать `INVALID` и `NOT_APPLICABLE`.
-5. Возвращайте стабильный тип `normalized`, чтобы вызывающему коду не
-   приходилось угадывать формат.
-6. Выберите family по специфичности значения, а не по названию placeholder’а.
-7. Зарегистрируйте все custom-типы до создания `CommandLineParser`: parser
-   клонирует и замораживает полученный реестр.
+1. Use a unique `type_id` matching `[a-z][a-z0-9-]*`.
+2. The recognizer must accept a placeholder only at the exact `position`.
+3. The reader must return valid character spans and a continuation position.
+4. The validator must distinguish `INVALID` from `NOT_APPLICABLE`.
+5. Return a stable `normalized` type so calling code does not have to guess its
+   format.
+6. Choose the family based on value specificity, not the placeholder’s name.
+7. Register every custom type before constructing `CommandLineParser`: the
+   parser clones and freezes the supplied registry.
 
-## Самостоятельная проверка параметра
+## Standalone Parameter Validation
 
-Для проверки типа без построения parser’а используйте `evaluate()`:
+Use `evaluate()` to validate a type without constructing a parser:
 
 ```python
 from vrp_parser.parameters import ParameterStatus, default_parameter_registry
@@ -1323,7 +1343,7 @@ assert result.normalized == "0001-00ab-cd09"
 assert result.issue is None
 ```
 
-Для поэтапной интеграции доступны отдельные операции:
+Individual operations are available for step-by-step integration:
 
 ```python
 declaration = registry.recognize(

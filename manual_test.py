@@ -1,11 +1,11 @@
-"""Минимальный ручной стенд для Huawei VRP parser.
+"""Minimal manual test harness for the Huawei VRP parser.
 
-Запуск из корня проекта без установки пакета:
+Run it from the project root without installing the package:
 
     python3 manual_test.py
 
-Для эксперимента измените PATTERN_DOCUMENT и строку внутри main(). Полный
-рабочий набор проекта хранится только в data/commands.json.
+To experiment, change PATTERN_DOCUMENT and the input passed in main(). The
+project's complete command set is stored only in data/commands.json.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# Позволяет запускать файл напрямую без `pip install -e .`.
+# Allow this file to run directly without `pip install -e .`.
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 from vrp_parser import CommandLineParser, ConfigurationParser  # noqa: E402

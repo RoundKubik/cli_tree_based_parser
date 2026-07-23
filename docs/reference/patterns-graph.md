@@ -1,19 +1,19 @@
-# Язык паттернов, компиляция и общий граф команд
+# Pattern Language, Compilation, and the Shared Command Graph
 
-Этот документ описывает внутренний путь команды от строки в
-`commands.json` до неизменяемого общего графа. Он охватывает модули:
+This document describes the internal path of a command from a string in
+`commands.json` to an immutable shared graph. It covers these modules:
 
 - `vrp_parser.compiler`;
 - `vrp_parser.errors`;
 - `vrp_parser.patterns`;
 - `vrp_parser.graph`.
 
-Матчинг конкретной CLI-строки выполняется следующим слоем проекта. Здесь
-рассматриваются синтаксис паттернов, AST, проверка проектных ограничений,
-линеаризация вариантов и сохранение provenance — связи маршрута с исходным
-паттерном.
+Matching a concrete CLI line is performed by the next project layer. This
+document focuses on pattern syntax, the AST, validation of project-level
+constraints, route linearization, and preservation of provenance—the
+relationship between a route and its original pattern.
 
-## Общая схема
+## High-Level Flow
 
 ```text
 tuple[str, ...]
@@ -34,19 +34,19 @@ PatternSource
 RouteExpander ──► LinearRoute
     │
     ▼
-GraphStepFactory ──► GraphStep с семантическим key
+GraphStepFactory ──► GraphStep with a semantic key
     │
     ▼
 CommandGraphBuilder ──► CommandGraph
 ```
 
-`PatternCompiler` координирует весь этот процесс. Он обрабатывает все
-исходные строки, накапливает все ошибки и строит граф только тогда, когда
-валидны все паттерны.
+`PatternCompiler` coordinates this entire process. It processes every source
+string, accumulates all errors, and builds the graph only when every pattern
+is valid.
 
-## Формат входного документа
+## Input Document Format
 
-Публичный парсер получает JSON-совместимый объект:
+The public parser accepts a JSON-compatible object:
 
 ```json
 {
@@ -63,135 +63,136 @@ CommandGraphBuilder ──► CommandGraph
 }
 ```
 
-Проверка формы JSON-документа выполняется публичным API до вызова
-`PatternCompiler`. На вход `PatternCompiler.compile()` уже передаётся
-`tuple[str, ...]`.
+The public API validates the shape of the JSON document before it calls
+`PatternCompiler`. `PatternCompiler.compile()` therefore receives an already
+validated `tuple[str, ...]`.
 
-Основные требования к документу:
+The main document requirements are:
 
-- корень — объект;
-- поле `commands` — непустой массив;
-- каждый элемент — непустая строка;
-- порядок элементов значим: он определяет `pattern_index` и порядок
-  представительного результата при нескольких совпадениях;
-- одинаковые строки допустимы и остаются отдельными источниками.
+- the root value is an object;
+- `commands` is a non-empty array;
+- every element is a non-empty string;
+- element order is significant: it determines `pattern_index` and the
+  representative result order when multiple patterns match;
+- duplicate strings are allowed and remain separate sources.
 
-Нарушение формы документа приводит к `PatternDocumentError`. Синтаксические
-и семантические ошибки внутри строк объединяются в
+A document-shape violation produces `PatternDocumentError`. Syntax and
+semantic errors inside pattern strings are collected into
 `PatternCompilationError`.
 
-## Грамматика паттернов
+## Pattern Grammar
 
-Ниже приведена упрощённая EBNF фактически реализованного frontend:
+The following is a simplified EBNF for the implemented frontend:
 
 ```ebnf
-pattern       = root_item, { root_item } ;
-root_item     = atom, [ repeat ] ;
-atom          = literal
-              | parameter
-              | group
-              | "*"
-              | "|" ;             (* "|" — литерал только в корне *)
+pattern        = root_item, { root_item } ;
+root_item      = atom, [ repeat ] ;
+atom           = literal
+               | parameter
+               | group
+               | "*"
+               | "|" ;             (* "|" is a literal only at the root *)
 
-group         = required_group | optional_group ;
+group          = required_group | optional_group ;
 required_group = "{", alternative, { "|", alternative }, "}", [ "*" ] ;
 optional_group = "[", alternative, { "|", alternative }, "]", [ "*" ] ;
-alternative   = group_item, { group_item } ;
-group_item    = group_atom, [ repeat ] ;
-group_atom    = literal | parameter | group | "*" ;
+alternative    = group_item, { group_item } ;
+group_item     = group_atom, [ repeat ] ;
+group_atom     = literal | parameter | group | "*" ;
 
-repeat        = "&<", unsigned_integer, "-", unsigned_integer, ">" ;
+repeat         = "&<", unsigned_integer, "-", unsigned_integer, ">" ;
 ```
 
-Лексер игнорирует пробельные символы между элементами. Поэтому `}*` и
-`} *` технически распознаются одинаково. Каноническая запись в
-`commands.json` — с пробелом: `} *` и `] *`.
+The lexer ignores whitespace between elements. Consequently, `}*` and `} *`
+are technically recognized in the same way. The canonical notation in
+`commands.json` includes a space: `} *` and `] *`.
 
-### Семантика групп
+### Group Semantics
 
-| Синтаксис | `GroupMode` | Значение |
+| Syntax | `GroupMode` | Meaning |
 |---|---|---|
-| `{ x \| y }` | `REQUIRED_ONE` | требуется ровно одна альтернатива |
-| `[ x \| y ]` | `OPTIONAL_ONE` | выбирается одна альтернатива или группа пропускается |
-| `{ x \| y } *` | `REQUIRED_SET` | выбирается от одной до всех альтернатив, без повторного использования одной ветви |
-| `[ x \| y ] *` | `OPTIONAL_SET` | выбирается от нуля до всех альтернатив, без повторного использования одной ветви |
+| `{ x \| y }` | `REQUIRED_ONE` | exactly one alternative is required |
+| `[ x \| y ]` | `OPTIONAL_ONE` | one alternative is selected, or the group is omitted |
+| `{ x \| y } *` | `REQUIRED_SET` | one or more alternatives, up to all of them, are selected without reusing a branch |
+| `[ x \| y ] *` | `OPTIONAL_SET` | zero or more alternatives, up to all of them, are selected without reusing a branch |
 
-Для set-групп порядок выбранных альтернатив в CLI не обязан совпадать с
-порядком в паттерне. Эти группы остаются символическими узлами графа и
-разбираются matcher-слоем во время выполнения.
+For set groups, the order of selected alternatives in the CLI does not have
+to match their order in the pattern. These groups remain symbolic graph nodes
+and are parsed by the matcher layer at runtime.
 
-### Контекстный `*`
+### Context-Sensitive `*`
 
-`*` является оператором множества только сразу после закрывающей скобки
-группы. Пробелы перед ним значения не имеют:
+`*` is a set operator only when it immediately follows a group's closing
+delimiter. Whitespace before it is insignificant:
 
 ```text
 { create | read } *
 [ fast | safe ] *
 ```
 
-В позиции, где parser ожидает новый atom, `*` является обычным CLI-литералом:
+At a position where the parser expects a new atom, `*` is an ordinary CLI
+literal:
 
 ```text
 access-operation { { create | read } * | * }
-                                             └─ литерал "*"
+                                             └─ literal "*"
 ```
 
-Таким образом, в паттерне выше внутренний `*` после `}` меняет режим
-внутренней группы, а последний `*` задаёт буквальный токен CLI.
+Thus, in the pattern above, the inner `*` after `}` changes the mode of the
+inner group, while the final `*` specifies a literal CLI token.
 
-### Повторение `&<min-max>`
+### Repetition with `&<min-max>`
 
-Оператор повторяет только параметр или группу:
+The operator repeats only a parameter or a group:
 
 ```text
 community STRING<3-11> &<1-200>
 path { left | right } &<1-3>
 ```
 
-Ограничения:
+Constraints:
 
-- границы — неотрицательные десятичные целые числа;
-- `maximum` должен быть не меньше `minimum`;
-- между `&` и `<` пробел недопустим;
-- пробелы внутри угловых скобок допустимы;
-- повторять literal нельзя;
-- второй последовательный repeat не поддерживается.
+- bounds are non-negative decimal integers;
+- `maximum` must be greater than or equal to `minimum`;
+- whitespace between `&` and `<` is not allowed;
+- whitespace inside the angle brackets is allowed;
+- a literal cannot be repeated;
+- a second consecutive repeat is not supported.
 
-Примеры:
+Examples:
 
 ```text
-STRING<1-10>&<0-3>       # допустимо
-STRING<1-10>&< 0 - 3 >   # допустимо
-literal&<1-2>            # ошибка
-STRING<1-10>&<3-2>       # ошибка границ
+STRING<1-10>&<0-3>       # valid
+STRING<1-10>&< 0 - 3 >   # valid
+literal&<1-2>            # error
+STRING<1-10>&<3-2>       # invalid bounds
 cmd & <1-2>              # malformed repeat
 ```
 
-### `|` в корне и внутри группы
+### `|` at the Root and Inside a Group
 
-На верхнем уровне `|` — буквальный CLI-токен:
+At the top level, `|` is a literal CLI token:
 
 ```text
 display | include STRING<1-20>
 ```
 
-Внутри `{ ... }` и `[ ... ]` он всегда разделяет альтернативы. Пустые
-альтернативы запрещены:
+Inside `{ ... }` and `[ ... ]`, it always separates alternatives. Empty
+alternatives are prohibited:
 
 ```text
-[ left | ]   # ошибка
+[ left | ]   # error
 ```
 
-### Параметры
+### Parameters
 
-`PatternLexer` не содержит списка типов параметров. Переданный
-`ParameterRecognizer` пробует распознать объявление ровно с текущей позиции.
-Благодаря этому новый placeholder добавляется через registry, не меняя lexer
-и parser.
+`PatternLexer` does not contain a list of parameter types. The supplied
+`ParameterRecognizer` attempts to recognize a declaration exactly at the
+current position. This allows a new placeholder to be added through the
+registry without changing the lexer or parser.
 
-Runtime policy по умолчанию ожидает корректное распознавание следующих
-встроенных написаний:
+By default, runtime policy expects the following built-in spellings to be
+recognized correctly:
 
 ```text
 HEX<min-max>
@@ -213,30 +214,30 @@ X:X::X:X
 X:X::X:X/M
 ```
 
-`TEXT<min-max>` является bounded remainder-параметром. Он может находиться
-после keyword, например `description TEXT<1-80>`, и тогда принимает весь
-оставшийся текст. Он обязан завершать возможный route и не может повторяться.
-Если `TEXT` сопоставляется в позиции `0` — на bare/root route без уже
-совпавшего keyword, — matcher разрешает его только для CLI-строк, начинающихся
-после отступа с `!`. Это runtime-правило не даёт такой remainder-ветке
-поглощать неизвестные команды; frontend при этом разрешает terminal embedded
-`TEXT`.
+`TEXT<min-max>` is a bounded remainder parameter. It may follow a keyword,
+as in `description TEXT<1-80>`, in which case it accepts all remaining text.
+It must terminate every possible route and cannot be repeated. If `TEXT` is
+matched at position `0`—on a bare/root route with no previously matched
+keyword—the matcher permits it only for CLI lines whose first character
+after indentation is `!`. This runtime rule prevents such a remainder branch
+from consuming unknown commands, while the frontend still permits terminal
+embedded `TEXT`.
 
-Три IP-placeholder’а являются встроенными точными declarations. Registry
-распознаёт `X:X::X:X/M` отдельно от `X:X::X:X` по самому длинному совпадению.
-Runtime policy резервирует все три написания: malformed suffix вроде
-`X.X.X.X/suffix` или `X:X::X:X/M-extra` не превращается в literals, а даёт
-`PatternLanguageError` при компиляции.
+The three IP placeholders are built-in exact declarations. The registry
+recognizes `X:X::X:X/M` separately from `X:X::X:X` by choosing the longest
+match. Runtime policy reserves all three spellings: a malformed suffix such
+as `X.X.X.X/suffix` or `X:X::X:X/M-extra` does not become a sequence of
+literals and instead produces `PatternLanguageError` during compilation.
 
-## Пример AST
+## AST Example
 
-Исходный паттерн:
+Source pattern:
 
 ```text
 route [ vpn STRING<1-31> ] { preference INTEGER<1-255> | * }
 ```
 
-Упрощённое представление AST:
+Simplified AST representation:
 
 ```text
 Sequence
@@ -253,9 +254,9 @@ Sequence
         └── Literal("*")
 ```
 
-Каждый узел содержит `SourceSpan(start, end)` — полуоткрытый диапазон
-символов `[start, end)` в исходной строке. Пробелы, разделяющие узлы, обычно
-не входят в их span.
+Every node contains `SourceSpan(start, end)`, a half-open `[start, end)`
+character range in the source string. Whitespace separating nodes is
+generally not included in their spans.
 
 # `vrp_parser.patterns.tokens`
 
@@ -268,46 +269,46 @@ class SourceSpan:
     end: int
 ```
 
-Неизменяемый полуоткрытый диапазон в строке паттерна.
+An immutable half-open range in a pattern string.
 
-- `start` включён;
-- `end` не включён;
-- допустимый инвариант: `0 <= start <= end`;
-- нарушение инварианта в `__post_init__()` вызывает `ValueError`.
+- `start` is inclusive;
+- `end` is exclusive;
+- the valid invariant is `0 <= start <= end`;
+- violating the invariant in `__post_init__()` raises `ValueError`.
 
-Пустой диапазон допустим. Например, токен `END` получает
+An empty range is valid. For example, the `END` token receives
 `SourceSpan(len(source), len(source))`.
 
 ### `SourceSpan.covering(first, last)`
 
-Возвращает `SourceSpan(first.start, last.end)`. Метод рассчитан на то, что
-`first` расположен не правее `last`. Он не сортирует аргументы и не ищет
-`min`/`max`; корректный порядок — ответственность вызывающего кода.
+Returns `SourceSpan(first.start, last.end)`. The method assumes that `first`
+does not lie to the right of `last`. It neither sorts its arguments nor
+computes `min`/`max`; the caller is responsible for their correct order.
 
-Вход:
+Input:
 
 - `first: SourceSpan`;
 - `last: SourceSpan`.
 
-Результат: новый `SourceSpan`.
+Result: a new `SourceSpan`.
 
-Исключение: `ValueError`, если полученная пара границ нарушает инвариант.
+Exception: `ValueError` if the resulting bounds violate the invariant.
 
 ## `TokenKind`
 
-`StrEnum`, определяющий виды токенов:
+A `StrEnum` defining the token kinds:
 
-- `PARAMETER` — распознанное registry объявление параметра;
-- `LITERAL` — фиксированный CLI-токен;
+- `PARAMETER` — a parameter declaration recognized by the registry;
+- `LITERAL` — a fixed CLI token;
 - `LEFT_BRACE`, `RIGHT_BRACE` — `{`, `}`;
 - `LEFT_BRACKET`, `RIGHT_BRACKET` — `[`, `]`;
 - `PIPE` — `|`;
 - `STAR` — `*`;
-- `REPEAT` — полный оператор `&<min-max>`;
-- `END` — синтетический конец входа.
+- `REPEAT` — a complete `&<min-max>` operator;
+- `END` — the synthetic end of the input.
 
-Поскольку это `StrEnum`, строковые значения имеют вид `"parameter"`,
-`"literal"`, `"left_brace"` и так далее.
+Because this is a `StrEnum`, its string values are `"parameter"`,
+`"literal"`, `"left_brace"`, and so on.
 
 ## `Token`
 
@@ -321,142 +322,145 @@ class Token:
     repeat_bounds: tuple[int, int] | None = None
 ```
 
-Лексема с исходным текстом, позицией и необязательными данными.
+A lexeme with its source text, position, and optional data.
 
-- `parameter` заполнен только у `PARAMETER`;
-- `repeat_bounds` заполнен только у `REPEAT`;
-- для `END` поле `text` равно пустой строке.
+- `parameter` is populated only for `PARAMETER`;
+- `repeat_bounds` is populated only for `REPEAT`;
+- for `END`, `text` is an empty string.
 
-`__post_init__()` проверяет согласованность kind и metadata:
+`__post_init__()` validates consistency between `kind` and the metadata:
 
-- `PARAMETER` без `parameter` → `ValueError`;
-- любой другой kind с `parameter` → `ValueError`;
-- `REPEAT` без `repeat_bounds` → `ValueError`;
-- любой другой kind с `repeat_bounds` → `ValueError`.
+- `PARAMETER` without `parameter` → `ValueError`;
+- any other kind with `parameter` → `ValueError`;
+- `REPEAT` without `repeat_bounds` → `ValueError`;
+- any other kind with `repeat_bounds` → `ValueError`.
 
-Класс не проверяет, что длина `text` равна длине `span`: эту связь
-обеспечивает lexer.
+The class does not verify that the length of `text` equals the length of
+`span`; the lexer maintains that relationship.
 
 # `vrp_parser.patterns.lexer`
 
 ## `RecognizedParameter`
 
-Protocol минимального результата от registry-like распознавателя.
+A protocol describing the minimal result returned by a registry-like
+recognizer.
 
 ### `end`
 
-Read-only property типа `int`. Это исключительная позиция конца объявления
-в исходном паттерне.
+A read-only property of type `int`. It is the exclusive end position of the
+declaration in the source pattern.
 
-Lexer дополнительно ищет у результата атрибут `declaration`:
+The lexer also looks for a `declaration` attribute on the result:
 
-- если атрибут существует, в `Token.parameter` сохраняется его значение;
-- иначе сохраняется сам объект результата.
+- if the attribute exists, its value is stored in `Token.parameter`;
+- otherwise, the result object itself is stored.
 
-Это позволяет использовать как production `ParameterDeclaration`, так и
-небольшие адаптеры пользовательских recognizer-ов.
+This supports both production `ParameterDeclaration` objects and small
+adapters around custom recognizers.
 
 ## `ParameterRecognizer`
 
-Protocol зависимости `PatternLexer` и `PatternParser`.
+The dependency protocol used by `PatternLexer` and `PatternParser`.
 
 ### `recognize(source, position)`
 
-Вход:
+Input:
 
-- `source: str` — полный исходный паттерн;
-- `position: int` — точная позиция предполагаемого начала.
+- `source: str` — the complete source pattern;
+- `position: int` — the exact position at which a declaration may start.
 
-Результат:
+Result:
 
-- объект, совместимый с `RecognizedParameter`, если объявление начинается
-  ровно в `position`;
-- `None`, если с этой позиции параметра нет.
+- an object compatible with `RecognizedParameter` if a declaration begins
+  exactly at `position`;
+- `None` if no parameter begins at that position.
 
-Recognizer не должен пропускать символы слева и обязан вернуть
+A recognizer must not skip characters to the left and must return
 `end > position`.
 
 ## `PatternLexer`
 
-Преобразует строку паттерна в токены. Он знает структурные символы языка, но
-не знает конкретные типы параметров.
+Converts a pattern string into tokens. It understands the language's
+structural characters but does not know the concrete parameter types.
 
 ### `PatternLexer.__init__(parameter_recognizer)`
 
-Принимает объект, реализующий `ParameterRecognizer`. Объект сохраняется и
-используется при каждом вызове `tokenize()`.
+Accepts an object implementing `ParameterRecognizer`. The object is retained
+and used on every call to `tokenize()`.
 
 ### `PatternLexer.tokenize(source)`
 
-Вход: одна полная строка паттерна `source: str`.
+Input: one complete pattern string, `source: str`.
 
-Результат: `tuple[Token, ...]`, всегда заканчивающийся токеном `END`.
+Result: `tuple[Token, ...]`, always ending with an `END` token.
 
-Порядок распознавания в каждой непустой позиции:
+Recognition order at each non-empty position:
 
-1. parameter через registry;
-2. repeat по регулярному выражению;
-3. один структурный символ `{ } [ ] | *`;
-4. literal до пробела, структурного символа или `&`.
+1. a parameter through the registry;
+2. a repeat through the regular expression;
+3. one structural character from `{ } [ ] | *`;
+4. a literal up to whitespace, a structural character, or `&`.
 
-Распознавание параметра выполняется первым, поэтому внутренние `{`, `}`,
-`,` и другие знаки в `ENUM{...}` не превращаются в структурные токены.
+Parameter recognition occurs first, so internal `{`, `}`, `,`, and other
+characters in `ENUM{...}` do not become structural tokens.
 
-Пробелы не создают токенов. Все другие непробельные последовательности
-становятся `LITERAL`.
+Whitespace does not create tokens. Every other non-whitespace sequence
+becomes a `LITERAL`.
 
-Исключения:
+Exceptions:
 
-- `TypeError`, если `source` не строка;
-- `PatternLanguageError("malformed repeat operator", ...)`, если встречен
-  `&`, с которого не начинается корректный repeat;
-- `RuntimeError`, если parameter recognizer нарушил контракт позиции.
+- `TypeError` if `source` is not a string;
+- `PatternLanguageError("malformed repeat operator", ...)` if an `&` does
+  not begin a valid repeat;
+- `RuntimeError` if the parameter recognizer violates the position contract.
 
 ### `PatternLexer._literal_end(source, position)`
 
-Class method, который ищет конец literal. Движется вправо до:
+A class method that finds the end of a literal. It moves right until it
+reaches:
 
 - whitespace;
-- одного из `{ } [ ] | *`;
-- символа `&`;
-- конца строки.
+- one of `{ } [ ] | *`;
+- the `&` character;
+- the end of the string.
 
-Возвращает исключительную позицию конца. Если стартовый символ — `&`,
-возвращает исходную `position`; `tokenize()` интерпретирует это как
-malformed repeat.
+Returns the exclusive end position. If the starting character is `&`, it
+returns the original `position`; `tokenize()` interprets this as a malformed
+repeat.
 
 ### `PatternLexer._validate_parameter_end(source, start, end)`
 
-Проверяет ответ внешнего recognizer:
+Validates the external recognizer's response:
 
 - `end <= start` → `RuntimeError("parameter recognizer did not advance")`;
-- `end > len(source)` → `RuntimeError("parameter recognizer advanced beyond the source")`.
+- `end > len(source)` →
+  `RuntimeError("parameter recognizer advanced beyond the source")`.
 
-Метод ничего не возвращает. Проверка границы между объявлением и следующим
-элементом должна находиться в самом declaration recognizer.
+The method returns nothing. Validation of the boundary between a declaration
+and the following element belongs in the declaration recognizer itself.
 
-Внутренние константы:
+Internal constants:
 
-- `_SYMBOLS` отображает одиночные структурные символы в `TokenKind`;
-- `_REPEAT` распознаёт десятичные границы и необязательные пробелы внутри
+- `_SYMBOLS` maps single structural characters to `TokenKind`;
+- `_REPEAT` recognizes decimal bounds and optional whitespace inside
   `&<...>`.
 
 # `vrp_parser.patterns.ast`
 
-Все AST-значения — frozen dataclass со slots. После построения их нельзя
-изменить.
+All AST values are frozen dataclasses with slots. They cannot be modified
+after construction.
 
 ## `GroupMode`
 
-`StrEnum` с четырьмя режимами:
+A `StrEnum` with four modes:
 
 - `OPTIONAL_ONE = "optional_one"`;
 - `REQUIRED_ONE = "required_one"`;
 - `OPTIONAL_SET = "optional_set"`;
 - `REQUIRED_SET = "required_set"`.
 
-Он одновременно описывает обязательность группы, количество выбранных
-альтернатив и наличие/отсутствие порядка.
+It simultaneously describes whether the group is required, how many
+alternatives may be selected, and whether their order is significant.
 
 ## `Sequence`
 
@@ -467,13 +471,13 @@ class Sequence:
     span: SourceSpan
 ```
 
-Упорядоченная слева направо последовательность AST-узлов. Корень любого
-успешно разобранного паттерна — `Sequence`. Внутри группы каждая
-альтернатива также представлена отдельной `Sequence`.
+A left-to-right ordered sequence of AST nodes. The root of every successfully
+parsed pattern is a `Sequence`. Within a group, each alternative is also
+represented by a separate `Sequence`.
 
-Корневая пустая последовательность запрещена parser-ом. На промежуточном
-этапе parser может создать пустую последовательность, чтобы выдать точную
-ошибку пустой альтернативы.
+The parser prohibits an empty root sequence. During parsing, it may
+temporarily create an empty sequence so that it can report a precise error
+for an empty alternative.
 
 ## `Literal`
 
@@ -484,9 +488,9 @@ class Literal:
     span: SourceSpan
 ```
 
-Фиксированный CLI-токен. `value` хранит исходный регистр. При построении
-графа ASCII-регистр исключается из семантического key, поэтому ключевые
-слова сопоставляются без учёта ASCII-регистра.
+A fixed CLI token. `value` preserves the original case. During graph
+construction, ASCII case is excluded from the semantic key, so keywords are
+matched without regard to ASCII case.
 
 ## `Parameter`
 
@@ -498,15 +502,15 @@ class Parameter:
     span: SourceSpan
 ```
 
-Placeholder параметра:
+A parameter placeholder:
 
-- `declaration` — metadata, возвращённые recognizer-ом;
-- `source` — точный фрагмент исходного паттерна;
-- `span` — позиция этого фрагмента.
+- `declaration` is the metadata returned by the recognizer;
+- `source` is the exact fragment of the source pattern;
+- `span` is the position of that fragment.
 
-Нейтральный frontend допускает `object`, но production
-`RuntimePatternPolicy` и `GraphStepFactory` требуют экземпляр
-`ParameterDeclaration`. Иначе они выбрасывают `TypeError`.
+The neutral frontend permits an `object`, but production
+`RuntimePatternPolicy` and `GraphStepFactory` require an instance of
+`ParameterDeclaration`. Otherwise, they raise `TypeError`.
 
 ## `Group`
 
@@ -518,8 +522,9 @@ class Group:
     span: SourceSpan
 ```
 
-Группа альтернатив. Parser гарантирует как минимум одну непустую
-альтернативу. `span` включает обе скобки и, для set-группы, завершающий `*`.
+A group of alternatives. The parser guarantees at least one non-empty
+alternative. `span` includes both delimiters and, for a set group, the
+trailing `*`.
 
 ## `Repeat`
 
@@ -532,10 +537,10 @@ class Repeat:
     span: SourceSpan
 ```
 
-Ограниченное повторение параметра или группы. `span` покрывает atom и
-оператор `&<min-max>`. Parser гарантирует:
+A bounded repetition of a parameter or group. `span` covers the atom and the
+`&<min-max>` operator. The parser guarantees that:
 
-- atom имеет тип `Parameter` или `Group`;
+- the atom is a `Parameter` or `Group`;
 - `minimum <= maximum`.
 
 ## `Node`
@@ -546,267 +551,267 @@ Type alias:
 type Node = Literal | Parameter | Group | Repeat
 ```
 
-`Sequence` намеренно не входит в `Node`: она контейнер корня или
-альтернативы, а не отдельное ребро команды.
+`Sequence` is intentionally not part of `Node`: it is a container for a root
+or alternative, not a separate command edge.
 
 # `vrp_parser.patterns.errors`
 
 ## `PatternLanguageError`
 
-Наследник `ValueError`, представляющий одну ошибку языка паттернов.
+A `ValueError` subclass representing one pattern-language error.
 
 ### `PatternLanguageError.__init__(message, source, span)`
 
-Сохраняет публичные атрибуты:
+Stores these public attributes:
 
-- `message: str` — описание без координат;
-- `source: str` — полный исходный паттерн;
-- `span: SourceSpan` — точный проблемный диапазон.
+- `message: str` — a description without coordinates;
+- `source: str` — the complete source pattern;
+- `span: SourceSpan` — the exact problematic range.
 
-Стандартное строковое представление исключения:
+The exception's standard string representation is:
 
 ```text
 <message> at characters <start>:<end>
 ```
 
-Его выбрасывают lexer, parser и runtime policy.
+The lexer, parser, and runtime policy raise this exception.
 
 # `vrp_parser.patterns.parser`
 
 ## `PatternParser`
 
-Recursive-descent parser, преобразующий поток токенов в immutable AST.
+A recursive-descent parser that converts a token stream into an immutable
+AST.
 
-Экземпляр хранит текущие `_source`, `_tokens` и `_position`, поэтому один
-объект не предназначен для одновременных вызовов `parse()` из нескольких
-потоков. `PatternCompiler` использует его последовательно.
+An instance stores the current `_source`, `_tokens`, and `_position`, so one
+object is not intended for concurrent `parse()` calls from multiple threads.
+`PatternCompiler` uses it sequentially.
 
 ### `PatternParser.__init__(parameter_recognizer)`
 
-Создаёт внутренний `PatternLexer` с переданным recognizer-ом и
-инициализирует пустое состояние разбора.
+Creates an internal `PatternLexer` with the supplied recognizer and
+initializes empty parser state.
 
 ### `PatternParser.parse(source)`
 
-Вход: полная строка паттерна.
+Input: a complete pattern string.
 
-Алгоритм:
+Algorithm:
 
-1. вызвать lexer;
-2. сбросить позицию на первый токен;
-3. разобрать корневую последовательность до `END`;
-4. потребовать `END`;
-5. запретить пустой корень.
+1. call the lexer;
+2. reset the position to the first token;
+3. parse the root sequence through `END`;
+4. require `END`;
+5. prohibit an empty root.
 
-На корневом уровне `pipe_is_literal=True`, поэтому `|` превращается в
-`Literal("|")`.
+At the root level, `pipe_is_literal=True`, so `|` becomes `Literal("|")`.
 
-Результат: корневой `Sequence`.
+Result: the root `Sequence`.
 
-Исключения:
+Exceptions:
 
-- исключения `PatternLexer.tokenize()`;
-- `PatternLanguageError` при ошибке грамматики.
+- exceptions raised by `PatternLexer.tokenize()`;
+- `PatternLanguageError` for a grammar error.
 
 ### `PatternParser._parse_sequence(*, stop, pipe_is_literal)`
 
-Собирает последовательность до одного из токенов `stop`. Для каждого
-элемента сначала вызывает `_parse_atom()`, затем `_parse_repeat()`.
+Collects a sequence until it reaches a token in `stop`. For each element, it
+first calls `_parse_atom()` and then `_parse_repeat()`.
 
-Если `pipe_is_literal=False`, дополнительно завершает альтернативу перед
-`PIPE`, не поглощая его.
+When `pipe_is_literal=False`, it also ends the alternative before `PIPE`
+without consuming that token.
 
-Вход:
+Input:
 
 - `stop: frozenset[TokenKind]`;
 - `pipe_is_literal: bool`.
 
-Результат: `Sequence`, в том числе временно пустая. Её span начинается с
-текущего токена и заканчивается концом последнего элемента.
+Result: a `Sequence`, which may be temporarily empty. Its span starts at the
+current token and ends at the end of the last element.
 
 ### `PatternParser._parse_atom(*, pipe_is_literal)`
 
-Поглощает один токен и создаёт `Node`:
+Consumes one token and creates a `Node`:
 
 - `PARAMETER` → `Parameter`;
 - `LITERAL` → `Literal`;
 - `STAR` → `Literal("*")`;
-- корневой `PIPE` → `Literal("|")`;
-- открывающая скобка → `_parse_group()`.
+- a root-level `PIPE` → `Literal("|")`;
+- an opening delimiter → `_parse_group()`.
 
-Вызывает `_fail()` для:
+Calls `_fail()` for:
 
-- неожиданной закрывающей скобки;
-- repeat без предшествующего atom;
-- `PIPE` там, где он не может быть literal;
-- `END` или другого неожиданного токена.
+- an unexpected closing delimiter;
+- a repeat without a preceding atom;
+- `PIPE` where it cannot be a literal;
+- `END` or another unexpected token.
 
 ### `PatternParser._parse_group(opening)`
 
-Разбирает required `{...}` или optional `[...]` группу.
+Parses a required `{...}` or optional `[...]` group.
 
-Алгоритм:
+Algorithm:
 
-1. определить ожидаемую закрывающую скобку;
-2. разобрать одну или несколько непустых альтернатив;
-3. поглотить закрывающую скобку;
-4. если следующий токен `STAR`, поглотить его и выбрать set-режим;
-5. иначе выбрать one-режим.
+1. determine the expected closing delimiter;
+2. parse one or more non-empty alternatives;
+3. consume the closing delimiter;
+4. if the next token is `STAR`, consume it and select a set mode;
+5. otherwise, select a one mode.
 
-Результат: `Group`. Его `span` заканчивается после `*` для set-группы или
-после закрывающей скобки для one-группы.
+Result: a `Group`. Its `span` ends after `*` for a set group or after the
+closing delimiter for a one group.
 
-Исключения: `PatternLanguageError` для пустой альтернативы, отсутствующей
-или неправильной закрывающей скобки и других вложенных ошибок.
+Exceptions: `PatternLanguageError` for an empty alternative, a missing or
+incorrect closing delimiter, or another nested error.
 
 ### `PatternParser._parse_repeat(atom)`
 
-Если текущий токен не `REPEAT`, возвращает исходный `atom` без изменений.
+If the current token is not `REPEAT`, returns the original `atom` unchanged.
 
-Если repeat присутствует:
+If a repeat is present:
 
-1. извлекает `(minimum, maximum)`;
-2. проверяет `maximum >= minimum`;
-3. проверяет, что atom — `Parameter` или `Group`;
-4. возвращает `Repeat`.
+1. extract `(minimum, maximum)`;
+2. verify `maximum >= minimum`;
+3. verify that the atom is a `Parameter` or `Group`;
+4. return a `Repeat`.
 
-`Literal` перед repeat приводит к `PatternLanguageError`. Метод разбирает
-не более одного repeat для atom.
+A `Literal` before a repeat produces `PatternLanguageError`. The method
+parses at most one repeat for an atom.
 
 ### `PatternParser._current`
 
-Read-only private property. Возвращает `Token` по текущему `_position`.
-Parser всегда поддерживает в конце `_tokens` элемент `END`, поэтому при
-корректной внутренней работе индекс остаётся допустимым.
+A read-only private property. Returns the `Token` at the current `_position`.
+The parser always keeps an `END` element at the end of `_tokens`, so the
+index remains valid during correct internal operation.
 
 ### `PatternParser._advance()`
 
-Возвращает текущий токен и увеличивает позицию, если это не `END`. На `END`
-позиция не меняется, что защищает от выхода за tuple.
+Returns the current token and advances the position unless the token is
+`END`. At `END`, the position does not change, preventing access beyond the
+tuple.
 
 ### `PatternParser._expect(kind)`
 
-Проверяет kind текущего токена.
+Checks the current token's kind.
 
-- При совпадении поглощает и возвращает токен через `_advance()`.
-- При несовпадении вызывает `_fail()` с ожидаемым kind, фактическим text и
-  span фактического токена.
+- On a match, consumes and returns the token through `_advance()`.
+- On a mismatch, calls `_fail()` with the expected kind, actual text, and
+  span of the actual token.
 
 ### `PatternParser._fail(message, span)`
 
-Всегда выбрасывает `PatternLanguageError`, добавляя сохранённый `_source`.
-Return type — `NoReturn`.
+Always raises `PatternLanguageError`, adding the stored `_source`. Its return
+type is `NoReturn`.
 
 # `vrp_parser.patterns.policy`
 
 ## `RuntimePatternPolicy`
 
-Слой проектных ограничений поверх нейтральной грамматики. Parser сам по себе
-не может отличить неизвестный placeholder от обычного literal. Policy
-предотвращает тихое превращение опечатки вроде `STRING<1-x>` или malformed
-точного placeholder’а `X.X.X.X/suffix` в literal.
+A layer of project constraints over the neutral grammar. The parser itself
+cannot distinguish an unknown placeholder from an ordinary literal. The
+policy prevents a typo such as `STRING<1-x>` or a malformed exact placeholder
+such as `X.X.X.X/suffix` from silently becoming a literal.
 
-Внутренние списки:
+Internal lists:
 
-- `_DECLARATION_PREFIXES` — известные начала параметризованных объявлений;
-- `_EXACT_PLACEHOLDERS` — встроенные объявления с фиксированным написанием,
-  включая IPv4 address, IPv6 address и IPv6 prefix.
+- `_DECLARATION_PREFIXES` contains known beginnings of parameterized
+  declarations;
+- `_EXACT_PLACEHOLDERS` contains built-in declarations with fixed spellings,
+  including an IPv4 address, IPv6 address, and IPv6 prefix.
 
 ### `RuntimePatternPolicy.validate(ast, source)`
 
-Вход:
+Input:
 
-- `ast: Sequence` — уже успешно построенный AST;
-- `source: str` — та же исходная строка.
+- `ast: Sequence` — an already constructed AST;
+- `source: str` — the same source string.
 
-Алгоритм:
+Algorithm:
 
-1. рекурсивно собрать все `Parameter`;
-2. найти каждое появление известного declaration prefix в исходной строке;
-3. убедиться, что его диапазон покрыт span реального `Parameter`;
-4. аналогично проверить exact placeholders;
-5. проверить, что каждый `TEXT` является последним элементом возможного
-   route и не находится под repeat.
+1. recursively collect every `Parameter`;
+2. locate every occurrence of a known declaration prefix in the source;
+3. verify that its range is covered by the span of an actual `Parameter`;
+4. validate exact placeholders in the same way;
+5. verify that every `TEXT` is the final element of every possible route and
+   is not beneath a repeat.
 
-Ничего не возвращает.
+Returns nothing.
 
-Исключения:
+Exceptions:
 
-- `PatternLanguageError`, если известное написание осталось literal,
-  malformed, а также если `TEXT` не завершает route либо повторяется;
-- `TypeError`, если production AST содержит неизвестный тип declaration.
+- `PatternLanguageError` if a known spelling remains a literal, is
+  malformed, or if `TEXT` does not terminate a route or is repeated;
+- `TypeError` if a production AST contains an unknown declaration type.
 
-IP-placeholder считается корректным только тогда, когда зарегистрированный
-exact recognizer действительно превратил его диапазон в `Parameter`. Поэтому
-проверка policy также ловит недопустимые суффиксы после зарезервированного
-написания.
+An IP placeholder is valid only when a registered exact recognizer actually
+converted its range into a `Parameter`. Policy validation therefore also
+catches unsupported suffixes after a reserved spelling.
 
 ### `RuntimePatternPolicy._claimed(parameters, start, end)`
 
-Возвращает `True`, если существует `Parameter`, чей span полностью покрывает
-диапазон `[start, end)`.
+Returns `True` if a `Parameter` exists whose span fully covers the
+`[start, end)` range.
 
-Это проверка владения исходным фрагментом. Простого пересечения диапазонов
-недостаточно.
+This is an ownership check for the source fragment. A mere intersection of
+ranges is insufficient.
 
 ### `RuntimePatternPolicy._validate_text_sequence(sequence, source, *, followed)`
 
-Рекурсивно проверяет расположение bounded remainder-параметров
+Recursively validates the placement of bounded remainder parameters
 `TEXT<min-max>`.
 
-- `TEXT` допустим как последний элемент корневой последовательности:
+- `TEXT` is valid as the last element of the root sequence:
   `TEXT<1-4096>`;
-- `TEXT` допустим после keyword: `description TEXT<1-80>`;
-- если после текущей последовательности существует продолжение,
-  `followed=True`;
-- `TEXT` с последующим literal, parameter или внешним продолжением group
-  отклоняется с `PatternLanguageError`;
-- для обычной `Group` метод проверяет каждую alternative с учётом того,
-  следует ли что-либо за самой группой.
+- `TEXT` is valid after a keyword: `description TEXT<1-80>`;
+- when a continuation exists after the current sequence, `followed=True`;
+- a `TEXT` followed by a literal, parameter, or an outer group continuation
+  is rejected with `PatternLanguageError`;
+- for an ordinary `Group`, the method validates every alternative while
+  accounting for whether anything follows the group itself.
 
-Ограничение связано с reader-семантикой: `TEXT` поглощает весь остаток строки,
-поэтому никакой следующий элемент сопоставить уже невозможно.
+This constraint follows from reader semantics: `TEXT` consumes the entire
+remainder of the line, so no subsequent element can be matched.
 
 ### `RuntimePatternPolicy._validate_repeated_text(repeat, source)`
 
-Запрещает непосредственно повторяемый `TEXT<min-max>`, поскольку первый
-remainder уже поглощает весь доступный ввод. Для повторяемой группы рекурсивно
-проверяет каждую alternative как имеющую продолжение: после одного повторения
-потенциально должен начаться следующий.
+Prohibits a directly repeated `TEXT<min-max>` because the first remainder
+already consumes all available input. For a repeated group, recursively
+validates every alternative as though it had a continuation: another
+repetition may need to begin after the first one.
 
 ### `RuntimePatternPolicy._is_text(parameter)`
 
-Возвращает `True`, когда `parameter.declaration.type_id == "text"`. Для
-проверки production-инварианта использует `_declaration()`.
+Returns `True` when `parameter.declaration.type_id == "text"`. Uses
+`_declaration()` to enforce the production invariant.
 
 ### `RuntimePatternPolicy._parameters(sequence)`
 
-Generator, рекурсивно обходящий:
+A generator that recursively visits:
 
-- непосредственные `Parameter`;
-- все alternatives у `Group`;
-- `Repeat.atom`, если это `Parameter`;
-- все alternatives повторяемой `Group`.
+- direct `Parameter` nodes;
+- every alternative of a `Group`;
+- `Repeat.atom` when it is a `Parameter`;
+- every alternative of a repeated `Group`.
 
-`Literal` пропускается. Результат — `Iterator[Parameter]`.
+It skips `Literal`. The result is an `Iterator[Parameter]`.
 
 ### `RuntimePatternPolicy._declaration(parameter)`
 
-Проверяет production-инвариант: `parameter.declaration` должен быть
+Validates the production invariant: `parameter.declaration` must be a
 `ParameterDeclaration`.
 
-Результат: типизированный `ParameterDeclaration`.
+Result: a typed `ParameterDeclaration`.
 
-Исключение: `TypeError("parameter AST contains an unknown declaration")`.
+Exception: `TypeError("parameter AST contains an unknown declaration")`.
 
 ### `RuntimePatternPolicy._fail(message, source, start, end)`
 
-Создаёт `SourceSpan(start, end)` и выбрасывает `PatternLanguageError`.
-Нормально не возвращается.
+Creates `SourceSpan(start, end)` and raises `PatternLanguageError`. It does
+not return normally.
 
 # `vrp_parser.patterns.__init__`
 
-Package facade экспортирует:
+The package facade exports:
 
 ```text
 Group, GroupMode, Literal, Node, Parameter,
@@ -815,7 +820,7 @@ RecognizedParameter, Repeat, RuntimePatternPolicy, Sequence,
 SourceSpan, Token, TokenKind
 ```
 
-Это стабильная точка импорта frontend-сущностей внутри проекта:
+This is the stable import point for frontend entities within the project:
 
 ```python
 from vrp_parser.patterns import PatternParser, Sequence
@@ -825,17 +830,17 @@ from vrp_parser.patterns import PatternParser, Sequence
 
 ## `PatternDocumentError`
 
-Наследник `ValueError`. Сигнализирует о неверной форме входного
-JSON-совместимого документа, а не о синтаксисе отдельного паттерна.
+A `ValueError` subclass. It signals an invalid shape for the input
+JSON-compatible document, rather than invalid syntax in one pattern.
 
-Примеры причин:
+Example causes:
 
-- отсутствует `commands`;
-- `commands` не является массивом строк;
-- список пуст;
-- один из элементов пуст или не строка.
+- `commands` is missing;
+- `commands` is not an array of strings;
+- the list is empty;
+- an element is empty or is not a string.
 
-Собственных полей и методов класс не добавляет.
+The class adds no fields or methods of its own.
 
 ## `PatternIssue`
 
@@ -848,162 +853,164 @@ class PatternIssue:
     span: SourceSpan
 ```
 
-Одна нормализованная ошибка компиляции:
+One normalized compilation error:
 
-- `pattern_index` — исходная позиция в `commands`;
-- `pattern` — полная строка;
-- `message` — сообщение исходного исключения;
-- `span` — проблемный диапазон.
+- `pattern_index` is the original position in `commands`;
+- `pattern` is the complete string;
+- `message` is the source exception's message;
+- `span` is the problematic range.
 
-Объект immutable. Дополнительных проверок значений нет: корректность индекса
-и span обеспечивает compiler.
+The object is immutable. It performs no additional value validation: the
+compiler is responsible for a correct index and span.
 
 ## `PatternCompilationError`
 
-Наследник `ValueError`, содержащий все ошибки одного прохода компиляции.
+A `ValueError` subclass containing all errors from one compilation pass.
 
 ### `PatternCompilationError.__init__(issues)`
 
-Вход: непустой `tuple[PatternIssue, ...]`.
+Input: a non-empty `tuple[PatternIssue, ...]`.
 
-Сохраняет tuple в публичном атрибуте `issues`. Порядок соответствует порядку
-паттернов во входном `commands`.
+Stores the tuple in the public `issues` attribute. Its order corresponds to
+the order of patterns in the input `commands`.
 
-Текст исключения показывает первую проблему:
+The exception text shows the first problem:
 
 ```text
 pattern #7: expected right_brace, found ''
 ```
 
-При нескольких проблемах добавляется суффикс:
+When there are multiple problems, it adds a suffix:
 
 ```text
  (+2 more)
 ```
 
-Если передан пустой tuple, constructor выбрасывает обычный `ValueError`,
-поскольку exception без issues нарушает инвариант.
+If an empty tuple is supplied, the constructor raises an ordinary
+`ValueError`, because an exception without issues would violate its
+invariant.
 
 # `vrp_parser.compiler`
 
 ## `PatternCompiler`
 
-Application service, который преобразует коллекцию исходных строк в один
-`CommandGraph`. Он отвечает за полный сбор ошибок и source identity, но
-делегирует grammar, policy и построение графа отдельным объектам.
+An application service that converts a collection of source strings into one
+`CommandGraph`. It is responsible for complete error collection and source
+identity, while delegating grammar, policy, and graph construction to
+separate objects.
 
 ### `PatternCompiler.__init__(parameter_types, graph_builder=None, pattern_policy=None)`
 
-Зависимости:
+Dependencies:
 
-- `parameter_types: ParameterTypeRegistry` — registry declaration
-  recognizer-ов;
-- `graph_builder: CommandGraphBuilder | None` — необязательная замена
-  builder; по умолчанию создаётся `CommandGraphBuilder()`;
-- `pattern_policy: RuntimePatternPolicy | None` — необязательная policy; по
-  умолчанию создаётся `RuntimePatternPolicy()`.
+- `parameter_types: ParameterTypeRegistry` — the registry of declaration
+  recognizers;
+- `graph_builder: CommandGraphBuilder | None` — an optional replacement
+  builder; by default, a `CommandGraphBuilder()` is created;
+- `pattern_policy: RuntimePatternPolicy | None` — an optional policy; by
+  default, a `RuntimePatternPolicy()` is created.
 
-Constructor создаёт один `PatternParser(parameter_types)`. Registry должен
-оставаться согласованным на протяжении компиляции.
+The constructor creates one `PatternParser(parameter_types)`. The registry
+must remain consistent throughout compilation.
 
 ### `PatternCompiler.compile(commands)`
 
-Вход: `commands: tuple[str, ...]`, уже проверенный document-слоем.
+Input: `commands: tuple[str, ...]`, already validated by the document layer.
 
-Для каждого элемента в исходном порядке:
+For each element in source order:
 
-1. построить AST;
-2. проверить runtime policy;
-3. при ошибке добавить `PatternIssue` и перейти к следующей строке;
-4. при успехе создать `PatternSource`.
+1. build the AST;
+2. validate runtime policy;
+3. on an error, add a `PatternIssue` and continue with the next string;
+4. on success, create a `PatternSource`.
 
-Compiler перехватывает:
+The compiler catches:
 
 - `PatternLanguageError`;
 - `ParameterDeclarationError`;
 - `ParameterRegistryError`.
 
-Он не прекращает обработку на первой ошибке. Если после прохода есть хотя бы
-один issue, выбрасывается `PatternCompilationError(tuple(issues))` и граф не
-возвращается. Неожиданные programming errors не подавляются.
+It does not stop at the first error. If the pass collects at least one issue,
+it raises `PatternCompilationError(tuple(issues))` and returns no graph.
+Unexpected programming errors are not suppressed.
 
-При отсутствии ошибок вызывается:
+When there are no errors, it calls:
 
 ```python
 self._graph_builder.build(tuple(patterns))
 ```
 
-Результат: immutable `CommandGraph`.
+Result: an immutable `CommandGraph`.
 
 ### `PatternCompiler._pattern_id(original, occurrence)`
 
-Static method формирования стабильного source ID:
+A static method that creates a stable source ID:
 
 ```text
-pattern:<20 первых hex символов sha256 UTF-8 строки>:<occurrence>
+pattern:<first 20 hexadecimal characters of the UTF-8 string's sha256>:<occurrence>
 ```
 
-Например:
+For example:
 
 ```text
 pattern:7d89...e410:0
 ```
 
-`occurrence` — номер точного дубликата этой строки среди успешно
-обработанных источников, начиная с нуля. Поэтому:
+`occurrence` is the zero-based ordinal of an exact duplicate of this string
+among successfully processed sources. Therefore:
 
-- вставка другого паттерна не меняет ID;
-- изменение регистра или пробелов меняет hash;
-- точные дубликаты получают разные ID;
-- `pattern_index` при перестановке документа меняется, а content part ID —
-  нет.
+- inserting a different pattern does not change the ID;
+- changing case or whitespace changes the hash;
+- exact duplicates receive different IDs;
+- reordering the document changes `pattern_index`, but not the content part
+  of the ID.
 
-Результат: `str`.
+Result: `str`.
 
 ### `PatternCompiler._issue(index, pattern, error)`
 
-Static adapter произвольного ожидаемого frontend/registry исключения к
+A static adapter from an arbitrary expected frontend or registry exception to
 `PatternIssue`.
 
-Выбор span:
+Span selection:
 
-1. использовать `error.span`, если это `SourceSpan`;
-2. иначе взять integer-атрибуты `error.start` и `error.end`;
-3. невалидный/missing `start` заменить на `0`;
-4. невалидный/missing `end` заменить на `len(pattern)`.
+1. use `error.span` if it is a `SourceSpan`;
+2. otherwise, take integer attributes `error.start` and `error.end`;
+3. replace an invalid or missing `start` with `0`;
+4. replace an invalid or missing `end` with `len(pattern)`.
 
-Сообщение берётся из `error.message`, а при его отсутствии — из
-`str(error)`.
+The message comes from `error.message`, or from `str(error)` when that
+attribute is absent.
 
-Результат: `PatternIssue`.
+Result: `PatternIssue`.
 
-# Линеаризация маршрутов
+# Route Linearization
 
-Обычные choice-группы удобно раскрыть при компиляции: тогда их literal и
-parameter prefixes объединяются с префиксами других паттернов. Полное
-раскрытие set-групп или repeats было бы факториальным/экспоненциальным,
-поэтому они остаются единым символическим шагом.
+Expanding ordinary choice groups during compilation is useful because their
+literal and parameter prefixes can then merge with prefixes from other
+patterns. Fully expanding set groups or repeats would have factorial or
+exponential complexity, so they remain single symbolic steps.
 
-Пример:
+Example:
 
 ```text
 show { interface | version }
 ```
 
-даёт два `LinearRoute`:
+produces two `LinearRoute` objects:
 
 ```text
 ("show", "interface")
 ("show", "version")
 ```
 
-Паттерн:
+The pattern:
 
 ```text
 select { red | green | blue } *
 ```
 
-даёт один маршрут:
+produces one route:
 
 ```text
 ("select", Group(REQUIRED_SET, ...))
@@ -1020,95 +1027,98 @@ class LinearRoute:
     trace: tuple[VariationStep, ...] = ()
 ```
 
-Одна линейная вариация исходного AST:
+One linear variation of the source AST:
 
-- `steps` — последовательность будущих рёбер;
-- `trace` — статически известные решения choice/optional.
+- `steps` is the sequence of future edges;
+- `trace` contains statically known choice and optional decisions.
 
-`VariationStep` импортируется из result model. Для этого слоя используются:
+`VariationStep` is imported from the result model. This layer uses:
 
-- `kind="choice"` с `selected=(alternative_index,)`;
-- `kind="optional"` с пустым `selected` при пропуске;
-- `kind="optional"` с индексом при выборе ветви.
+- `kind="choice"` with `selected=(alternative_index,)`;
+- `kind="optional"` with an empty `selected` when omitted;
+- `kind="optional"` with an index when a branch is selected.
 
 ## `RouteLimitExceeded`
 
-Внутренний `RuntimeError`. Сигнализирует, что раскрытие одного паттерна
-превысило допустимое количество вариантов.
+An internal `RuntimeError`. It signals that expansion of one pattern exceeded
+the permitted number of variations.
 
-Это не пользовательская ошибка компиляции: публичный `expand()` ловит её и
-возвращает исходную последовательность одним символическим маршрутом.
+This is not a user-facing compilation error: the public `expand()` method
+catches it and returns the original sequence as one symbolic route.
 
 ## `RouteExpander`
 
-Контролируемо раскрывает `REQUIRED_ONE` и `OPTIONAL_ONE`, сохраняя сложные
-конструкции символическими.
+Expands `REQUIRED_ONE` and `OPTIONAL_ONE` in a controlled manner while
+retaining complex constructs as symbolic nodes.
 
 ### `RouteExpander.__init__(maximum_routes=512)`
 
-`maximum_routes` — максимальное число линейных вариантов одного паттерна.
+`maximum_routes` is the maximum number of linear variations for one pattern.
 
-- Значение должно быть положительным.
-- `maximum_routes < 1` приводит к `ValueError`.
+- The value must be positive.
+- `maximum_routes < 1` raises `ValueError`.
 
-Лимит защищает и отдельную группу, и декартово произведение нескольких
-групп в последовательности.
+The limit protects both an individual group and the Cartesian product of
+multiple groups in a sequence.
 
 ### `RouteExpander.expand(sequence)`
 
-Вход: корневая `Sequence`.
+Input: the root `Sequence`.
 
-Нормальный результат: tuple раскрытых `LinearRoute`.
+Normal result: a tuple of expanded `LinearRoute` objects.
 
-Если на любом уровне возникает `RouteLimitExceeded`, метод полностью
-отказывается от частичного раскрытия и возвращает:
+If `RouteLimitExceeded` occurs at any level, the method abandons all partial
+expansion and returns:
 
 ```python
 (LinearRoute(sequence.items),)
 ```
 
-Это важно: fallback сохраняет корректность всего исходного паттерна и не
-смешивает частично статическую provenance с символической.
+This is important: the fallback preserves correctness of the entire source
+pattern and does not combine partially static provenance with symbolic
+provenance.
 
 ### `RouteExpander._sequence(sequence, *, path)`
 
-Начинает с одного пустого маршрута. Для каждого узла:
+Starts with one empty route. For each node:
 
-1. получить его маршруты через `_node()`;
-2. умножить накопленные маршруты на варианты узла через `_product()`.
+1. obtain its routes through `_node()`;
+2. multiply the accumulated routes by the node's alternatives through
+   `_product()`.
 
-`path` задаёт адрес AST для trace. Корень начинается с `"root"`, а индекс
-элемента добавляется через точку: `"root.0"`, `"root.1"`.
+`path` identifies an AST location for the trace. The root begins with
+`"root"`, and the element index is appended after a dot: `"root.0"`,
+`"root.1"`.
 
-Результат: `tuple[LinearRoute, ...]`.
+Result: `tuple[LinearRoute, ...]`.
 
 ### `RouteExpander._node(node, *, path)`
 
-Поведение по типу узла:
+Behavior by node type:
 
-- literal, parameter, repeat → один маршрут с самим узлом;
-- `OPTIONAL_SET`, `REQUIRED_SET` → один маршрут с символической группой;
-- `REQUIRED_ONE` → маршруты всех alternatives;
-- `OPTIONAL_ONE` → сначала пустой маршрут пропуска, затем маршруты всех
+- literal, parameter, repeat → one route containing the node itself;
+- `OPTIONAL_SET`, `REQUIRED_SET` → one route containing a symbolic group;
+- `REQUIRED_ONE` → routes from all alternatives;
+- `OPTIONAL_ONE` → first an empty omitted route, followed by routes from all
   alternatives.
 
-Для вложенной alternative её индекс добавляется к path до рекурсивного
-разбора. После trace вложенной ветви добавляется `VariationStep` выбора
-текущей группы.
+For a nested alternative, its index is appended to the path before recursive
+processing. After the nested branch's trace, the method appends the
+`VariationStep` that selects the current group.
 
-Пример для второго элемента корня:
+Example for the second element at the root:
 
 ```text
 [ brief | detail ]
 ```
 
-Trace пропуска:
+Trace for omission:
 
 ```python
 VariationStep(kind="optional", path="root.1", selected=())
 ```
 
-Trace выбора `detail`:
+Trace for selecting `detail`:
 
 ```python
 VariationStep(kind="optional", path="root.1", selected=(1,))
@@ -1116,39 +1126,41 @@ VariationStep(kind="optional", path="root.1", selected=(1,))
 
 ### `RouteExpander._product(left, right)`
 
-Строит декартово произведение маршрутов:
+Builds the Cartesian product of routes:
 
-- steps объединяются конкатенацией;
-- traces объединяются конкатенацией;
-- порядок детерминирован: сначала порядок `left`, внутри него порядок
-  `right`.
+- steps are joined by concatenation;
+- traces are joined by concatenation;
+- order is deterministic: `left` order first, with `right` order nested
+  inside it.
 
-До materialization проверяет `len(left) * len(right)` через `_check_limit()`.
+Before materialization, it validates `len(left) * len(right)` through
+`_check_limit()`.
 
-Результат: `tuple[LinearRoute, ...]`.
+Result: `tuple[LinearRoute, ...]`.
 
 ### `RouteExpander._check_limit(size)`
 
-Если `size > self._maximum_routes`, выбрасывает `RouteLimitExceeded`.
-Иначе ничего не возвращает.
+If `size > self._maximum_routes`, raises `RouteLimitExceeded`. Otherwise,
+returns nothing.
 
-# Семантические шаги
+# Semantic Steps
 
-Для объединения префиксов нельзя сравнивать AST dataclass напрямую:
-`SourceSpan` и регистр literal относятся к исходной записи, а не к смыслу
-шага. `GraphStepFactory` создаёт отдельный hashable key без spans.
+AST dataclasses cannot be compared directly when merging prefixes:
+`SourceSpan` and literal case belong to the source representation, not to the
+meaning of a step. `GraphStepFactory` creates a separate hashable key without
+spans.
 
 # `vrp_parser.graph.steps`
 
 ## `GraphStepFactory`
 
-Преобразует AST node в `GraphStep(expression, key)`.
+Converts an AST node into `GraphStep(expression, key)`.
 
 ### `GraphStepFactory.create(expression)`
 
-Вход: один `Node`.
+Input: one `Node`.
 
-Результат:
+Result:
 
 ```python
 GraphStep(
@@ -1157,12 +1169,12 @@ GraphStep(
 )
 ```
 
-`expression` сохраняет читаемый AST первого встретившегося источника; `key`
-используется для merge.
+`expression` preserves the readable AST from the first source encountered;
+`key` is used for merging.
 
 ### `GraphStepFactory._node_key(node)`
 
-Строит рекурсивный tuple:
+Builds a recursive tuple:
 
 ```python
 Literal:
@@ -1183,77 +1195,77 @@ Group:
 (
     "group",
     mode.value,
-    tuple(sequence_key для каждой alternative),
+    tuple(sequence_key for each alternative),
 )
 
 Repeat:
 (
     "repeat",
-    key повторяемого atom,
+    key of the repeated atom,
     minimum,
     maximum,
 )
 ```
 
-Следствия:
+Consequences:
 
-- spans не влияют на merge;
-- ASCII-регистр literal не влияет на merge;
-- порядок alternatives группы влияет;
-- режим группы и repeat bounds влияют;
-- точный `declaration.source` входит в key;
-- metadata должна следовать типизированному контракту
-  `tuple[tuple[str, str], ...]` и состоять из hashable значений;
-  `ParameterDeclaration` отдельно не проверяет hashability во время runtime.
+- spans do not affect merging;
+- ASCII case of a literal does not affect merging;
+- group alternative order does affect merging;
+- group mode and repeat bounds do affect merging;
+- the exact `declaration.source` is part of the key;
+- metadata must follow the typed `tuple[tuple[str, str], ...]` contract and
+  contain hashable values; `ParameterDeclaration` itself does not validate
+  hashability at runtime.
 
-Неизвестный тип узла приводит к `TypeError`.
+An unknown node type produces `TypeError`.
 
 ### `GraphStepFactory._sequence_key(sequence)`
 
-Возвращает tuple ключей всех элементов `Sequence` в исходном порядке.
-Используется рекурсивно для alternatives группы.
+Returns a tuple containing the key for every `Sequence` element in source
+order. It is used recursively for group alternatives.
 
 ### `GraphStepFactory._declaration(node)`
 
-Проверяет, что `Parameter.declaration` — production
-`ParameterDeclaration`, и возвращает его.
+Verifies that `Parameter.declaration` is a production
+`ParameterDeclaration` and returns it.
 
-Исключение: `TypeError("parameter AST contains an unknown declaration")`.
+Exception: `TypeError("parameter AST contains an unknown declaration")`.
 
-# Модель общего графа
+# Shared Graph Model
 
-Граф является trie-подобной структурой с общими префиксами. В отличие от
-обычного trie, каждое ребро хранит множество `route_ids`, которым разрешено
-его проходить.
+The graph is a trie-like structure with shared prefixes. Unlike an ordinary
+trie, every edge stores the set of `route_ids` that may traverse it.
 
-Это решает проблему ложного crossover:
+This solves the false-crossover problem:
 
 ```text
 command one left
 command two right
 ```
 
-После merge общие части могут находиться рядом в одном графе, но маршрут
-первого паттерна не имеет права закончиться через ребро второго. Runtime
-matcher переносит множество активных route IDs и пересекает его с
-`edge.route_ids` на каждом шаге. В конце принимаются только IDs из
+After merging, shared parts may appear next to one another in the same graph,
+but the first pattern's route must not finish through the second pattern's
+edge. The runtime matcher carries the set of active route IDs and intersects
+it with `edge.route_ids` at each step. At the end, it accepts only IDs in
 `node.accepting_routes`.
 
 # `vrp_parser.graph.model`
 
 ## `ascii_lower(value)`
 
-Module-level функция case folding для CLI-keywords.
+A module-level case-folding function for CLI keywords.
 
-Вход: `value: str`.
+Input: `value: str`.
 
-Алгоритм: `str.translate()` заменяет только ASCII `A-Z` на `a-z`.
-Non-ASCII символы не меняются.
+Algorithm: `str.translate()` replaces only ASCII `A-Z` with `a-z`.
+Non-ASCII characters remain unchanged.
 
-Результат: `str`.
+Result: `str`.
 
-Это намеренно уже, чем `str.lower()` или `str.casefold()`: поведение
-сетевого CLI для ASCII keywords не зависит от Unicode case rules.
+This is intentionally narrower than `str.lower()` or `str.casefold()`: the
+network CLI's behavior for ASCII keywords is independent of Unicode case
+rules.
 
 ## `PatternSource`
 
@@ -1266,12 +1278,12 @@ class PatternSource:
     ast: Sequence
 ```
 
-Одна запись из `commands` после успешного frontend:
+One entry from `commands` after successful frontend processing:
 
-- `pattern_id` — content-based ID с номером дубликата;
-- `index` — позиция в исходном JSON-массиве;
-- `original` — исходная строка без нормализации;
-- `ast` — immutable корень.
+- `pattern_id` is a content-based ID with a duplicate ordinal;
+- `index` is the position in the source JSON array;
+- `original` is the unnormalized source string;
+- `ast` is the immutable root.
 
 ## `GraphStep`
 
@@ -1282,10 +1294,10 @@ class GraphStep:
     key: tuple[object, ...]
 ```
 
-Семантическое выражение ребра:
+The semantic expression for an edge:
 
-- `expression` нужен runtime matcher;
-- `key` нужен builder для объединения эквивалентных шагов.
+- `expression` is needed by the runtime matcher;
+- `key` is needed by the builder to merge equivalent steps.
 
 ## `RouteSource`
 
@@ -1297,13 +1309,14 @@ class RouteSource:
     static_trace: tuple[VariationStep, ...]
 ```
 
-Provenance одного линейного маршрута:
+Provenance for one linear route:
 
-- глобальный integer `route_id`;
-- ссылка на полный исходный `PatternSource`;
-- решения, уже принятые `RouteExpander`.
+- the global integer `route_id`;
+- a reference to the complete source `PatternSource`;
+- decisions already made by `RouteExpander`.
 
-Даже точные дубликаты паттерна имеют разные `PatternSource` и маршруты.
+Even exact duplicate patterns have distinct `PatternSource` objects and
+routes.
 
 ## `CommandEdge`
 
@@ -1315,13 +1328,13 @@ class CommandEdge:
     route_ids: frozenset[int]
 ```
 
-Ориентированное ребро:
+A directed edge:
 
-- `step` описывает, что нужно распознать;
-- `target` — следующий узел;
-- `route_ids` — маршруты-владельцы этого перехода.
+- `step` describes what must be recognized;
+- `target` is the next node;
+- `route_ids` are the routes that own this transition.
 
-Пустое `route_ids` builder не создаёт.
+The builder never creates an empty `route_ids`.
 
 ## `CommandNode`
 
@@ -1333,23 +1346,24 @@ class CommandNode:
     accepting_routes: frozenset[int]
 ```
 
-Один узел общего префиксного графа:
+One node in the shared-prefix graph:
 
-- `literal_edges` — быстрый индекс по `ascii_lower(keyword)`;
-- `expression_edges` — параметры, группы и repeats;
-- `accepting_routes` — маршруты, которые могут завершиться именно здесь.
+- `literal_edges` is a fast index by `ascii_lower(keyword)`;
+- `expression_edges` contains parameters, groups, and repeats;
+- `accepting_routes` contains routes that may end at this exact node.
 
-Literal вынесены в отдельный mapping, чтобы runtime lookup не перебирал все
-выражения.
+Literals are kept in a separate mapping so runtime lookup does not have to
+scan every expression.
 
 ### `CommandNode.create(literal_edges, expression_edges, accepting_routes)`
 
-Class method защитного construction.
+A class method for defensive construction.
 
-Копирует входной `dict` и оборачивает его в `MappingProxyType`.
-Tuple и frozenset уже immutable.
+Copies the input `dict` and wraps it in `MappingProxyType`. The tuple and
+frozenset are already immutable.
 
-Результат: `CommandNode`. Последующая мутация исходного dict не меняет узел.
+Result: a `CommandNode`. Subsequent mutation of the source dictionary does
+not change the node.
 
 ## `CommandGraph`
 
@@ -1361,24 +1375,24 @@ class CommandGraph:
     routes: Mapping[int, RouteSource]
 ```
 
-Завершённый артефакт компиляции:
+The completed compilation artifact:
 
-- `root` — старт matching;
-- `patterns` — все источники в JSON-порядке;
-- `routes` — provenance по `route_id`.
+- `root` is the matching start node;
+- `patterns` contains all sources in JSON order;
+- `routes` provides provenance by `route_id`.
 
 ### `CommandGraph.create(root, patterns, routes)`
 
-Копирует mutable `routes: dict[int, RouteSource]` и защищает
+Copies the mutable `routes: dict[int, RouteSource]` and protects it with
 `MappingProxyType`.
 
-Результат: `CommandGraph`.
+Result: a `CommandGraph`.
 
 # `vrp_parser.graph.builder`
 
 ## `_DraftEdge`
 
-Внутренний mutable dataclass:
+An internal mutable dataclass:
 
 ```python
 @dataclass(slots=True)
@@ -1388,12 +1402,12 @@ class _DraftEdge:
     route_ids: set[int]
 ```
 
-Используется только на этапе build. `route_ids` пополняется при вставке
-каждого маршрута.
+Used only during the build stage. `route_ids` is extended as each route is
+inserted.
 
 ## `_DraftNode`
 
-Внутренний mutable dataclass:
+An internal mutable dataclass:
 
 ```python
 @dataclass(slots=True)
@@ -1402,79 +1416,80 @@ class _DraftNode:
     accepting_routes: set[int]
 ```
 
-`edges` индексируются семантическим `GraphStep.key`. Поэтому одинаковые
-шаги разных маршрутов физически используют одно draft-ребро.
+`edges` is indexed by the semantic `GraphStep.key`. Therefore, equal steps
+from different routes physically share one draft edge.
 
 ## `CommandGraphBuilder`
 
-Строит shared-prefix graph и затем рекурсивно замораживает его.
+Builds a shared-prefix graph and then recursively freezes it.
 
 ### `CommandGraphBuilder.__init__(route_expander=None, step_factory=None)`
 
-Необязательные зависимости:
+Optional dependencies:
 
-- `RouteExpander`, по умолчанию новый экземпляр с лимитом 512;
-- `GraphStepFactory`, по умолчанию новый экземпляр.
+- `RouteExpander`, by default a new instance with a limit of 512;
+- `GraphStepFactory`, by default a new instance.
 
-Dependency injection позволяет независимо тестировать или заменять стратегию
-линеаризации/ключей.
+Dependency injection allows the route-linearization or key strategy to be
+tested or replaced independently.
 
 ### `CommandGraphBuilder.build(patterns)`
 
-Вход: `tuple[PatternSource, ...]`.
+Input: `tuple[PatternSource, ...]`.
 
-Алгоритм:
+Algorithm:
 
-1. создать пустой `_DraftNode` root;
-2. для каждого pattern в исходном порядке вызвать `expand(pattern.ast)`;
-3. каждому полученному route присвоить следующий глобальный integer ID;
-4. создать `RouteSource` с исходным pattern и static trace;
-5. вставить steps в draft graph через `_insert()`;
-6. рекурсивно заморозить root;
-7. вернуть `CommandGraph.create(...)`.
+1. create an empty `_DraftNode` root;
+2. for each pattern in source order, call `expand(pattern.ast)`;
+3. assign the next global integer ID to each resulting route;
+4. create a `RouteSource` with the source pattern and static trace;
+5. insert the steps into the draft graph through `_insert()`;
+6. recursively freeze the root;
+7. return `CommandGraph.create(...)`.
 
-Нумерация route начинается с нуля и зависит от порядка patterns и порядка
-линеаризованных вариантов.
+Route numbering starts at zero and depends on pattern order and the order of
+linearized alternatives.
 
-Результат: immutable `CommandGraph`. Пустой tuple технически создаёт пустой
-граф, хотя public document layer не допускает пустой `commands`.
+Result: an immutable `CommandGraph`. An empty tuple technically creates an
+empty graph, although the public document layer prohibits an empty
+`commands`.
 
 ### `CommandGraphBuilder._insert(root, expressions, route_id)`
 
-Для каждого expression:
+For each expression:
 
-1. получить `GraphStep`;
-2. найти draft edge по `step.key`;
-3. создать edge и target, если ключ встречен впервые;
-4. добавить `route_id` во множество владельцев;
-5. перейти в target.
+1. obtain a `GraphStep`;
+2. find the draft edge by `step.key`;
+3. create the edge and target if this is the key's first occurrence;
+4. add `route_id` to the ownership set;
+5. advance to the target.
 
-После последнего выражения route ID добавляется в
+After the final expression, the route ID is added to
 `node.accepting_routes`.
 
-Метод мутирует только draft-структуру и ничего не возвращает.
+The method mutates only the draft structure and returns nothing.
 
 ### `CommandGraphBuilder._freeze(draft)`
 
-Рекурсивно преобразует mutable draft tree в `CommandNode`.
+Recursively converts the mutable draft tree into a `CommandNode`.
 
-Порядок:
+Order of operations:
 
-1. отсортировать semantic keys по `repr` для детерминированного результата;
-2. заморозить target каждого edge;
-3. заменить `set[int]` на `frozenset[int]`;
-4. literal edge положить в индекс по `ascii_lower(value)`;
-5. остальные edge добавить в ordered tuple `expression_edges`;
-6. вызвать `CommandNode.create()`.
+1. sort semantic keys by `repr` for deterministic output;
+2. freeze the target of every edge;
+3. replace `set[int]` with `frozenset[int]`;
+4. place a literal edge into the index by `ascii_lower(value)`;
+5. append every other edge to the ordered `expression_edges` tuple;
+6. call `CommandNode.create()`.
 
-Результат: immutable `CommandNode`.
+Result: an immutable `CommandNode`.
 
-Builder предполагает ациклическую draft-структуру: каждый insert движется
-только к следующему уровню последовательности.
+The builder assumes an acyclic draft structure: every insert advances only
+to the next sequence level.
 
 # `vrp_parser.graph.__init__`
 
-Package facade экспортирует production graph API:
+The package facade exports the production graph API:
 
 ```text
 CommandEdge
@@ -1486,79 +1501,81 @@ PatternSource
 RouteSource
 ```
 
-`LinearRoute`, `RouteExpander`, `RouteLimitExceeded`, `GraphStepFactory` и
-draft-типы остаются внутренними деталями package и импортируются из их
-модулей только там, где нужна настройка implementation.
+`LinearRoute`, `RouteExpander`, `RouteLimitExceeded`, `GraphStepFactory`, and
+the draft types remain internal package details and are imported from their
+modules only where implementation customization is needed.
 
-# Алгоритм provenance от JSON до результата
+# Provenance Algorithm from JSON to Result
 
-Provenance позволяет вернуть исходный паттерн и конкретную variation даже
-после агрессивного merge общих префиксов.
+Provenance makes it possible to return the original pattern and concrete
+variation even after aggressive merging of shared prefixes.
 
-## 1. Identity источника
+## 1. Source Identity
 
-Для каждой валидной строки создаётся `PatternSource`:
+A `PatternSource` is created for every valid string:
 
 ```text
 pattern_id = sha256(original) + duplicate occurrence
-index      = позиция в commands
-original   = исходный текст
+index      = position in commands
+original   = source text
 ast        = parsed tree
 ```
 
-Нормализация literal не изменяет `original`.
+Literal normalization does not change `original`.
 
-## 2. Identity маршрута
+## 2. Route Identity
 
-Каждый `LinearRoute` получает отдельный `route_id` и `RouteSource`.
-Choice/optional решения, выполненные при compile time, сохраняются в
+Every `LinearRoute` receives a distinct `route_id` and `RouteSource`.
+Choice and optional decisions made at compile time are stored in
 `static_trace`.
 
-## 3. Владение рёбрами
+## 3. Edge Ownership
 
-При merge edge содержит union всех маршрутов, которым принадлежит этот
-семантический переход:
+When edges are merged, each edge contains the union of all routes that own
+that semantic transition:
 
 ```text
 edge.route_ids = {route_1, route_7, route_19}
 ```
 
-У конечного node отдельно хранится `accepting_routes`.
+The terminal node separately stores `accepting_routes`.
 
-## 4. Runtime-пересечение
+## 4. Runtime Intersection
 
-Matcher начинает с допустимых маршрутов root и при переходе оставляет только
-маршруты, присутствующие у edge. Поэтому нельзя собрать команду из начала
-одного паттерна и окончания другого.
+The matcher begins with the routes allowed at the root and retains only
+routes present on each traversed edge. It therefore cannot construct a
+command from the beginning of one pattern and the ending of another.
 
-## 5. Восстановление исходника
+## 5. Source Reconstruction
 
-После успешного завершения matcher использует:
+After a successful match, the matcher uses:
 
 - `graph.routes[route_id].pattern.original`;
 - `pattern.pattern_id`;
 - `pattern.index`;
 - `static_trace`;
-- динамический trace символических group/repeat/enum.
+- the dynamic trace of symbolic groups, repeats, and enums.
 
-Из этого строится `PatternMatch` с `original_pattern`, `variation`,
-`variation_id` и полным trace.
+It uses these values to build a `PatternMatch` with `original_pattern`,
+`variation`, `variation_id`, and the complete trace.
 
-Если несколько source patterns приняли одну CLI-строку, provenance каждого
-сохраняется отдельно. Выбор primary производится по исходному JSON-порядку,
-а остальные возвращаются как alternatives.
+If multiple source patterns accept one CLI line, provenance for each one is
+preserved separately. The primary match is selected by the original JSON
+order, and the remaining matches are returned as alternatives.
 
-# Инварианты и границы ответственности
+# Invariants and Responsibility Boundaries
 
-- Lexer отвечает за точные spans и структурные токены.
-- Registry отвечает за синтаксис конкретных parameter declarations.
-- Parser отвечает только за grammar и cardinality syntax.
-- Runtime policy запрещает известным malformed placeholders тихо становиться
-  literals; это относится и к точным встроенным IP declarations.
-- Compiler собирает все ожидаемые ошибки и не создаёт частичный граф.
-- Route expander раскрывает только безопасное число ordinary choices.
-- Step factory отделяет семантическое равенство от source location.
-- Builder сохраняет ownership каждого route на каждом edge.
-- Graph immutable после construction.
-- Проверка значения CLI-параметра и формирование runtime ambiguity находятся
-  вне описываемого слоя.
+- The lexer is responsible for exact spans and structural tokens.
+- The registry is responsible for the syntax of concrete parameter
+  declarations.
+- The parser is responsible only for grammar and cardinality syntax.
+- Runtime policy prevents known malformed placeholders from silently
+  becoming literals; this includes exact built-in IP declarations.
+- The compiler collects all expected errors and does not construct a partial
+  graph.
+- The route expander expands only a safe number of ordinary choices.
+- The step factory separates semantic equality from source location.
+- The builder preserves ownership of every route on every edge.
+- The graph is immutable after construction.
+- CLI parameter-value validation and construction of runtime ambiguity are
+  outside the layer described here.

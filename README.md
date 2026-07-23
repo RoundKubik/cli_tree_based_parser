@@ -15,8 +15,7 @@ separate responsibilities.
 
 ## Full documentation
 
-The detailed Russian-language documentation is split into a short navigation
-tree:
+The detailed documentation is split into a short navigation tree:
 
 - [project guide](docs/PROJECT_GUIDE.md) — data formats, usage, outputs,
   algorithms, architecture, extension points, and limitations;

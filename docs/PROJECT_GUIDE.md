@@ -1,35 +1,35 @@
-# Полное руководство по Huawei VRP parser
+# Complete Guide to the Huawei VRP Parser
 
-## Назначение проекта
+## Project Purpose
 
-Проект компилирует выгруженные Huawei VRP command patterns в один повторно
-используемый граф и применяет его к реальным строкам CLI-конфигурации.
+The project compiles exported Huawei VRP command patterns into a single
+reusable graph and applies it to real CLI configuration lines.
 
-Он решает пять отдельных задач:
+It performs five separate tasks:
 
-1. проверяет JSON-каталог паттернов;
-2. разбирает Huawei pattern syntax в AST;
-3. объединяет общие префиксы команд без потери source provenance;
-4. распознаёт и валидирует одну CLI-строку;
-5. собирает результаты всех строк конфигурации в отчёт.
+1. validates the JSON pattern catalogue;
+2. parses Huawei pattern syntax into an AST;
+3. merges common command prefixes without losing source provenance;
+4. recognizes and validates one CLI line;
+5. collects the results for all configuration lines into a report.
 
-Parser не требует ручных `priority` и не требует описания переходов между
-Huawei views. Все паттерны из каталога доступны в одном пространстве, а
-неоднозначность сохраняется в результате.
+The parser requires neither manual `priority` values nor descriptions of
+transitions between Huawei views. All catalogue patterns are available in one
+namespace, and ambiguity is preserved in the result.
 
-## Навигация по документации
+## Documentation Map
 
-- [Публичный API, результаты, CLI и сериализация](reference/public-api-results.md)
-- [Типы параметров, registry, readers и validators](reference/parameters.md)
-- [Pattern grammar, compiler и command graph](reference/patterns-graph.md)
-- [Matcher, backtracking, приоритеты и разрешение результатов](reference/matching.md)
+- [Public API, results, CLI, and serialization](reference/public-api-results.md)
+- [Parameter types, registry, readers, and validators](reference/parameters.md)
+- [Pattern grammar, compiler, and command graph](reference/patterns-graph.md)
+- [Matcher, backtracking, priorities, and result resolution](reference/matching.md)
 
-Эти четыре reference-документа покрывают каждый production-класс, функцию,
-property и private helper в `src/vrp_parser`.
+These four reference documents cover every production class, function,
+property, and private helper in `src/vrp_parser`.
 
-## Быстрый старт
+## Quick Start
 
-### Парсинг одной строки
+### Parsing One Line
 
 ```python
 from vrp_parser import CommandLineParser, ErrorLine, ParsedCommand
@@ -50,7 +50,7 @@ elif isinstance(result, ErrorLine):
     print(result.error.message)
 ```
 
-### Парсинг всего конфигурационного текста
+### Parsing a Complete Configuration
 
 ```python
 from vrp_parser import CommandLineParser, ConfigurationParser
@@ -69,23 +69,23 @@ print(report.has_errors)
 print(report.to_dict())
 ```
 
-`CommandLineParser` компилирует каталог один раз. `ConfigurationParser`
-переиспользует его для каждой строки и не создаёт новый граф.
+`CommandLineParser` compiles the catalogue once. `ConfigurationParser` reuses
+it for every line and does not create a new graph.
 
-### Ручной стенд
+### Manual Test Harness
 
 ```bash
 python3 manual_test.py
 ```
 
-Стенд является изменяемым scratchpad, а не обязательным smoke-test. Он содержит
-небольшой `PATTERN_DOCUMENT` и hardcoded-вход внутри `main()`. Если добавить
-намеренно запрещённый pattern, конструктор ожидаемо поднимет
-`PatternCompilationError`.
+The harness is an editable scratchpad rather than a mandatory smoke test. It
+contains a small `PATTERN_DOCUMENT` and hard-coded input inside `main()`. If an
+intentionally forbidden pattern is added, the constructor raises
+`PatternCompilationError` as expected.
 
-## Формат каталога команд
+## Command Catalogue Format
 
-Минимальный JSON:
+Minimal JSON:
 
 ```json
 {
@@ -103,25 +103,25 @@ python3 manual_test.py
 }
 ```
 
-Требования:
+Requirements:
 
-- JSON-корень — object;
-- обязательное и единственное используемое parser-ом runtime-поле —
-  `commands`; дополнительные поля сейчас игнорируются;
-- `commands` — непустой array строк;
-- каждая строка содержит один полный command pattern;
-- пустые строки запрещены;
-- порядок элементов задаёт source order;
-- дубликаты допустимы и остаются отдельными источниками.
+- the JSON root is an object;
+- the required and only runtime field currently used by the parser is
+  `commands`; additional fields are ignored;
+- `commands` is a non-empty array of strings;
+- each string contains one complete command pattern;
+- empty strings are forbidden;
+- element order defines source order;
+- duplicates are allowed and remain separate sources.
 
-Поставляемый [commands.json](../data/commands.json) содержит 7 269 уникальных
-runtime-совместимых паттернов. В 1 051 из них присутствует хотя бы один
-встроенный IPv4/IPv6 placeholder. В каталоге нет вспомогательных coverage или
-catalogue файлов.
+The bundled [commands.json](../data/commands.json) contains 7,269 unique
+runtime-compatible patterns. At least one built-in IPv4 or IPv6 placeholder
+occurs in 1,051 of them. The catalogue has no auxiliary coverage or catalogue
+files.
 
-## Язык command patterns
+## Command Pattern Language
 
-### Литералы
+### Literals
 
 ```text
 display clock
@@ -129,99 +129,100 @@ interface
 *
 ```
 
-Каждый литерал соответствует одному whitespace-delimited CLI-токену.
-ASCII-регистр при сравнении не учитывается. В `variation` литералы записываются
-в canonical ASCII lowercase; исходное написание всегда хранится в
+Each literal matches one whitespace-delimited CLI token. ASCII letter case is
+ignored during comparison. Literals are written in canonical ASCII lowercase
+in `variation`; the original spelling is always retained in
 `original_pattern`.
 
-На корневом уровне `|` является литералом. Он разделяет alternatives только
-внутри `{ ... }` или `[ ... ]`.
+At pattern root, `|` is a literal. It separates alternatives only inside
+`{ ... }` or `[ ... ]`.
 
-### Группы
+### Groups
 
 | Pattern | Cardinality |
 | --- | --- |
-| `{ x \| y }` | Ровно одна alternative. |
-| `[ x \| y ]` | Ноль или одна alternative. |
-| `{ x \| y } *` | От одной до всех alternatives, каждая не более одного раза, порядок CLI произвольный. |
-| `[ x \| y ] *` | От нуля до всех alternatives, каждая не более одного раза, порядок CLI произвольный. |
+| `{ x \| y }` | Exactly one alternative. |
+| `[ x \| y ]` | Zero or one alternative. |
+| `{ x \| y } *` | One to all alternatives, each at most once, in any CLI order. |
+| `[ x \| y ] *` | Zero to all alternatives, each at most once, in any CLI order. |
 
-Группы могут быть вложенными:
+Groups can be nested:
 
 ```text
 access-operation { { create | read | update | delete | exec } * | * }
 ```
 
-Внешний `*` в `} *` является оператором set-группы. `*` там, где ожидается
-обычный atom, является буквальным CLI-токеном.
+A `*` immediately outside a closing delimiter, as in `} *`, is the set-group
+operator. A `*` where a normal atom is expected is a literal CLI token.
 
-Поставляемый JSON использует каноническое написание с пробелом: `} *` и `] *`.
+The bundled JSON uses the canonical spelling with a space: `} *` and `] *`.
 
-### Повторы
+### Repeats
 
 ```text
 peer STRING<1-64> &<1-8>
 path { direct | via STRING<1-8> } &<2-3>
 ```
 
-`&<minimum-maximum>` применяется только к непосредственно предшествующему
-parameter или group. Голый `&`, malformed bounds и repeat после literal
-отклоняются во время компиляции.
+`&<minimum-maximum>` applies only to the immediately preceding parameter or
+group. A bare `&`, malformed bounds, and a repeat after a literal are rejected
+during compilation.
 
-### Поддерживаемые parameter declarations
+### Supported Parameter Declarations
 
 | Declaration | CLI value | Normalized value |
 | --- | --- | --- |
 | `INTEGER<min-max>` | Signed decimal token | `int` |
 | `HEX<min-max>` | Hex token, optional `0x` | `int` |
-| `STRING<min-max>` | Один non-whitespace token | Исходная строка |
-| `PASSWORDEX<min-max>` | Один non-whitespace token | Исходная строка |
-| `ENUM{x,y,...,}` | Один из явно перечисленных choices | Каноническое choice из declaration |
-| `X.X.X.X` | Четыре decimal-октета `0..255` | IPv4 без ведущих нулей |
-| `X:X::X:X` | Стандартный IPv6, включая compressed и IPv4-mapped формы | Lowercase compressed IPv6 |
-| `X:X::X:X/M` | IPv6 и decimal prefix length `0..128` | Канонический IPv6 и prefix без ведущих нулей |
-| `YYYY/MM/DD` | Валидная календарная дата | Строка |
-| `YYYY-MM-DD` | Валидная календарная дата | Строка |
-| `MM-DD` | Валидные месяц и день | Строка |
-| `MM-DD-YYYY` | Валидная календарная дата | Строка |
-| `YYYY/MM/DD,HH:MM:SS` | Валидные дата и время | Строка |
-| `HH:MM:SS` | Валидное время | Строка |
-| `<hh:mm>` | Валидные часы и минуты | Строка |
-| `H-H-H` | Три hex-группы MAC | `hhhh-hhhh-hhhh` lowercase |
-| `TEXT<min-max>` | Весь непустой остаток строки с проверкой длины | Строка |
+| `STRING<min-max>` | One non-whitespace token | Original string |
+| `PASSWORDEX<min-max>` | One non-whitespace token | Original string |
+| `ENUM{x,y,...,}` | One explicitly listed choice | Canonical choice from the declaration |
+| `X.X.X.X` | Four decimal octets in `0..255` | IPv4 without leading zeros |
+| `X:X::X:X` | Standard IPv6, including compressed and IPv4-mapped forms | Lowercase compressed IPv6 |
+| `X:X::X:X/M` | IPv6 and decimal prefix length in `0..128` | Canonical IPv6 and prefix without leading zeros |
+| `YYYY/MM/DD` | Valid calendar date | String |
+| `YYYY-MM-DD` | Valid calendar date | String |
+| `MM-DD` | Valid month and day | String |
+| `MM-DD-YYYY` | Valid calendar date | String |
+| `YYYY/MM/DD,HH:MM:SS` | Valid date and time | String |
+| `HH:MM:SS` | Valid time | String |
+| `<hh:mm>` | Valid hour and minute | String |
+| `H-H-H` | Three hexadecimal MAC groups | Lowercase `hhhh-hhhh-hhhh` |
+| `TEXT<min-max>` | The complete non-empty remainder with bounded length | String |
 
-`min` и `max` включены в диапазон. Для `STRING`, `PASSWORDEX` и `TEXT` это
-количество Unicode characters; для `INTEGER` и `HEX` — числовой диапазон.
+`min` and `max` are inclusive. For `STRING`, `PASSWORDEX`, and `TEXT`, they
+describe the number of Unicode characters; for `INTEGER` and `HEX`, they
+describe a numeric range.
 
-### Специальное правило `TEXT`
+### Special `TEXT` Rule
 
-`TEXT<min-max>` читает весь оставшийся текст, поэтому допустим после keyword:
+`TEXT<min-max>` reads the complete remaining text, so it may follow a keyword:
 
 ```text
 description TEXT<1-80>
 ```
 
-Строка `description uplink to core` сохранит `uplink to core` как одно
-значение параметра. `TEXT` обязан быть последним элементом возможного route и
-не может повторяться: remainder-reader поглощает всё до конца CLI-строки.
-Нарушение этого правила приводит к `PatternCompilationError` при построении
-parser.
+The line `description uplink to core` stores `uplink to core` as one parameter
+value. `TEXT` must be the final element of every possible route and cannot be
+repeated: a remainder reader consumes everything through the end of the CLI
+line. Violating this rule causes a `PatternCompilationError` when the parser is
+constructed.
 
-Отдельное правило действует, когда `TEXT` сопоставляется в позиции `0`, то есть
-для bare/root route без уже совпавшего keyword. Например, поставляемый
-`TEXT<1-4096>` может принять только строку, чей первый символ после отступа —
-`!`. Поэтому такой route не становится fallback и не скрывает неизвестные
-команды.
+A separate rule applies when `TEXT` is matched at position `0`, meaning a
+bare/root route without an already matched keyword. For example, the bundled
+`TEXT<1-4096>` can accept only a line whose first character after indentation
+is `!`. This prevents such a route from becoming a fallback that hides unknown
+commands.
 
 ```text
 ! generated by device     -> ParsedCommand
-description uplink        -> ParsedCommand по "description TEXT<1-80>"
+description uplink        -> ParsedCommand via "description TEXT<1-80>"
 unknown command           -> ErrorLine(UNKNOWN_COMMAND)
 ```
 
-### IP-адреса
+### IP Addresses
 
-Три IP-placeholder’а встроены в стандартный registry:
+Three IP placeholders are built into the default registry:
 
 ```text
 X.X.X.X
@@ -229,64 +230,64 @@ X:X::X:X
 X:X::X:X/M
 ```
 
-- IPv4 состоит ровно из четырёх decimal-октетов `0..255`. Ведущие нули
-  допустимы: raw `192.168.001.001` сохраняется, а normalized равен
+- IPv4 consists of exactly four decimal octets in `0..255`. Leading zeros are
+  accepted: raw `192.168.001.001` is preserved, while normalized is
   `192.168.1.1`.
-- IPv6 поддерживает обычные, compressed и IPv4-mapped формы. Normalized —
-  каноническая lowercase/compressed строка.
-- IPv6 prefix использует длину `/0..128`. Нормализуются адрес и запись длины,
-  но host bits не обнуляются: `2001:0DB8::1/064` превращается в
-  `2001:db8::1/64`.
-- Zone identifier, например `fe80::1%eth0`, не поддерживается ни для адреса,
-  ни для prefix.
+- IPv6 supports regular, compressed, and IPv4-mapped forms. Normalized is the
+  canonical lowercase/compressed string.
+- An IPv6 prefix uses a length in `/0..128`. Both the address and length
+  notation are normalized, but host bits are retained:
+  `2001:0DB8::1/064` becomes `2001:db8::1/64`.
+- Neither the address type nor the prefix type supports a zone identifier such
+  as `fe80::1%eth0`.
 
-Все три типа имеют family `STRUCTURED`, поэтому валидный IP-route
-предпочитается `STRING`. Значение, похожее на IP, но нарушающее его формат,
-даёт `VALIDATION_ERROR` и блокирует generic fallback. Лексически посторонний
-token получает `NOT_APPLICABLE`, поэтому hostname или имя интерфейса может
-быть принято альтернативным `STRING`.
+All three types have the `STRUCTURED` family, so a valid IP route is preferred
+over `STRING`. A value that resembles an IP address but violates its format
+produces `VALIDATION_ERROR` and blocks a generic fallback. A lexically
+unrelated token produces `NOT_APPLICABLE`, allowing an alternative `STRING`
+route to accept a hostname or interface name.
 
-### Намеренно неподдерживаемые declarations
+### Intentionally Unsupported Declarations
 
-По умолчанию отклоняются:
+The following declaration is rejected by default:
 
 ```text
 STRING<1-64>/<0-128>
 ```
 
-Composite `STRING<...>/<...>` в текущей версии не поддерживается.
+Composite `STRING<...>/<...>` is not supported in the current version.
 
-`ENUM{a,b,...}` с буквальным abbreviated choice `...` также отклоняется:
-registry требует полный список допустимых значений.
+An `ENUM{a,b,...}` containing the literal abbreviated choice `...` is also
+rejected: the registry requires the complete list of accepted values.
 
-Слово `address` само по себе не является declaration или специальным типом.
-Без custom recognizer оно интерпретируется как обычный literal keyword.
+The word `address` is not itself a declaration or special type. Without a
+custom recognizer, it is interpreted as an ordinary literal keyword.
 
-## Формат CLI-входа
+## CLI Input Format
 
-### Одна строка
+### One Line
 
-`CommandLineParser.parse()` принимает:
+`CommandLineParser.parse()` accepts:
 
-- `str`;
-- без `\n` и `\r`;
-- с любым ведущим whitespace-отступом;
-- с необязательными завершающими пробелами.
+- a `str`;
+- no `\n` or `\r`;
+- any leading whitespace indentation;
+- optional trailing whitespace.
 
-Разделителем CLI-токенов является whitespace. Пунктуация внутри токена остаётся
-частью значения.
+Whitespace separates CLI tokens. Punctuation inside a token remains part of
+the value.
 
-### Весь конфигурационный текст
+### Complete Configuration Text
 
-`ConfigurationParser.parse()` принимает один `str` с `LF`, `CRLF` или `CR`.
-Каждая физическая строка даёт один элемент `ParseReport.lines`. Парсинг
-продолжается после ошибок.
+`ConfigurationParser.parse()` accepts one `str` containing `LF`, `CRLF`, or
+`CR`. Each physical line produces one item in `ParseReport.lines`. Parsing
+continues after errors.
 
-## Форматы результатов
+## Result Formats
 
-### Успешная строка
+### Successful Line
 
-Упрощённое представление `ParsedCommand`:
+A simplified `ParsedCommand` representation:
 
 ```json
 {
@@ -316,17 +317,17 @@ registry требует полный список допустимых знач�
 }
 ```
 
-Статусы:
+Statuses:
 
 - `unique`;
 - `equivalent`;
 - `ambiguous`.
 
-Все три являются успешным `ParsedCommand`. При ambiguity первая
-source-order interpretation помещается в `primary_match`, остальные — в
-`alternative_matches`.
+All three represent a successful `ParsedCommand`. For an ambiguous result, the
+first interpretation in source order is placed in `primary_match`; the
+remaining interpretations are placed in `alternative_matches`.
 
-### Ошибочная строка
+### Error Line
 
 ```json
 {
@@ -360,19 +361,19 @@ source-order interpretation помещается в `primary_match`, остал�
 
 Error codes:
 
-- `unknown_command` — ни один command prefix не подошёл;
-- `syntax_error` — prefix подошёл, но полный route не завершился;
-- `validation_error` — command shape завершился, но parameter validator
-  отклонил значение.
+- `unknown_command` — no command prefix matched;
+- `syntax_error` — a prefix matched, but no complete route was reached;
+- `validation_error` — a command shape completed, but a parameter validator
+  rejected a value.
 
-Все человекочитаемые runtime-сообщения формируются на английском. Для
-автоматической обработки следует использовать стабильные поля `code`,
-`expected`, `failures` и `suggestions`, а не разбирать `message` как текст.
+All human-readable runtime messages are generated in English. Automated
+consumers should use the stable `code`, `expected`, `failures`, and
+`suggestions` fields rather than parsing `message` as text.
 
-### Подсказки для неизвестных и незавершённых команд
+### Suggestions for Unknown and Incomplete Commands
 
-Если ни один полный pattern не принял literal-led команду, parser может
-вернуть до пяти похожих исходных паттернов:
+If no complete pattern accepts a literal-led command, the parser may return up
+to five similar source patterns:
 
 ```json
 {
@@ -387,36 +388,37 @@ Error codes:
 }
 ```
 
-`suggestions` содержит именно строки из `commands.json`, поэтому в них
-сохраняются groups и parameter declarations. Результаты:
+`suggestions` contains the strings from `commands.json` themselves, so groups
+and parameter declarations are preserved. The results are:
 
-- релевантны исходной строке;
-- уникальны;
-- детерминированы;
-- ограничены пятью элементами;
-- упорядочены сначала по сходству, затем стабильно по source order.
+- relevant to the source line;
+- unique;
+- deterministic;
+- limited to five items;
+- ordered by similarity, with source order as a stable tie-breaker.
 
-Suggestion index включает только те вариации, которые начинаются с literal.
-Parameter-first pattern не предлагается как похожая команда. Если наиболее
-далеко продвинувшийся неудачный route начинался с применимого параметра,
-keyword recommendations полностью подавляются. `NOT_APPLICABLE` parameter
-сам по себе не скрывает возможную literal-опечатку. Bare/root
-`TEXT<min-max>` также не индексируется и не становится подсказкой. Для
-`validation_error` подсказки не нужны, поскольку форма команды уже
-определена: `suggestions` всегда пуст.
+The suggestion index includes only variations that start with a literal. A
+parameter-first pattern is not proposed as a similar command. If the
+furthest-progressing failed route started with an applicable parameter,
+keyword recommendations are suppressed entirely. A `NOT_APPLICABLE` parameter
+does not itself hide a possible literal typo. Bare/root `TEXT<min-max>` is
+neither indexed nor offered as a suggestion. A `validation_error` needs no
+suggestions because the command shape has already been identified, so its
+`suggestions` is always empty.
 
-Если подходящего literal pattern нет, `unknown_command` прямо сообщает:
+If there is no suitable literal pattern, `unknown_command` states this
+explicitly:
 
 ```text
 Command 'totally unknown' was not recognized. No complete command pattern
 accepted the first token. No similar literal command patterns were found.
 ```
 
-Для `syntax_error` `message` дополнительно называет 1-based column и до пяти
-ожидаемых продолжений, а полный machine-readable список остаётся в
-`expected`.
+For a `syntax_error`, `message` additionally names the 1-based column and up to
+five expected continuations, while the complete machine-readable list remains
+in `expected`.
 
-### Пустая строка
+### Blank Line
 
 ```json
 {
@@ -427,7 +429,7 @@ accepted the first token. No similar literal command patterns were found.
 }
 ```
 
-### Отчёт
+### Report
 
 ```json
 {
@@ -442,27 +444,28 @@ accepted the first token. No similar literal command patterns were found.
 }
 ```
 
-`commands` включает ambiguous-команды. `ParseReport.has_errors` зависит только
-от `summary.errors`.
+`commands` includes ambiguous commands. `ParseReport.has_errors` depends only
+on `summary.errors`.
 
-## Алгоритм компиляции
+## Compilation Algorithm
 
-### 1. Pattern document
+### 1. Pattern Document
 
-`CommandLineParser` извлекает `commands` и создаёт замороженную копию parameter
-registry.
+`CommandLineParser` extracts `commands` and creates a frozen copy of the
+parameter registry.
 
 ### 2. Lexer
 
-`PatternLexer` идёт слева направо. На каждой позиции declaration recognizers
-имеют приоритет перед structural tokens, поэтому `ENUM{...}` не разбивается на
-literal и group.
+`PatternLexer` scans from left to right. Declaration recognizers take priority
+over structural tokens at every position, so `ENUM{...}` is not split into a
+literal and a group.
 
-Результат lexer — immutable tuple `Token` с точными `SourceSpan`.
+The lexer produces an immutable tuple of `Token` instances with exact
+`SourceSpan` values.
 
 ### 3. AST
 
-`PatternParser` строит:
+`PatternParser` builds:
 
 - `Sequence`;
 - `Literal`;
@@ -470,68 +473,69 @@ literal и group.
 - `Group`;
 - `Repeat`.
 
-Ошибки delimiter, пустых alternatives, repeat bounds и malformed declarations
-сохраняют точный source span.
+Errors involving delimiters, empty alternatives, repeat bounds, and malformed
+declarations retain the exact source span.
 
-### 4. Runtime policy
+### 4. Runtime Policy
 
-`RuntimePatternPolicy` запрещает placeholder-подобный текст, который иначе
-мог бы стать literal, проверяет точные встроенные declarations, включая три
-IP-placeholder’а, а также требует, чтобы `TEXT` завершал route и не повторялся.
-Например, `X.X.X.X/suffix` не становится набором literals, а отклоняется как
-malformed parameter. Ограничение корневого `TEXT` на строки с `!` применяется
-matcher-слоем во время runtime.
+`RuntimePatternPolicy` forbids placeholder-like text that could otherwise
+become a literal, validates exact built-in declarations including all three IP
+placeholders, and requires `TEXT` to terminate a route and never repeat. For
+example, `X.X.X.X/suffix` does not become a sequence of literals; it is
+rejected as a malformed parameter. The restriction of root `TEXT` to lines
+starting with `!` is applied by the matcher layer at runtime.
 
-### 5. Route expansion
+### 5. Route Expansion
 
-Обычные choice/optional groups линейно раскрываются, пока число routes не
-превышает 512 на source pattern. Set groups и repeats остаются symbolic.
+Ordinary choice and optional groups are expanded linearly while the number of
+routes does not exceed 512 per source pattern. Set groups and repeats remain
+symbolic.
 
-Если потенциальных routes больше лимита, исходная sequence сохраняется одним
-symbolic route и исполняется matcher-ом во время runtime. Это ограничивает
-комбинаторный рост компиляции.
+If the potential route count exceeds the limit, the source sequence is kept as
+one symbolic route and executed by the matcher at runtime. This limits
+combinatorial growth during compilation.
 
-### 6. Shared command graph
+### 6. Shared Command Graph
 
-`CommandGraphBuilder` объединяет семантически одинаковые prefixes. На каждом
-edge хранится множество `route_ids`, а accepting node также знает допустимые
-routes. Поэтому путь нельзя случайно начать в одном source pattern и завершить
-в другом.
+`CommandGraphBuilder` merges semantically identical prefixes. Every edge
+stores a set of `route_ids`, and an accepting node also knows its allowed
+routes. A path therefore cannot accidentally start in one source pattern and
+finish in another.
 
-Каждый route сохраняет:
+Every route retains:
 
-- source pattern;
-- source index;
-- pattern ID;
-- static trace.
+- its source pattern;
+- its source index;
+- its pattern ID;
+- its static trace.
 
-## Алгоритм разбора строки
+## Line Parsing Algorithm
 
-### 1. Подготовка
+### 1. Preparation
 
-Сохраняются `raw` и `indent`, завершающий whitespace исключается из matching.
-Пустой command немедленно превращается в `BlankLine`.
+`raw` and `indent` are retained, and trailing whitespace is excluded from
+matching. An empty command immediately becomes a `BlankLine`.
 
-### 2. Обход графа
+### 2. Graph Traversal
 
-`CommandMatcher` выполняет backtracking:
+`CommandMatcher` performs backtracking:
 
-- literal edge проверяет один CLI-токен;
-- parameter edge читает значение через его `ParameterReader`;
-- symbolic group перебирает допустимые alternatives;
-- set не позволяет выбрать одну alternative дважды;
-- repeat выполняется только при продвижении позиции;
-- на каждом edge пересекаются активные `route_ids`.
+- a literal edge checks one CLI token;
+- a parameter edge reads a value through its `ParameterReader`;
+- a symbolic group tries its allowed alternatives;
+- a set prevents selecting the same alternative twice;
+- a repeat runs only when the position advances;
+- active `route_ids` are intersected on every edge.
 
-### 3. Tri-state validation
+### 3. Tri-State Validation
 
-Каждый validator возвращает:
+Every validator returns:
 
-- `VALID` — тип применим и значение корректно;
-- `INVALID` — тип применим по форме, но нарушено ограничение;
-- `NOT_APPLICABLE` — значение лексически не относится к типу.
+- `VALID` — the type applies and the value is valid;
+- `INVALID` — the type applies by shape, but violates a constraint;
+- `NOT_APPLICABLE` — the value does not lexically belong to the type.
 
-Например:
+For example:
 
 ```text
 INTEGER<1-15> + "10"  -> VALID
@@ -539,12 +543,12 @@ INTEGER<1-15> + "16"  -> INVALID
 INTEGER<1-15> + "abc" -> NOT_APPLICABLE
 ```
 
-Это позволяет отличить реальную ошибку range/calendar от ветки, которую нужно
-просто пропустить при backtracking.
+This distinguishes a genuine range or calendar error from a branch that
+should simply be skipped during backtracking.
 
-### 4. Dispatch order
+### 4. Dispatch Order
 
-Центральный порядок families:
+The central family order is:
 
 ```text
 literal
@@ -555,61 +559,63 @@ literal
   < remainder
 ```
 
-Меньший rank означает более специфичную ветку. Поэтому совпавший `ENUM`
-предпочитается `STRING`, а валидная дата — generic string.
+A lower rank means a more specific branch. Therefore, a matching `ENUM` is
+preferred over `STRING`, and a valid date is preferred over a generic string.
 
-Сравнение выполняется по Pareto dominance, а не лексикографически. Если один
-route лучше в первой позиции, а другой — во второй, оба остаются и результат
-может быть `ambiguous`.
+Comparison uses Pareto dominance rather than lexicographic order. If one route
+is better at the first position and another is better at the second, both
+remain and the result may be `ambiguous`.
 
-### 5. Validation blocking
+### 5. Validation Blocking
 
-`INVALID` более специфичного route может заблокировать generic fallback:
+An `INVALID` result from a more specific route can block a generic fallback:
 
 ```text
 preference INTEGER<1-15>
 preference STRING<1-20>
 ```
 
-Для `preference 16` возвращается validation error от `INTEGER`, а не успешный
-generic string. `NOT_APPLICABLE` такой блокировки не создаёт.
+For `preference 16`, the parser returns a validation error from `INTEGER`
+instead of a successful generic string. `NOT_APPLICABLE` does not create this
+block.
 
 ### 6. Resolution
 
-Из полных candidates:
+The parser performs these steps on complete candidates:
 
-1. удаляются dominated dispatch vectors;
-2. учитываются validation blockers;
-3. candidates сортируются по source order;
-4. одинаковые derivations дедуплицируются;
-5. создаются `PatternMatch`;
-6. определяется `unique`, `equivalent` или `ambiguous`.
+1. removes dominated dispatch vectors;
+2. applies validation blockers;
+3. sorts candidates by source order;
+4. deduplicates identical derivations;
+5. creates `PatternMatch` instances;
+6. determines `unique`, `equivalent`, or `ambiguous`.
 
-### 7. Runtime diagnostics
+### 7. Runtime Diagnostics
 
-Если terminal candidate не найден, `MatchDiagnostics` сохраняет самую дальнюю
-позицию, ожидаемые элементы и максимальный progress literal-first и
-parameter-first маршрутов. `CommandErrorFactory` на основании этих данных:
+If no terminal candidate is found, `MatchDiagnostics` stores the furthest
+position, expected elements, and maximum progress for literal-first and
+parameter-first routes. From these data, `CommandErrorFactory`:
 
-1. выбирает `unknown_command` для position `0`, иначе `syntax_error`;
-2. переводит position в координаты исходной строки с учётом indent;
-3. строит подробное английское сообщение;
-4. при допустимом literal-first сценарии запрашивает до пяти рекомендаций.
+1. selects `unknown_command` at position `0`, otherwise `syntax_error`;
+2. converts the position into source-line coordinates including indentation;
+3. builds a detailed English message;
+4. requests up to five recommendations when the literal-first scenario allows
+   them.
 
-Suggestion subsystem заранее строится вместе с matcher. Для каждого source
-pattern он создаёт ограниченное множество поисковых шаблонов, индексирует
-literal roots, а во время ошибки ранжирует кандидатов по опечаткам,
-перестановкам токенов, совпавшим secondary literals и применимости
-parameter-slots. Это диагностический индекс: он не участвует в признании
-команды валидной и не меняет выбор pattern.
+The suggestion subsystem is built in advance together with the matcher. For
+each source pattern, it creates a bounded collection of search templates and
+indexes literal roots. During an error, it ranks candidates using typos, token
+transpositions, matched secondary literals, and parameter-slot applicability.
+This is a diagnostic index: it does not participate in recognizing valid
+commands and does not alter pattern selection.
 
-Если полный candidate существует, но параметры отклонены,
-`ValidationErrorFactory` создаёт `validation_error`. Его message включает до
-трёх кратких причин, а все причины без сокращения остаются в `failures`.
-Каждый `ValidationFailure` содержит как английский `message`, так и
-machine-readable `reason_code`, `expected` и `actual`.
+If a complete candidate exists but its parameters were rejected,
+`ValidationErrorFactory` creates a `validation_error`. Its message includes up
+to three concise reasons, while all reasons remain available in `failures`
+without truncation. Each `ValidationFailure` includes an English `message` as
+well as the machine-readable `reason_code`, `expected`, and `actual`.
 
-## Структура исходного кода
+## Source Code Structure
 
 ```text
 src/vrp_parser/
@@ -622,7 +628,7 @@ src/vrp_parser/
 ├── parameters/            declarations, registry, readers, validators
 ├── patterns/              lexer, tokens, AST, parser, runtime policy
 ├── graph/                 route expansion and shared-prefix graph
-└── matching/              traversal, validation and resolution
+└── matching/              traversal, validation, and resolution
 ```
 
 Dependency direction:
@@ -641,19 +647,19 @@ CLI line -------------------------+
                                results
 ```
 
-`results` не содержит graph/matcher objects. Его dataclass-контейнеры frozen,
-но custom validator может вернуть собственный mutable объект в
-`ParameterValue.normalized`; такая вложенная мутабельность остаётся
-ответственностью plugin-кода.
+`results` contains no graph or matcher objects. Its dataclass containers are
+frozen, but a custom validator may return its own mutable object in
+`ParameterValue.normalized`; that nested mutability remains the responsibility
+of plugin code.
 
-## Добавление нового parameter type
+## Adding a New Parameter Type
 
-Новый тип состоит из четырёх частей:
+A new type consists of four parts:
 
-1. declaration recognizer;
-2. token/remainder reader;
-3. validator/normalizer;
-4. `ParameterFamily`.
+1. a declaration recognizer;
+2. a token or remainder reader;
+3. a validator/normalizer;
+4. a `ParameterFamily`.
 
 ```python
 from vrp_parser import CommandLineParser
@@ -698,17 +704,17 @@ parser = CommandLineParser(
 )
 ```
 
-Lexer, AST, graph и matcher не требуют type-specific изменений.
+The lexer, AST, graph, and matcher require no type-specific changes.
 
 ## CLI
 
-Проверить каталог:
+Validate the catalogue:
 
 ```bash
 vrp-parser check-patterns data/commands.json
 ```
 
-Распарсить файл:
+Parse a file:
 
 ```bash
 vrp-parser parse \
@@ -718,16 +724,15 @@ vrp-parser parse \
 
 Exit codes:
 
-- `0` — успех без line errors;
-- `1` — конфигурация содержит ошибки строк;
-- `2` — перехваченный `OSError` либо каталог невозможно проверить или
-  скомпилировать.
+- `0` — success with no line errors;
+- `1` — the configuration contains line errors;
+- `2` — a caught `OSError`, or the catalogue cannot be validated or compiled.
 
-CLI читает оба файла как UTF-8. Текущая реализация не перехватывает
-`UnicodeDecodeError`: для файла с неправильной кодировкой исключение выходит
-наружу вместо JSON-ответа с кодом `2`.
+The CLI reads both files as UTF-8. The current implementation does not catch
+`UnicodeDecodeError`: for a file with the wrong encoding, the exception
+propagates instead of producing a JSON response with exit code `2`.
 
-## Тесты и проверки
+## Tests and Checks
 
 ```bash
 pytest
@@ -735,33 +740,33 @@ ruff check .
 mypy --strict src/vrp_parser
 ```
 
-Тесты разделены по ответственности:
+Tests are organized by responsibility:
 
 - `test_pattern_language.py` — lexer/parser/AST;
 - `test_parameter_types.py` — declarations, tri-state validators, IPv4/IPv6
-  boundary forms, canonicalization и zone rejection;
-- `test_command_graph.py` — prefix merge и route ownership;
-- `test_command_matching.py` — runtime matching, ambiguity, IP validation и
-  приоритет structured IP перед `STRING`;
-- `test_public_parsers.py` — line/configuration API и result formats;
-- `test_error_diagnostics.py` — английские runtime messages, top-5
-  suggestions, suppression для parameter-first/TEXT/validation и
+  boundary forms, canonicalization, and zone rejection;
+- `test_command_graph.py` — prefix merging and route ownership;
+- `test_command_matching.py` — runtime matching, ambiguity, IP validation, and
+  preference of structured IP over `STRING`;
+- `test_public_parsers.py` — line/configuration API and result formats;
+- `test_error_diagnostics.py` — English runtime messages, top-five
+  suggestions, suppression for parameter-first/TEXT/validation cases, and
   machine-readable validation details;
-- `test_compilation.py` — construction-time errors, malformed suffixes
-  встроенных declarations и custom registry types;
-- `test_data_file.py` — поставляемый commands catalogue, реальные TEXT/IP
-  routes, validation и top-5 typo suggestions;
-- `test_cli.py` — CLI JSON и exit codes.
+- `test_compilation.py` — construction-time errors, malformed suffixes of
+  built-in declarations, and custom registry types;
+- `test_data_file.py` — the bundled command catalogue, real TEXT/IP routes,
+  validation, and top-five typo suggestions;
+- `test_cli.py` — CLI JSON and exit codes.
 
-## Основные ограничения
+## Main Limitations
 
 - Python `>= 3.13`;
-- parser не моделирует VRP view transitions;
-- command catalogue загружается целиком;
-- `TEXT<min-max>` читает остаток строки; только bare/root `TEXT`, сопоставляемый
-  в позиции `0`, ограничен runtime-строками, начинающимися с `!`;
-- IPv6 zone identifiers (`%eth0` и подобные) не поддерживаются;
-- composite `STRING<...>/<...>` не поддерживается;
-- set alternatives уникальны внутри одного group match;
-- custom normalized objects сохраняются в `ParsedCommand`, а `to_dict()`
-  преобразует неизвестные объекты в строки.
+- the parser does not model VRP view transitions;
+- the command catalogue is loaded in full;
+- `TEXT<min-max>` reads the rest of the line; only bare/root `TEXT` matched at
+  position `0` is restricted to runtime lines starting with `!`;
+- IPv6 zone identifiers such as `%eth0` are not supported;
+- composite `STRING<...>/<...>` is not supported;
+- set alternatives are unique within one group match;
+- custom normalized objects are retained in `ParsedCommand`, while `to_dict()`
+  converts unknown objects to strings.

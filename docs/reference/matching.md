@@ -1,17 +1,17 @@
-# Подсистема сопоставления команд (`vrp_parser.matching`)
+# Command matching subsystem (`vrp_parser.matching`)
 
-Этот документ описывает runtime-часть парсера: как уже скомпилированный
-`CommandGraph` сопоставляется с одной строкой CLI, как проверяются параметры,
-как выбирается наиболее специфичный маршрут и как формируется результат или
-ошибка.
+This document describes the runtime part of the parser: how an already
+compiled `CommandGraph` is matched against a single CLI line, how parameters
+are validated, how the most specific route is selected, and how a result or
+error is produced.
 
-Документ относится ко всем production-модулям каталога
+The document covers all production modules in
 `src/vrp_parser/matching`.
 
-## Граница публичного API
+## Public API boundary
 
-Пользовательский код должен разбирать строки через `CommandLineParser`, а весь
-файл — через `ConfigurationParser`:
+Application code should parse individual lines through `CommandLineParser`
+and complete files through `ConfigurationParser`:
 
 ```python
 from vrp_parser import CommandLineParser, ConfigurationParser
@@ -22,25 +22,26 @@ line_result = line_parser.parse("interface Vlanif100")
 report = ConfigurationParser(line_parser).parse(configuration_text)
 ```
 
-Пакет `vrp_parser.matching` является внутренним слоем между
-`CommandLineParser` и публичными dataclass-результатами из
-`vrp_parser.results`. На уровне `matching.__init__` экспортируются только:
+The `vrp_parser.matching` package is an internal layer between
+`CommandLineParser` and the public result dataclasses from
+`vrp_parser.results`. At the `matching.__init__` level, only the following are
+exported:
 
-- `CommandMatcher` — низкоуровневый matcher одной строки без отступа;
-- `ResolvedMatch` — внутренний успешный результат matcher.
+- `CommandMatcher` — a low-level matcher for one line without indentation;
+- `ResolvedMatch` — the matcher's internal successful result.
 
-Остальные сущности имеют открытые имена ради простоты композиции и
-unit-тестирования, но не являются стабильным пользовательским API. В частности,
-пользователь не должен вручную создавать `WalkState`, `Candidate` или
-вызывать `_walk()`.
+The remaining entities have public names to simplify composition and unit
+testing, but they are not a stable application-facing API. In particular,
+application code should not instantiate `WalkState` or `Candidate` manually,
+or call `_walk()`.
 
-## Общий поток данных
+## Overall data flow
 
 ```text
-строка без отступа
+line without indentation
         │
         ▼
-CommandText ──► обход CommandGraph ──► Candidate[]
+CommandText ──► traverse CommandGraph ──► Candidate[]
                       │
                       ├─ ExpressionMatcher
                       │    ├─ LiteralExpressionMatcher
@@ -51,95 +52,98 @@ CommandText ──► обход CommandGraph ──► Candidate[]
                       └─ MatchDiagnostics
         │
         ▼
-удаление дубликатов ──► Pareto frontier ──► MatchResolver
+deduplication ──► Pareto frontier ──► MatchResolver
                                                 │
                          ┌──────────────────────┴──────────────────────┐
                          ▼                                             ▼
                   ResolvedMatch                                    ParseError
                          │
                          ▼
-        CommandLineParser превращает его в ParsedCommand
+        CommandLineParser converts it to ParsedCommand
 ```
 
-1. Компилятор заранее объединяет префиксы всех паттернов в один
-   `CommandGraph`.
-2. `CommandMatcher` обходит подходящие рёбра графа. На каждом ребре
-   `ExpressionMatcher` возвращает ноль, одно или несколько следующих
-   неизменяемых состояний.
-3. Полное достижение терминального узла образует `Candidate`. Кандидат может
-   содержать как успешно распознанные, так и отклонённые параметры: это нужно,
-   чтобы отличить синтаксическую ошибку от ошибки валидации.
-4. `MatchResolver` оставляет недоминируемые по специфичности маршруты.
-5. Если более специфичный параметр применим по форме, но невалиден по
-   ограничению, он может заблокировать менее специфичный валидный маршрут.
-6. Все оставшиеся равноправные совпадения сохраняются. Неоднозначность —
-   успешный результат со статусом `ambiguous`, а не ошибка.
-7. Если полного candidate нет, отдельные diagnostic-компоненты формируют
-   подробный английский `ParseError` и при уместном literal-led сценарии
-   добавляют до пяти похожих original patterns.
+1. The compiler merges the prefixes of all patterns into one `CommandGraph`
+   in advance.
+2. `CommandMatcher` traverses applicable graph edges. On each edge,
+   `ExpressionMatcher` returns zero, one, or several subsequent immutable
+   states.
+3. Reaching a terminal node after consuming the complete command produces a
+   `Candidate`. A candidate may contain both accepted and rejected parameters;
+   this is necessary to distinguish a syntax error from a validation error.
+4. `MatchResolver` retains routes that are not dominated by a more specific
+   route.
+5. If a more specific parameter is applicable by shape but violates a
+   constraint, it may block a less specific valid route.
+6. All remaining equally ranked matches are preserved. Ambiguity is a
+   successful result with the `ambiguous` status, not an error.
+7. If there is no complete candidate, dedicated diagnostic components produce
+   a detailed English `ParseError` and, in an appropriate literal-led
+   scenario, add up to five similar original patterns.
 
-## Общие форматы и соглашения
+## Common formats and conventions
 
-### Позиции и диапазоны
+### Positions and spans
 
-- `position`, `start`, `end` — индексы Python-строки, то есть позиции в
-  Unicode-кодовых точках, а не в байтах UTF-8.
-- Диапазоны полуоткрытые: `[start, end)`.
-- Matcher получает команду уже без начального отступа.
-- `span_offset` прибавляется при создании публичных диапазонов, чтобы вернуть
-  координаты относительно исходной строки вместе с отступом.
-- Пробелы между токенами пропускаются через `str.isspace()`.
+- `position`, `start`, and `end` are Python string indices, meaning positions
+  in Unicode code points rather than UTF-8 bytes.
+- Spans are half-open: `[start, end)`.
+- The matcher receives a command with its leading indentation already
+  removed.
+- `span_offset` is added when public spans are created so that coordinates
+  refer to the original line, including indentation.
+- Whitespace between tokens is skipped through `str.isspace()`.
 
-### Неизменяемые коллекции
+### Immutable collections
 
-Состояния и результаты используют `tuple` и `frozenset`. Это позволяет
-безопасно разветвлять поиск: одна ветка не меняет состояние другой.
+States and results use `tuple` and `frozenset`. This makes it safe to branch
+the search: one branch cannot change another branch's state.
 
-- Методы с результатом `Iterator[WalkState]` лениво выдают все возможные
-  продолжения.
-- Методы с результатом `tuple[WalkState, ...]` уже полностью вычислили и, как
-  правило, дедуплицировали продолжения.
-- Порядок tuple стабилен и участвует в выборе первого совпадения.
+- Methods returning `Iterator[WalkState]` yield all possible continuations
+  lazily.
+- Methods returning `tuple[WalkState, ...]` have already computed and usually
+  deduplicated all continuations.
+- Tuple order is stable and participates in selecting the first match.
 
-### Три состояния параметра
+### Three parameter states
 
-`ParameterResult.status` имеет три значения:
+`ParameterResult.status` has three possible values:
 
-- `VALID` — тип применим и значение прошло проверку;
-- `INVALID` — тип определённо применим по форме, но значение нарушает его
-  ограничения;
-- `NOT_APPLICABLE` — строка вообще не похожа на данный тип.
+- `VALID` — the type is applicable and the value passed validation;
+- `INVALID` — the type is definitely applicable by shape, but the value
+  violates its constraints;
+- `NOT_APPLICABLE` — the string does not resemble this type at all.
 
-Различие принципиально. Например, число вне диапазона должно привести к ошибке
-валидации и не должно незаметно превратиться в `STRING`. Но нечисловой токен
-для `INTEGER` имеет статус `NOT_APPLICABLE` и не блокирует подходящий `STRING`.
+This distinction is essential. For example, a number outside its allowed
+range must produce a validation error and must not silently become a
+`STRING`. A non-numeric token for `INTEGER`, however, has the
+`NOT_APPLICABLE` status and does not block a matching `STRING`.
 
-Та же логика применяется к IP. `192.0.2.999` имеет форму IPv4, поэтому
-`IPv4AddressValidator` возвращает `INVALID` и structured route блокирует
-generic `STRING`. `router.example.com` лексически не относится к IPv4 и
-возвращает `NOT_APPLICABLE`, поэтому может быть принят `STRING`. Для IPv6
-address-like token определяется как значение как минимум с двумя двоеточиями;
-zone identifiers с `%` считаются применимыми, но невалидными.
+The same logic applies to IP addresses. `192.0.2.999` has an IPv4-like shape,
+so `IPv4AddressValidator` returns `INVALID`, and the structured route blocks
+a generic `STRING`. `router.example.com` is not lexically IPv4-like and
+returns `NOT_APPLICABLE`, so it may be accepted by `STRING`. For IPv6, an
+address-like token is defined as a value containing at least two colons; zone
+identifiers containing `%` are considered applicable but invalid.
 
-### Вектор dispatch
+### Dispatch vector
 
-Каждое успешно пройденное выражение добавляет ранг в
+Every successfully traversed expression adds a rank to
 `WalkState.dispatch`:
 
-| Выражение/семейство | Ранг |
+| Expression/family | Rank |
 |---|---:|
-| литерал | 0 |
+| literal | 0 |
 | `ENUM` | 1 |
-| структурированный тип (`X.X.X.X`, `X:X::X:X`, даты, MAC) | 2 |
-| числовой тип | 3 |
-| общий тип, например `STRING` | 4 |
-| параметр-остаток | 5 |
-| неизвестный зарегистрированному registry тип | 6 |
+| structured type (`X.X.X.X`, `X:X::X:X`, dates, MAC) | 2 |
+| numeric type | 3 |
+| generic type, such as `STRING` | 4 |
+| remainder parameter | 5 |
+| type unknown to the registered registry | 6 |
 
-Чем меньше ранг, тем специфичнее совпадение. Векторы сравниваются по Pareto,
-а не лексикографически.
+The lower the rank, the more specific the match. Vectors are compared using
+Pareto dominance rather than lexicographically.
 
-## `state.py`: внутреннее состояние обхода
+## `state.py`: internal traversal state
 
 ### `CapturedParameter`
 
@@ -151,17 +155,17 @@ class CapturedParameter:
     normalized: object | None
 ```
 
-Значение параметра, успешно прошедшее валидатор.
+The value of a parameter that passed validation.
 
-- `declaration` — описание placeholder из исходного паттерна: `type_id`,
-  исходный текст, ограничения и metadata;
-- `token` — исходное значение и его диапазон в CLI-строке;
-- `normalized` — значение после нормализации validator. Тип намеренно
-  `object | None`, потому что подключаемый тип может вернуть собственный
-  объект; matcher не требует его глубокой immutable-семантики.
+- `declaration` — the placeholder description from the source pattern:
+  `type_id`, source text, constraints, and metadata;
+- `token` — the source value and its span in the CLI line;
+- `normalized` — the value after validator normalization. Its type is
+  deliberately `object | None` because a pluggable type may return its own
+  object; the matcher does not require deep immutable semantics from it.
 
-Объект создаётся `ParameterExpressionMatcher` и позже превращается в публичный
-`ParameterValue`.
+The object is created by `ParameterExpressionMatcher` and later converted to
+the public `ParameterValue`.
 
 ### `RejectedParameter`
 
@@ -173,8 +177,8 @@ class RejectedParameter:
     result: ParameterResult
 ```
 
-Параметр, для которого reader прочитал токен, но validator вернул
-`INVALID` или `NOT_APPLICABLE`.
+The reader consumed a token for this parameter, but the validator returned
+`INVALID` or `NOT_APPLICABLE`.
 
 #### `applicable`
 
@@ -183,10 +187,10 @@ class RejectedParameter:
 def applicable(self) -> bool
 ```
 
-Возвращает `True` только для `ParameterStatus.INVALID`. Свойство означает
-«значение имело форму этого типа, но не прошло проверку», а не просто
-«проверка завершилась неуспешно». Используется resolver при блокировании общего
-валидного маршрута.
+Returns `True` only for `ParameterStatus.INVALID`. The property means “the
+value had the shape of this type but did not pass validation,” rather than
+merely “validation was unsuccessful.” The resolver uses it when blocking a
+generic valid route.
 
 ### `WalkState`
 
@@ -203,25 +207,25 @@ class WalkState:
     trace: tuple[VariationStep, ...] = ()
 ```
 
-Полный снимок одной ветки backtracking-поиска.
+A complete snapshot of one backtracking search branch.
 
-- `position` — позиция чтения в `CommandText.value`;
-- `parts` — нормализованные части итоговой variation. Литералы записываются в
-  ASCII lower case, параметры — текстом declaration, например
-  `("interface", "STRING<1-63>")`;
-- `parameters` — валидные захваченные параметры;
-- `rejected` — прочитанные, но отклонённые параметры;
-- `dispatch` — последовательность рангов пройденных атомов;
-- `parameter_led` — diagnostic-классификация первого потреблённого atom:
-  `True` для применимого parameter, `False` для literal или
-  `NOT_APPLICABLE` parameter, `None` до первого потребления;
-- `source_order` — решения групп и повторов в порядке внешнего паттерна;
-- `trace` — подробная provenance-информация (`choice`, `optional`, `set`,
+- `position` — the read position in `CommandText.value`;
+- `parts` — normalized parts of the resulting variation. Literals are stored
+  in ASCII lowercase, while parameters use their declaration text, for
+  example `("interface", "STRING<1-63>")`;
+- `parameters` — valid captured parameters;
+- `rejected` — parameters that were read but rejected;
+- `dispatch` — the sequence of ranks for traversed atoms;
+- `parameter_led` — diagnostic classification of the first consumed atom:
+  `True` for an applicable parameter, `False` for a literal or
+  `NOT_APPLICABLE` parameter, and `None` before anything is consumed;
+- `source_order` — group and repeat decisions in outer-pattern order;
+- `trace` — detailed provenance information (`choice`, `optional`, `set`,
   `repeat`, `enum`).
 
-Начальное состояние — `WalkState()` с позицией `0` и пустыми tuple.
-Изменённые состояния создаются через `dataclasses.replace`; сам объект
-неизменяем.
+The initial state is `WalkState()` with position `0` and empty tuples. Modified
+states are created through `dataclasses.replace`; the object itself is
+immutable.
 
 ### `source_order_with_parent()`
 
@@ -233,17 +237,17 @@ def source_order_with_parent(
 ) -> tuple[int, ...]
 ```
 
-Вставляет решение внешней конструкции перед решениями, сделанными внутри её
-ветки.
+Inserts the outer construct's decision before decisions made inside its
+branch.
 
-- `base` — состояние до входа в группу или repeat;
-- `result` — состояние после разбора вложенного выражения;
-- `decision` — индекс выбранной альтернативы или количество повторов;
-- результат — новый `source_order`.
+- `base` — the state before entering the group or repeat;
+- `result` — the state after parsing the nested expression;
+- `decision` — the selected alternative index or repetition count;
+- the result is a new `source_order`.
 
-Алгоритм сохраняет префикс `base.source_order`, затем добавляет `decision`, а
-после него — только решения, появившиеся после `base`. Это обеспечивает
-стабильный source-order при вложенных группах.
+The algorithm preserves the `base.source_order` prefix, appends `decision`,
+and then appends only decisions made after `base`. This provides stable source
+order for nested groups.
 
 ### `Candidate`
 
@@ -254,12 +258,12 @@ class Candidate:
     state: WalkState
 ```
 
-Полное совпадение формы команды с одним линейным маршрутом графа.
-`route_id` связывает состояние с `RouteSource`, исходным JSON-паттерном и
-compile-time trace. Наличие элементов в `state.rejected` отличает невалидный
-кандидат от валидного.
+A complete match of the command shape against one linear graph route.
+`route_id` associates the state with `RouteSource`, the source JSON pattern,
+and the compile-time trace. The presence of items in `state.rejected`
+distinguishes an invalid candidate from a valid one.
 
-## `text.py`: чтение CLI-строки
+## `text.py`: reading a CLI line
 
 ### `ascii_lower()`
 
@@ -267,9 +271,10 @@ compile-time trace. Наличие элементов в `state.rejected` отл
 def ascii_lower(value: str) -> str
 ```
 
-Переводит только `A-Z` в `a-z` через `str.translate`. Не выполняет Unicode
-case folding и не меняет остальные символы. Используется для
-case-insensitive-сравнения VRP keywords и стабильных variation/signature.
+Converts only `A-Z` to `a-z` through `str.translate`. It does not perform
+Unicode case folding and does not change any other characters. It is used for
+case-insensitive comparison of VRP keywords and for stable variations and
+signatures.
 
 ### `CommandToken`
 
@@ -281,19 +286,19 @@ class CommandToken:
     end: int
 ```
 
-Один разделённый пробелами CLI-токен:
+A single whitespace-delimited CLI token:
 
-- `raw` — текст без окружающих пробелов;
-- `start`, `end` — его полуоткрытый диапазон в строке.
+- `raw` — the text without surrounding whitespace;
+- `start`, `end` — its half-open span in the line.
 
 ### `CommandText`
 
-Обёртка над одной строкой команды.
+A wrapper around one command line.
 
 #### `__init__(value)`
 
-Сохраняет строку в публичном для подсистемы атрибуте `value`. Проверка типа
-выполняется выше, в `CommandLineParser`.
+Stores the string in the subsystem-public `value` attribute. Type checking is
+performed at the higher `CommandLineParser` level.
 
 #### `skip_space(position)`
 
@@ -301,8 +306,8 @@ class CommandToken:
 def skip_space(self, position: int) -> int
 ```
 
-Двигается вправо, пока `value[position].isspace()` истинно. Возвращает первую
-непробельную позицию либо `len(value)`.
+Moves to the right while `value[position].isspace()` is true. Returns the
+first non-whitespace position or `len(value)`.
 
 #### `token(position)`
 
@@ -310,9 +315,10 @@ def skip_space(self, position: int) -> int
 def token(self, position: int) -> CommandToken | None
 ```
 
-Пропускает пробелы и читает до следующего whitespace. Возвращает
-`CommandToken` или `None`, если после позиции токенов нет. Метод не изменяет
-внутренний cursor: позицию всегда передаёт вызывающий код.
+Skips whitespace and reads until the next whitespace character. Returns a
+`CommandToken`, or `None` if there are no tokens after the given position. The
+method does not mutate an internal cursor: the caller always supplies the
+position.
 
 #### `at_end(position)`
 
@@ -320,9 +326,9 @@ def token(self, position: int) -> CommandToken | None
 def at_end(self, position: int) -> bool
 ```
 
-Возвращает `True`, если после пропуска пробелов достигнут конец строки.
+Returns `True` if skipping whitespace reaches the end of the line.
 
-## `diagnostics.py`: синтаксические ожидания
+## `diagnostics.py`: syntax expectations
 
 ### `MatchDiagnostics`
 
@@ -335,31 +341,35 @@ class MatchDiagnostics:
     parameter_path_progress: int = -1
 ```
 
-Единственный намеренно изменяемый накопитель подсистемы. Он общий для веток
-обхода и сохраняет ожидания только в самой дальней достигнутой позиции.
-Два progress-поля дополнительно показывают, насколько далеко прошли маршруты,
-первым потребившие literal/неприменимый parameter либо применимый parameter.
-Они нужны только для решения о keyword suggestions и не меняют matching.
+The subsystem's only deliberately mutable accumulator. It is shared across
+traversal branches and retains expectations only at the furthest position
+reached. The two progress fields additionally show how far routes advanced
+when their first consumed atom was a literal/non-applicable parameter or an
+applicable parameter. They are used only to decide whether to offer keyword
+suggestions and do not affect matching.
 
 #### `record(position, description, *, parameter_led=None)`
 
-- если новая позиция дальше текущей, заменяет весь набор ожиданий;
-- если позиция равна текущей, добавляет `description`;
-- если позиция меньше, игнорирует запись.
-- `parameter_led=True` означает, что первый parameter был применим;
-  `False` означает literal либо неприменимый первый parameter;
-  `None` — route ещё ничего не потребил;
-- соответствующее progress-поле запоминает максимальную достигнутую позицию,
-  даже если глобальное `expected` уже относится к другой ветке.
+- if the new position is further than the current one, replaces the entire
+  set of expectations;
+- if the position equals the current one, adds `description`;
+- if the position is earlier, ignores the record;
+- `parameter_led=True` means that the first parameter was applicable;
+  `False` means a literal or a non-applicable first parameter;
+  `None` means the route has not consumed anything yet;
+- the corresponding progress field records the maximum position reached even
+  if the global `expected` value already refers to another branch.
 
-Так ошибка сообщает наиболее полезную точку, а не ранний неудачный маршрут.
+This makes the error report the most useful point rather than an early failed
+route.
 
 #### `allows_keyword_suggestions`
 
-Property возвращает `True`, когда route без применимого первого parameter
-продвинулся не меньше parameter-first route. Если применимый parameter-first
-route объясняет строку лучше, literal keyword recommendations подавляются,
-чтобы не показывать команды из другого пространства распознавания.
+The property returns `True` when a route without an applicable first parameter
+advanced at least as far as a parameter-first route. If an applicable
+parameter-first route explains the line better, literal keyword
+recommendations are suppressed so that commands from another recognition
+space are not displayed.
 
 #### `elements(offset=0)`
 
@@ -367,41 +377,41 @@ route объясняет строку лучше, literal keyword recommendation
 def elements(self, *, offset: int = 0) -> tuple[ExpectedElement, ...]
 ```
 
-Сортирует текстовые ожидания и возвращает tuple публичных `ExpectedElement`.
-К каждой позиции прибавляется `offset`. Дубликаты отсутствуют благодаря
-`set`.
+Sorts textual expectations and returns a tuple of public `ExpectedElement`
+objects. `offset` is added to each position. The `set` prevents duplicates.
 
 #### `_record_path_progress(position, parameter_led)`
 
-Private helper обновляет одно из progress-полей по явной классификации route.
-Значение `None` означает, что route ещё ничего не потребил, поэтому такая
-запись не участвует в выборе suggestions. `NOT_APPLICABLE` parameter не может
-самостоятельно скрыть полезную keyword-рекомендацию.
+A private helper that updates one of the progress fields according to the
+route's explicit classification. `None` means that the route has not consumed
+anything yet, so that record does not participate in suggestion selection. A
+`NOT_APPLICABLE` parameter cannot suppress a useful keyword recommendation by
+itself.
 
-## `walking.py`: интерфейс рекурсивного обхода
+## `walking.py`: recursive traversal interface
 
 ### `ExpressionWalker`
 
-`Protocol`, от которого matchers групп и повторов зависят вместо конкретного
-`ExpressionMatcher`.
+A `Protocol` on which group and repeat matchers depend instead of depending on
+the concrete `ExpressionMatcher`.
 
 #### `walk(expression, state, command, diagnostics, *, path)`
 
-Возвращает `Iterator[WalkState]` со всеми состояниями после одного AST-узла.
+Returns an `Iterator[WalkState]` containing every state after one AST node.
 
 #### `sequence(expressions, state, command, diagnostics, *, path)`
 
-Возвращает дедуплицированный `tuple[WalkState, ...]` после последовательного
-разбора tuple AST-узлов.
+Returns a deduplicated `tuple[WalkState, ...]` after sequentially parsing a
+tuple of AST nodes.
 
-`ExpressionMatcher` удовлетворяет этому протоколу структурно; наследование не
-требуется.
+`ExpressionMatcher` satisfies this protocol structurally; inheritance is not
+required.
 
-## `atoms.py`: литералы и параметры
+## `atoms.py`: literals and parameters
 
 ### `DispatchOrder`
 
-Централизованно сопоставляет `ParameterFamily` с рангом специфичности.
+Provides a centralized mapping from `ParameterFamily` to specificity rank.
 
 #### `rank(declaration, registry)`
 
@@ -413,10 +423,10 @@ def rank(
 ) -> int
 ```
 
-Находит тип через `registry.get(declaration.type_id)` и возвращает ранг из
-таблицы dispatch. Если тип отсутствует, возвращает `6`. Метод не знает
-конкретных type ID, поэтому новый тип подключается через registry и выбирает
-поведение посредством своего `family`.
+Looks up the type through `registry.get(declaration.type_id)` and returns the
+rank from the dispatch table. Returns `6` if the type is absent. The method
+does not know concrete type IDs, so a new type is connected through the
+registry and selects behavior through its `family`.
 
 ### `LiteralExpressionMatcher`
 
@@ -426,25 +436,26 @@ def rank(
 def match(...) -> Iterator[WalkState]
 ```
 
-Сопоставляет один `Literal` с одним whitespace-delimited токеном.
+Matches one `Literal` against one whitespace-delimited token.
 
-- Сравнение регистронезависимо только для ASCII.
-- При несовпадении iterator пуст, а diagnostics получает `repr()` ожидаемого
-  литерала в позиции начала токена.
-- При совпадении выдаётся одно новое состояние:
+- Comparison is case-insensitive for ASCII only.
+- On a mismatch, the iterator is empty and diagnostics receives the `repr()`
+  of the expected literal at the token's starting position.
+- On a match, exactly one new state is yielded:
   - `position = token.end`;
-  - в `parts` добавляется lower-case literal;
-  - в `dispatch` добавляется `0`.
-  - если начало route ещё не классифицировано, `parameter_led=False`.
+  - the lowercase literal is appended to `parts`;
+  - `0` is appended to `dispatch`;
+  - if the route's beginning has not yet been classified,
+    `parameter_led=False`.
 
-Параметры, rejected, source order и trace не меняются.
+Parameters, rejected values, source order, and trace remain unchanged.
 
 ### `ParameterExpressionMatcher`
 
 #### `__init__(parameter_types, dispatch_order=None)`
 
-Сохраняет `ParameterTypeRegistry`. Опциональный `DispatchOrder` позволяет
-подменить стратегию в тесте или composition root.
+Stores the `ParameterTypeRegistry`. The optional `DispatchOrder` allows the
+strategy to be replaced in a test or composition root.
 
 #### `match(expression, state, command, diagnostics, *, path)`
 
@@ -452,144 +463,147 @@ def match(...) -> Iterator[WalkState]
 def match(...) -> Iterator[WalkState]
 ```
 
-Алгоритм:
+Algorithm:
 
-1. Проверяет, что `expression.declaration` является
-   `ParameterDeclaration`; иначе выбрасывает `TypeError`.
-2. Применяет `_text_policy_allows()` к declaration и текущей позиции.
-3. Просит registry reader прочитать значение с `state.position`.
-4. Если reader не нашёл значение, ничего не выдаёт и записывает declaration в
+1. Checks that `expression.declaration` is a `ParameterDeclaration`; otherwise
+   raises `TypeError`.
+2. Applies `_text_policy_allows()` to the declaration and current position.
+3. Asks the registry reader to read a value from `state.position`.
+4. If the reader finds no value, yields nothing and records the declaration in
    diagnostics.
-5. Передаёт `token.raw` validator через `registry.probe()`.
-6. Добавляет семейный ранг в dispatch.
-7. Для `VALID` добавляет `CapturedParameter`; для `INVALID` и
-   `NOT_APPLICABLE` — `RejectedParameter`.
-8. Для первого parameter устанавливает `parameter_led=True`, если status
-   применим (`VALID`/`INVALID`), либо `False` для `NOT_APPLICABLE`.
-9. В обоих случаях потребляет токен, добавляет исходный текст declaration в
-   `parts` и выдаёт ровно одно состояние.
+5. Passes `token.raw` to the validator through `registry.probe()`.
+6. Appends the family rank to dispatch.
+7. Appends `CapturedParameter` for `VALID`, or `RejectedParameter` for
+   `INVALID` and `NOT_APPLICABLE`.
+8. For the first parameter, sets `parameter_led=True` if the status is
+   applicable (`VALID`/`INVALID`), or `False` for `NOT_APPLICABLE`.
+9. In either case, consumes the token, appends the original declaration text
+   to `parts`, and yields exactly one state.
 
-Важно: отклонённый параметр не завершает маршрут немедленно. Ветка должна
-дойти до терминала графа, чтобы resolver мог подтвердить совпадение формы всей
-команды и вернуть точную validation error.
+Important: a rejected parameter does not terminate the route immediately. The
+branch must reach a graph terminal so the resolver can confirm that the full
+command shape matched and return an accurate validation error.
 
-`path` — стабильный адрес выражения внутри маршрута, например `step:2` или
-`step:2.1.0`; он попадает в provenance trace.
+`path` is the stable address of the expression within the route, such as
+`step:2` or `step:2.1.0`; it is included in the provenance trace.
 
 #### `_text_policy_allows(declaration, state, command)`
 
-Защищает от catch-all поведения bare/root `TEXT<min-max>`:
+Protects against the catch-all behavior of a bare/root `TEXT<min-max>`:
 
-- для declaration не типа `text` возвращает `True`;
-- для `TEXT`, сопоставляемого не в позиции `0`, возвращает `True`;
-- для `TEXT` в позиции `0` возвращает `True` только тогда, когда первый
-  непробельный символ команды — `!`.
+- returns `True` for a declaration whose type is not `text`;
+- returns `True` for `TEXT` matched at any position other than `0`;
+- for `TEXT` at position `0`, returns `True` only when the command's first
+  non-whitespace character is `!`.
 
-Guard находится непосредственно в `ParameterExpressionMatcher`, поэтому
-применяется к каждому `Parameter` независимо от его вложенности: на обычном
-graph edge, внутри symbolic `Group`, `Repeat` или symbolic route, оставленного
-после fallback route expansion. При этом `description TEXT<1-80>` разрешён,
-поскольку keyword уже продвинул `state.position`.
+The guard is located directly in `ParameterExpressionMatcher`, so it applies
+to every `Parameter` regardless of nesting: on a regular graph edge, inside a
+symbolic `Group` or `Repeat`, or on a symbolic route retained after fallback
+route expansion. `description TEXT<1-80>` remains allowed because its keyword
+has already advanced `state.position`.
 
 #### `_trace(declaration, valid, normalized, state, path)`
 
-Добавляет `VariationStep(kind="enum", path=path,
-selected=(str(normalized),))` только для валидного параметра семейства
-`ENUM`. Для остальных типов и невалидных enum возвращает старый trace без
-изменений.
+Appends `VariationStep(kind="enum", path=path,
+selected=(str(normalized),))` only for a valid parameter in the `ENUM` family.
+For all other types and invalid enum values, returns the existing trace
+unchanged.
 
-## `deduplication.py`: стабильное удаление дубликатов
+## `deduplication.py`: stable deduplication
 
 ### `WalkStateIdentity`
 
 #### `key(state)`
 
-Возвращает hashable tuple, включающий:
+Returns a hashable tuple containing:
 
-- позицию и variation parts;
-- declaration, raw и `repr(normalized)` каждого captured-параметра;
-- declaration, raw, status и `repr(issue)` каждого rejected-параметра;
+- the position and variation parts;
+- declaration, raw value, and `repr(normalized)` for each captured parameter;
+- declaration, raw value, status, and `repr(issue)` for each rejected
+  parameter;
 - dispatch;
 - `parameter_led`;
 - source order;
 - trace.
 
-Используется `repr()`, потому что пользовательский plugin вправе вернуть
-нехешируемый normalized-объект. Практическое требование к plugin: `repr()`
-должен быть стабильным в рамках процесса и различать семантически разные
-значения.
+`repr()` is used because an application plugin may return an unhashable
+normalized object. The practical requirement for a plugin is that `repr()`
+must be stable within the process and distinguish semantically different
+values.
 
 ### `WalkStateSet`
 
 #### `__init__(identity=None)`
 
-Принимает необязательную стратегию `WalkStateIdentity`.
+Accepts an optional `WalkStateIdentity` strategy.
 
 #### `unique(states)`
 
-Проходит `tuple[WalkState, ...]` слева направо, сохраняет первый state для
-каждого identity key и возвращает tuple. Порядок первых появлений сохраняется.
+Traverses `tuple[WalkState, ...]` from left to right, preserves the first state
+for each identity key, and returns a tuple. First-occurrence order is
+preserved.
 
 ### `CandidateSet`
 
 #### `__init__(identity=None)`
 
-Использует переданную или стандартную `WalkStateIdentity`.
+Uses the supplied or default `WalkStateIdentity`.
 
 #### `unique(candidates)`
 
-Удаляет дубли из `list[Candidate]`, но добавляет `route_id` к ключу state.
-Поэтому одинаковые состояния разных исходных маршрутов не склеиваются:
-provenance каждого JSON-паттерна сохраняется. Возвращает tuple в исходном
-порядке.
+Removes duplicates from `list[Candidate]`, but adds `route_id` to the state
+key. Consequently, identical states from different source routes are not
+merged: the provenance of each JSON pattern is preserved. Returns a tuple in
+the original order.
 
-## `frontier.py`: Pareto-специфичность
+## `frontier.py`: Pareto specificity
 
 ### `DispatchDominance`
 
 #### `dominates(left, right)`
 
-Сравнивает два `tuple[int, ...]` попарно:
+Compares two `tuple[int, ...]` values element by element:
 
-- `left` доминирует `right`, если ни в одной общей позиции его ранг не больше;
-- хотя бы в одной общей позиции ранг должен быть строго меньше;
-- если общей позиции нет, доминирования нет.
+- `left` dominates `right` if its rank is no greater at every shared
+  position;
+- its rank must be strictly lower in at least one shared position;
+- if there are no shared positions, neither vector dominates the other.
 
-Сравнение идёт через `zip(..., strict=False)`. Если длины отличаются,
-дополнительные хвостовые элементы не участвуют.
+Comparison uses `zip(..., strict=False)`. If lengths differ, additional
+trailing elements do not participate.
 
-Примеры:
+Examples:
 
 ```text
-(1,)    dominates (4,)       # ENUM предпочтительнее STRING
+(1,)    dominates (4,)       # ENUM is preferred over STRING
 (1, 4) dominates (4, 4)
-(1, 4) и (4, 1) несравнимы   # реальная ambiguity сохраняется
-(3,)    не dominates (3,)    # равенство не является доминированием
-()      не dominates (4,)
+(1, 4) and (4, 1) are incomparable  # genuine ambiguity is preserved
+(3,)    does not dominate (3,)      # equality is not dominance
+()      does not dominate (4,)
 ```
 
 ### `CandidateFrontier`
 
 #### `__init__(dominance=None)`
 
-Принимает стратегию сравнения или создаёт `DispatchDominance`.
+Accepts a comparison strategy or creates `DispatchDominance`.
 
 #### `select(candidates)`
 
-1. Группирует кандидаты по полному dispatch vector.
-2. Сравнивает только уникальные векторы, что ускоряет обработку множества
-   идентичных паттернов.
-3. Сохраняет все buckets, которые не доминируются другим вектором.
-4. Возвращает кандидаты в их исходном порядке.
+1. Groups candidates by their complete dispatch vector.
+2. Compares only unique vectors, which speeds up processing of many identical
+   patterns.
+3. Retains all buckets not dominated by another vector.
+4. Returns candidates in their original order.
 
-Кандидаты с одинаковым вектором все остаются: это необходимо для статусов
-`equivalent` и `ambiguous`.
+All candidates with the same vector are retained; this is necessary for the
+`equivalent` and `ambiguous` statuses.
 
 #### `dominates(left, right)`
 
-Публичный для resolver делегат к настроенной стратегии dominance.
+A resolver-facing delegate to the configured dominance strategy.
 
-## `alternatives.py`: раннее сокращение ветвей
+## `alternatives.py`: early branch pruning
 
 ### `AlternativeOutcome`
 
@@ -600,207 +614,209 @@ class AlternativeOutcome:
     state: WalkState
 ```
 
-Результат одной ветки группы: индекс альтернативы и достигнутое состояние.
+The result of one group branch: the alternative index and the state reached.
 
 ### `AlternativeStateFrontier`
 
-Нужен для ограничения комбинаторного роста внутри group set и repeat до того,
-как найден конец всей команды.
+Limits combinatorial growth within group sets and repeats before the end of
+the complete command is found.
 
 #### `__init__(dominance=None, identity=None)`
 
-Принимает стратегии Pareto-сравнения и идентичности state.
+Accepts Pareto comparison and state identity strategies.
 
 #### `select(outcomes, base)`
 
-Группирует outcomes по конечной `state.position`, обрабатывает каждую позицию
-через `_at_position()` и объединяет результаты по возрастанию позиции.
+Groups outcomes by final `state.position`, processes each position through
+`_at_position()`, and combines results in ascending position order.
 
-Состояния на разных позициях нельзя сравнивать по специфичности: они потребили
-разное количество входа и могут иметь разные продолжения.
+States at different positions cannot be compared by specificity: they have
+consumed different amounts of input and may have different continuations.
 
 #### `_at_position(outcomes, base)`
 
-Для одной конечной позиции:
+For one final position:
 
-1. Находит ветки, которые не добавили новый `NOT_APPLICABLE` после `base`.
-2. Если такие есть, исключает ветки с новым `NOT_APPLICABLE`; иначе временно
-   оставляет все.
-3. Сравнивает только новый suffix dispatch, созданный этой альтернативой.
-4. Оставляет недоминируемый Pareto frontier.
-5. Удаляет одинаковые states, сохраняя первый.
-6. Если все варианты содержат новый `NOT_APPLICABLE`, оставляет только один
-   представитель. Его достаточно для полезной validation error, а повторение
-   таких состояний вызвало бы экспоненциальный рост.
+1. Finds branches that did not append a new `NOT_APPLICABLE` after `base`.
+2. If any exist, excludes branches with a new `NOT_APPLICABLE`; otherwise,
+   temporarily retains them all.
+3. Compares only the new dispatch suffix created by this alternative.
+4. Retains the non-dominated Pareto frontier.
+5. Removes identical states while preserving the first one.
+6. If every alternative contains a new `NOT_APPLICABLE`, retains only one
+   representative. One is sufficient for a useful validation error, while
+   retaining all such states would cause exponential growth.
 
 #### `_unique(outcomes)`
 
-Стабильно удаляет одинаковые состояния через `WalkStateIdentity`. Индекс
-альтернативы не входит в ключ: если две ветки привели к полностью одинаковому
-state, остаётся первая.
+Stably removes identical states through `WalkStateIdentity`. The alternative
+index is not part of the key: if two branches produce completely identical
+states, the first one remains.
 
 #### `_dispatch(state, base)`
 
-Возвращает только часть dispatch, добавленную после входа в альтернативу:
+Returns only the part of dispatch appended after entering the alternative:
 `state.dispatch[len(base.dispatch):]`.
 
 #### `_has_new_not_applicable(state, base)`
 
-Проверяет только новые rejected-параметры и возвращает `True`, если среди них
-есть `ParameterStatus.NOT_APPLICABLE`.
+Checks only newly rejected parameters and returns `True` if any have
+`ParameterStatus.NOT_APPLICABLE`.
 
-## `groups.py`: выбор и unordered set
+## `groups.py`: choices and unordered sets
 
 ### `GroupExpressionMatcher`
 
-Поддерживает четыре `GroupMode`:
+Supports four `GroupMode` values:
 
-| Синтаксис паттерна | `GroupMode` | Семантика |
+| Pattern syntax | `GroupMode` | Semantics |
 |---|---|---|
-| `{ a \| b }` | `REQUIRED_ONE` | ровно одна альтернатива |
-| `[ a \| b ]` | `OPTIONAL_ONE` | ноль или одна |
-| `{ a \| b } *` | `REQUIRED_SET` | от одной до всех, каждая не более раза, порядок произвольный |
-| `[ a \| b ] *` | `OPTIONAL_SET` | от нуля до всех, каждая не более раза, порядок произвольный |
+| `{ a \| b }` | `REQUIRED_ONE` | exactly one alternative |
+| `[ a \| b ]` | `OPTIONAL_ONE` | zero or one alternative |
+| `{ a \| b } *` | `REQUIRED_SET` | one or more, up to all, each at most once, in any order |
+| `[ a \| b ] *` | `OPTIONAL_SET` | zero or more, up to all, each at most once, in any order |
 
 #### `__init__(alternatives=None)`
 
-Принимает `AlternativeStateFrontier` или создаёт стандартный.
+Accepts an `AlternativeStateFrontier` or creates the default one.
 
 #### `match(expression, state, command, diagnostics, *, path, walker)`
 
-Выбирает `_set()` для `OPTIONAL_SET`/`REQUIRED_SET`, иначе `_choice()`.
-Лениво выдаёт все допустимые состояния.
+Selects `_set()` for `OPTIONAL_SET`/`REQUIRED_SET`; otherwise selects
+`_choice()`. Lazily yields all valid states.
 
 #### `_choice(...)`
 
-- Для optional-группы сначала выдаёт ветку пропуска. В source order ей
-  соответствует `0`, а trace получает
+- For an optional group, first yields the skip branch. Its source order value
+  is `0`, and trace receives
   `VariationStep(kind="optional", path=path, selected=())`.
-- Затем прогоняет sequence каждой альтернативы от одного исходного state.
-- Результаты проходят ранний `AlternativeStateFrontier`.
-- Внешнее решение вставляется перед вложенными через
+- Then runs the sequence for each alternative from the same initial state.
+- Results pass through the early `AlternativeStateFrontier`.
+- The outer decision is inserted before nested decisions through
   `source_order_with_parent()`.
-- Для required choice source-order decision равен индексу альтернативы.
-- Для optional choice выбранные альтернативы получают `index + 1`, потому что
-  значение `0` уже занято вариантом пропуска.
-- Trace получает `kind="choice"` или `"optional"` и
+- For a required choice, the source-order decision equals the alternative
+  index.
+- For an optional choice, selected alternatives receive `index + 1` because
+  the value `0` is already used by the skip branch.
+- Trace receives `kind="choice"` or `"optional"` and
   `selected=(alternative_index,)`.
 
 #### `_set(...)`
 
-Реализован рекурсивный backtracking:
+Implemented as recursive backtracking:
 
-- `minimum = 0` для optional set и `1` для required set;
-- `used: frozenset[int]` запрещает выбирать одну альтернативу дважды;
-- `order: tuple[int, ...]` хранит фактический порядок выбора;
-- как только достигнут minimum, текущее состояние выдаётся с
+- `minimum = 0` for an optional set and `1` for a required set;
+- `used: frozenset[int]` prevents an alternative from being selected twice;
+- `order: tuple[int, ...]` stores the actual selection order;
+- as soon as the minimum is reached, the current state is yielded with
   `VariationStep(kind="set", selected=order)`;
-- затем matcher пробует каждую ещё не использованную альтернативу;
-- результаты без продвижения позиции отбрасываются, поэтому nullable-ветка не
-  может создать бесконечную рекурсию;
-- ранний frontier применяется **отдельно к каждой альтернативе**. Сравнивать
-  разные alternative indices на этом этапе нельзя: выбор влияет на множество
-  оставшихся веток и иначе потеряется корректная перестановка;
-- source order обновляется для каждого выбора, затем поиск продолжается с
-  расширенным `used`.
+- the matcher then tries every alternative that has not yet been used;
+- results that do not advance the position are discarded, so a nullable branch
+  cannot create infinite recursion;
+- the early frontier is applied **separately to each alternative**. Different
+  alternative indices cannot be compared at this stage because the choice
+  affects the set of remaining branches and otherwise a valid permutation
+  would be lost;
+- source order is updated for every choice, then the search continues with an
+  expanded `used`.
 
-В худшем случае число перестановок set факториально, но запрет повторного
-выбора, отбрасывание zero-progress и ранняя дедупликация существенно
-ограничивают практический поиск.
+In the worst case, the number of set permutations is factorial. Prohibiting
+repeated choices, discarding zero-progress results, and early deduplication
+substantially limit the search in practice.
 
-##### Локальная функция `visit(current, used, order)`
+##### Local function `visit(current, used, order)`
 
-Вложенный recursive helper метода `_set()`. Принимает текущее `WalkState`,
-immutable-множество уже использованных alternative indices и порядок выбора.
-Лениво возвращает `Iterator[WalkState]`: сначала допустимый текущий set, затем
-состояния всех рекурсивных продолжений с одной новой consuming alternative.
+A nested recursive helper of `_set()`. It accepts the current `WalkState`, an
+immutable set of already used alternative indices, and the selection order.
+It lazily returns an `Iterator[WalkState]`: first the valid current set, then
+the states of all recursive continuations with one new consuming alternative.
 
-## `repeats.py`: ограниченное повторение
+## `repeats.py`: bounded repetition
 
 ### `RepeatExpressionMatcher`
 
-Обрабатывает AST `Repeat(atom, minimum, maximum)`, возникающий из
-`&<min-max>`.
+Processes the `Repeat(atom, minimum, maximum)` AST produced by `&<min-max>`.
 
 #### `__init__(states=None)`
 
-Принимает `WalkStateSet` для дедупликации frontier после каждого шага.
+Accepts a `WalkStateSet` for deduplicating the frontier after each step.
 
 #### `match(expression, state, command, diagnostics, *, path, walker)`
 
-1. Начальный frontier содержит исходный state.
-2. Если `minimum == 0`, сразу выдаёт вариант с нулём повторов.
-3. Для `count` от `1` до `maximum` строит следующий frontier через `_next()`.
-4. Пустой frontier прекращает цикл: дальнейшие повторы невозможны.
-5. При `count >= minimum` выдаёт каждое состояние frontier с provenance
-   фактического количества.
+1. The initial frontier contains the source state.
+2. If `minimum == 0`, immediately yields the zero-repetition variant.
+3. For `count` from `1` through `maximum`, builds the next frontier through
+   `_next()`.
+4. An empty frontier terminates the loop: no further repetition is possible.
+5. When `count >= minimum`, yields every frontier state with provenance for
+   the actual count.
 
-Метод возвращает iterator всех допустимых cardinality, а не только
-максимального количества. Продолжение паттерна определит, какой вариант
-сможет дойти до терминала.
+The method returns an iterator over every allowed cardinality, not only the
+maximum count. The pattern continuation determines which variant can reach a
+terminal.
 
 #### `_next(expression, frontier, command, diagnostics, *, path, count, walker)`
 
-Применяет `walker.walk()` к atom для каждого текущего state. Путь конкретного
-повтора имеет вид `"{path}.{count - 1}"`. Результат принимается только если
-позиция продвинулась, затем все результаты стабильно дедуплицируются.
+Applies `walker.walk()` to the atom for every current state. The path of a
+specific repetition has the form `"{path}.{count - 1}"`. A result is accepted
+only if its position advanced; all results are then stably deduplicated.
 
 #### `_with_count(base, state, path, count)`
 
-Возвращает копию state:
+Returns a copy of the state:
 
-- вставляет `count` во внешний source order;
-- добавляет `VariationStep(kind="repeat", path=path,
+- inserts `count` into the outer source order;
+- appends `VariationStep(kind="repeat", path=path,
   selected=(count,))`.
 
-## `expressions.py`: полиморфный координатор AST
+## `expressions.py`: polymorphic AST coordinator
 
 ### `ExpressionMatcher`
 
-Composition root для atom/group/repeat matchers и реализация
-`ExpressionWalker`.
+The composition root for atom, group, and repeat matchers, and the
+implementation of `ExpressionWalker`.
 
 #### `__init__(parameter_types, dispatch_order=None, states=None)`
 
-Создаёт:
+Creates:
 
-- общий `WalkStateSet`;
+- a shared `WalkStateSet`;
 - `LiteralExpressionMatcher`;
 - `ParameterExpressionMatcher`;
 - `GroupExpressionMatcher`;
-- `RepeatExpressionMatcher`, использующий тот же state set.
+- `RepeatExpressionMatcher`, using the same state set.
 
 #### `match(expression, state, command, diagnostics, *, path)`
 
-Полностью вычисляет `walk()`, стабильно удаляет дубликаты и возвращает
-`tuple[WalkState, ...]`. Это основной вход для одного ребра графа.
+Fully evaluates `walk()`, stably removes duplicates, and returns
+`tuple[WalkState, ...]`. This is the primary entry point for one graph edge.
 
 #### `walk(expression, state, command, diagnostics, *, path)`
 
-Диспетчеризует по фактическому типу AST:
+Dispatches by the concrete AST type:
 
 - `Literal` → literal matcher;
 - `Parameter` → parameter matcher;
-- `Group` → group matcher с `walker=self`;
-- `Repeat` → repeat matcher с `walker=self`.
+- `Group` → group matcher with `walker=self`;
+- `Repeat` → repeat matcher with `walker=self`.
 
-Для неизвестного `Node` выбрасывает `TypeError("unsupported pattern node:
-...")`. Результат — ленивый iterator.
+Raises `TypeError("unsupported pattern node: ...")` for an unknown `Node`.
+The result is a lazy iterator.
 
 #### `sequence(expressions, state, command, diagnostics, *, path)`
 
-Последовательно применяет tuple выражений:
+Applies a tuple of expressions sequentially:
 
-1. frontier начинается с одного исходного state;
-2. каждое выражение применяется ко всем состояниям frontier;
-3. полученный декартов набор стабильно дедуплицируется;
-4. если frontier пуст, обработка досрочно завершается.
+1. the frontier starts with one source state;
+2. each expression is applied to every state in the frontier;
+3. the resulting Cartesian set is stably deduplicated;
+4. processing stops early if the frontier becomes empty.
 
-`path` дополняется индексом каждого выражения. Возвращается вычисленный tuple.
-Именно этот метод обеспечивает backtracking внутри альтернатив: все
-промежуточные варианты продолжаются независимо.
+The index of each expression is appended to `path`. The method returns an
+evaluated tuple. This method provides backtracking within alternatives: every
+intermediate variant continues independently.
 
-## `matcher.py`: обход объединённого графа
+## `matcher.py`: traversing the merged graph
 
 ### `_Traversal`
 
@@ -813,31 +829,32 @@ class _Traversal:
     depth: int
 ```
 
-Внутренний кадр рекурсивного обхода:
+An internal recursive traversal frame:
 
-- `node` — текущий узел графа;
-- `state` — состояние после префикса;
-- `route_ids` — маршруты, совместимые со всем уже пройденным путём; `None` в
-  корне означает отсутствие начального ограничения;
-- `depth` — номер graph step, используется в trace path.
+- `node` — the current graph node;
+- `state` — the state after the prefix;
+- `route_ids` — routes compatible with the entire path traversed so far;
+  `None` at the root means there is no initial restriction;
+- `depth` — the graph step number, used in the trace path.
 
 ### `CommandMatcher`
 
-Низкоуровневый recognizer одной команды. Он не обрабатывает отступ,
-`line_number` или пустую строку — это ответственность `CommandLineParser`.
+A low-level recognizer for one command. It does not handle indentation,
+`line_number`, or an empty line; those are `CommandLineParser`
+responsibilities.
 
 #### `__init__(graph, parameter_types, expression_matcher=None, resolver=None, candidate_set=None, error_factory=None)`
 
-Обязательные зависимости:
+Required dependencies:
 
-- `graph: CommandGraph` — неизменяемый merged prefix graph;
-- `parameter_types: ParameterTypeRegistry` — тот же набор типов, с которым
-  компилировался graph.
+- `graph: CommandGraph` — the immutable merged prefix graph;
+- `parameter_types: ParameterTypeRegistry` — the same set of types with which
+  the graph was compiled.
 
-Опциональные зависимости позволяют тестировать компоненты отдельно.
-По умолчанию matcher создаёт `CommandSuggester` для данного graph/registry и
-передаёт его в `CommandErrorFactory`. Через `error_factory` обе стратегии
-runtime-диагностики можно заменить вместе.
+Optional dependencies allow components to be tested independently. By
+default, the matcher creates a `CommandSuggester` for the given graph and
+registry and passes it to `CommandErrorFactory`. Both runtime diagnostic
+strategies can be replaced together through `error_factory`.
 
 #### `match(text, *, span_offset=0)`
 
@@ -850,292 +867,295 @@ def match(
 ) -> ResolvedMatch | ParseError
 ```
 
-Создаёт `CommandText`, diagnostics и список candidates, затем запускает `_walk`
-из root с `WalkState()`.
+Creates `CommandText`, diagnostics, and a candidate list, then starts `_walk`
+from the root with `WalkState()`.
 
-- Если найден хотя бы один terminal candidate, кандидаты дедуплицируются и
-  передаются `MatchResolver.resolve()`.
-- Если полных кандидатов нет, `CommandErrorFactory` возвращает подробный
-  syntax/unknown `ParseError` и, когда это уместно, top-5 suggestions.
-- `span_offset` не влияет на matching; он только сдвигает публичные позиции.
+- If at least one terminal candidate is found, candidates are deduplicated and
+  passed to `MatchResolver.resolve()`.
+- If there are no complete candidates, `CommandErrorFactory` returns a
+  detailed syntax-error or unknown-command `ParseError` and, when appropriate,
+  top-five suggestions.
+- `span_offset` does not affect matching; it only shifts public positions.
 
-Метод не проверяет тип `text` и знак `span_offset`: корректный внешний контракт
-обеспечивает `CommandLineParser`.
+The method does not validate the type of `text` or the sign of `span_offset`;
+`CommandLineParser` enforces the correct external contract.
 
 #### `_walk(traversal, command, diagnostics, candidates)`
 
-Рекурсивный DFS по графу.
+A recursive depth-first traversal of the graph.
 
-1. Проверяет, находится ли cursor в конце команды.
-2. В конце пересекает `node.accepting_routes` с активными `route_ids` и
-   добавляет `Candidate` для каждого допустимого terminal route.
-3. Там же записывает в diagnostics возможные следующие литералы. Если
-   expression edges отсутствуют, завершает ветку.
-4. Если вход ещё остался, но node уже terminal, записывает ожидание
+1. Checks whether the cursor is at the end of the command.
+2. At the end, intersects `node.accepting_routes` with the active `route_ids`
+   and appends a `Candidate` for each allowed terminal route.
+3. At the same point, records possible next literals in diagnostics. If there
+   are no expression edges, terminates the branch.
+4. If input remains but the node is already terminal, records the expectation
    `"end of command"`.
-5. `_edges()` выбирает потенциальные рёбра.
-6. Для каждого ребра пересекает его route IDs с активными. Это критически
-   важно: общие graph nodes не позволяют «начать одним паттерном, а закончить
-   другим».
-7. Сопоставляет expression и рекурсивно продолжает каждый resulting state.
-   TEXT-policy при необходимости применяется внутри
-   `ParameterExpressionMatcher`.
+5. `_edges()` selects potential edges.
+6. For each edge, intersects its route IDs with the active IDs. This is
+   essential: shared graph nodes must not allow a traversal to “start with one
+   pattern and finish with another.”
+7. Matches the expression and recursively continues from each resulting
+   state. The TEXT policy is applied inside `ParameterExpressionMatcher` when
+   necessary.
 
-В candidates попадают как валидные, так и validation-rejected полные маршруты.
-Частичный маршрут никогда не становится кандидатом.
+Candidates include both valid and validation-rejected complete routes. A
+partial route never becomes a candidate.
 
 #### `_edges(node, command, position)`
 
-Читает текущий токен и ищет literal edge по ASCII-lower ключу.
+Reads the current token and looks up a literal edge by its ASCII-lower key.
 
-- Если подходящего literal нет, возвращает только `expression_edges`.
-- Если есть, возвращает tuple `(literal, *expression_edges)`.
+- If no matching literal exists, returns only `expression_edges`.
+- If one exists, returns the tuple `(literal, *expression_edges)`.
 
-Таким образом literal пробуется первым, но generic/parameter ветви не
-отбрасываются преждевременно. Окончательный выбор делает Pareto resolver после
-проверки полного продолжения.
+The literal is therefore tried first, but generic/parameter branches are not
+discarded prematurely. The Pareto resolver makes the final selection after
+checking complete continuations.
 
-Если candidates после дедупликации отсутствуют, `match()` передаёт
-`command.value`, diagnostics и `span_offset` в `self._errors.create()`.
-Построение сообщения и recommendations вынесено из graph walker в
+If no candidates remain after deduplication, `match()` passes `command.value`,
+diagnostics, and `span_offset` to `self._errors.create()`. Message and
+recommendation construction is separated from the graph walker in
 `runtime_errors.py`.
 
-## `suggestions.py`: похожие literal-led команды
+## `suggestions.py`: similar literal-led commands
 
-Suggestion subsystem является отдельным диагностическим индексом. Он не
-добавляет graph routes, не создаёт успешные candidates и никак не влияет на
-приоритеты matcher-а. Его единственный результат — до пяти строк
-`original_pattern` для `ParseError.suggestions`.
+The suggestion subsystem is a separate diagnostic index. It does not add
+graph routes, create successful candidates, or affect matcher priorities in
+any way. Its only result is up to five `original_pattern` strings for
+`ParseError.suggestions`.
 
 ### `_TemplateAtom`
 
-Один элемент облегчённого поискового шаблона:
+One element of a lightweight search template:
 
-- `literal` хранит ASCII-lower keyword;
-- `declaration` хранит `ParameterDeclaration`;
-- одновременно заполнено только одно поле.
+- `literal` stores an ASCII-lower keyword;
+- `declaration` stores a `ParameterDeclaration`;
+- only one field is populated at a time.
 
-`from_node(node)` принимает только `Literal | Parameter`. Для parameter
-проверяется тип declaration; неизвестный объект означает внутреннее нарушение
-инварианта и приводит к `TypeError`.
+`from_node(node)` accepts only `Literal | Parameter`. For a parameter, the
+declaration type is checked; an unknown object indicates an internal invariant
+violation and raises `TypeError`.
 
 ### `_SuggestionTemplate`
 
-Immutable tuple атомов одной поисковой вариации. Это не runtime route:
-template нужен только для fuzzy comparison и может представлять один из
-характерных вариантов group/repeat.
+An immutable tuple of atoms for one search variation. This is not a runtime
+route: a template is used only for fuzzy comparison and may represent one
+characteristic group/repeat variant.
 
 ### `_SuggestionPattern`
 
-Объединяет `pattern_index`, исходную строку и tuple searchable templates
-одного source pattern.
+Combines `pattern_index`, the source string, and a tuple of searchable
+templates for one source pattern.
 
 ### `SuggestionTemplateFactory`
 
-Создаёт ограниченное множество searchable variations из AST. Конструктор
-принимает `maximum_templates=64` и отклоняет неположительный лимит.
+Creates a bounded set of searchable variations from the AST. The constructor
+accepts `maximum_templates=64` and rejects a non-positive limit.
 
 #### `create(pattern)`
 
-Рекурсивно преобразует `pattern.ast`, удаляет дубликаты и оставляет только
-templates, первый atom которых является literal. Поэтому чистый pattern
-`STRING<1-20> activate` не попадает в индекс. Pattern с optional parameter
-может попасть, если существует literal-led variation, например
-`[ STRING<1-20> ] display clock`.
+Recursively converts `pattern.ast`, removes duplicates, and keeps only
+templates whose first atom is a literal. A pure
+`STRING<1-20> activate` pattern therefore does not enter the index. A pattern
+with an optional parameter may enter it if a literal-led variation exists,
+such as `[ STRING<1-20> ] display clock`.
 
-#### `_sequence(sequence)` и `_node(node)`
+#### `_sequence(sequence)` and `_node(node)`
 
-`_sequence()` строит декартово произведение вариантов последовательных
-AST-узлов. `_node()` маршрутизирует `Literal`, `Parameter`, `Group` и
-`Repeat`; неизвестный node приводит к `TypeError`.
+`_sequence()` builds the Cartesian product of variants for sequential AST
+nodes. `_node()` dispatches `Literal`, `Parameter`, `Group`, and `Repeat`; an
+unknown node raises `TypeError`.
 
-#### `_group(group)` и `_set_order(alternatives)`
+#### `_group(group)` and `_set_order(alternatives)`
 
-- one-choice group добавляет templates всех alternatives;
-- optional-one дополнительно добавляет пустой template;
-- set group добавляет одиночные alternatives, canonical order и reverse
+- a one-choice group adds templates from every alternative;
+- optional-one additionally adds an empty template;
+- a set group adds individual alternatives, canonical order, and reverse
   order;
-- optional-set также добавляет пустой вариант.
+- optional-set also adds an empty variant.
 
-Это намеренно bounded-представление, а не полное перечисление всех
-перестановок set group.
+This is deliberately a bounded representation, not a complete enumeration of
+all set-group permutations.
 
 #### `_repeat(repeat)`
 
-Для поиска достаточно характерных количеств: `minimum`, один элемент при
-`minimum == 0`, и ближайшее большее допустимое количество. Каждый вариант
-строится тем же bounded product.
+Representative counts are sufficient for searching: `minimum`, a count of one
+when `minimum == 0`, and the nearest larger allowed count. Each variant is
+built with the same bounded product.
 
-#### `_product(left, right)` и `_unique(templates)`
+#### `_product(left, right)` and `_unique(templates)`
 
-Helpers стабильно удаляют дубликаты и обрезают результат по
+These helpers stably remove duplicates and truncate the result to
 `maximum_templates`.
 
 ### `SuggestionCatalog`
 
-Строит immutable index один раз при создании `CommandMatcher`.
+Builds an immutable index once when `CommandMatcher` is created.
 
 #### `__init__(graph, template_factory=None)`
 
-Проходит source patterns в JSON order, создаёт `_SuggestionPattern` только при
-наличии literal-led template и строит индекс
+Traverses source patterns in JSON order, creates `_SuggestionPattern` only
+when a literal-led template exists, and builds the index
 `root literal → pattern entries`.
 
-Bare/root `TEXT<min-max>` и другие чистые parameter-first patterns templates
-не имеют и в index отсутствуют.
+Bare/root `TEXT<min-max>` and other pure parameter-first patterns have no
+templates and are absent from the index.
 
 #### `root_keywords`
 
-Возвращает отсортированный tuple всех индексированных root keywords.
+Returns a sorted tuple of all indexed root keywords.
 
 #### `candidates(nearby_roots)`
 
-Собирает candidate set только для точного или похожего root. Совпадение только
-по нерoot keyword недостаточно. Secondary tokens анализирует последующий
-`CommandSimilarity.could_be_relevant()`, поэтому шумовой точный suffix не
-может заранее исключить более близкий fuzzy pattern. Entry order стабилен.
+Builds a candidate set only for an exact or similar root. A match on a
+non-root keyword alone is insufficient. Secondary tokens are analyzed later
+by `CommandSimilarity.could_be_relevant()`, so a noisy exact suffix cannot
+prematurely exclude a closer fuzzy pattern. Entry order is stable.
 
 ### `TokenDistance`
 
-Сравнивает отдельные tokens без сторонних библиотек.
+Compares individual tokens without third-party libraries.
 
-- `distance(left, right)` вычисляет edit distance; соседняя перестановка
-  символов считается одной операцией;
-- `cost(left, right)` нормализует distance в диапазон `0..1000`;
-- `similarity(left, right)` возвращает `1000 - cost`.
+- `distance(left, right)` calculates edit distance; transposing adjacent
+  characters counts as one operation;
+- `cost(left, right)` normalizes distance to the `0..1000` range;
+- `similarity(left, right)` returns `1000 - cost`.
 
 ### `_SimilarityScore`
 
-Сортируемый immutable score из четырёх частей:
+A sortable immutable score with four components:
 
 1. normalized edit cost;
-2. отрицательное число точных prefix literals;
-3. отрицательное число всех точных literal matches;
-4. разница в количестве tokens.
+2. negative count of exact prefix literals;
+3. negative count of all exact literal matches;
+4. difference in token counts.
 
-Меньший tuple означает более релевантный template.
+A smaller tuple denotes a more relevant template.
 
 ### `CommandSimilarity`
 
-Сравнивает concrete CLI tokens с atoms searchable template.
+Compares concrete CLI tokens against atoms in a searchable template.
 
 #### `score(query_tokens, template)`
 
-Dynamic programming допускает вставку, удаление, замену и перестановку двух
-соседних literals. Для parameter atom вызывается тот же
-`ParameterTypeRegistry.probe()`, что и в matcher:
+Dynamic programming permits insertion, deletion, replacement, and
+transposition of two adjacent literals. For a parameter atom, it calls the
+same `ParameterTypeRegistry.probe()` used by the matcher:
 
-- `VALID` parameter имеет низкую стоимость;
-- `INVALID` остаётся похожим, но получает штраф;
-- `NOT_APPLICABLE` получает высокий штраф.
+- a `VALID` parameter has a low cost;
+- an `INVALID` parameter remains similar but receives a penalty;
+- `NOT_APPLICABLE` receives a high penalty.
 
-Итог нормализуется по максимальной длине, после чего добавляются exact-prefix,
-exact-match и token-count tie-breakers.
+The result is normalized by the maximum length, after which exact-prefix,
+exact-match, and token-count tie-breakers are added.
 
 #### `is_relevant(query_tokens, template, score)`
 
-Финально отсекает случайные совпадения по normalized cost. Явная опечатка в
-root допускается даже при сильном расхождении хвоста: root keyword является
-наиболее важным сигналом предполагаемой команды.
+Finally filters out accidental matches by normalized cost. An obvious typo in
+the root is allowed even when the suffix differs significantly because the
+root keyword is the strongest signal of the intended command.
 
 #### `could_be_relevant(query_tokens, template)`
 
-Дешёвый pre-filter перед dynamic programming. Template обязан иметь точный или
-похожий literal root. Многотокенная команда дополнительно должна иметь
-точный/похожий secondary literal либо применимый parameter slot. Так общий
-root вроде `display` не превращает случайный хвост в пять произвольных
-рекомендаций.
+A cheap pre-filter before dynamic programming. A template must have an exact
+or similar literal root. A multi-token command must additionally have an exact
+or similar secondary literal, or an applicable parameter slot. This prevents
+a common root such as `display` from turning an unrelated suffix into five
+arbitrary recommendations.
 
 #### `root_is_near(query, root)`
 
-Быстрый pre-filter root keywords. Допустимое edit distance зависит от длины
-query token, а normalized similarity не должна быть ниже порога.
+A fast pre-filter for root keywords. The allowed edit distance depends on the
+query token's length, and normalized similarity must not fall below the
+threshold.
 
-#### Внутренние helpers
+#### Internal helpers
 
-- `_substitution_cost(atom, token)` выбирает literal distance или результат
-  parameter probe;
-- `_missing_cost(atom)` назначает разные штрафы literal и parameter;
-- `_is_transposition(...)` распознаёт перестановку соседних literal tokens;
-- `_exact_literal_matches(...)` считает multiset-пересечение literals;
-- `_exact_literal_prefix(...)` считает непрерывный точный literal prefix.
+- `_substitution_cost(atom, token)` selects literal distance or a parameter
+  probe result;
+- `_missing_cost(atom)` assigns different penalties to literals and
+  parameters;
+- `_is_transposition(...)` recognizes transposed adjacent literal tokens;
+- `_exact_literal_matches(...)` counts the multiset intersection of literals;
+- `_exact_literal_prefix(...)` counts a contiguous exact literal prefix.
 
 ### `CommandSuggester`
 
-Публичная внутри matching-слоя стратегия top-5 recommendations.
+The matching layer's public strategy for top-five recommendations.
 
 #### `__init__(graph, parameter_types, catalog=None, similarity=None)`
 
-По умолчанию создаёт `SuggestionCatalog` и `CommandSimilarity`. Инъекция обеих
-стратегий позволяет независимо тестировать orchestration.
+Creates `SuggestionCatalog` and `CommandSimilarity` by default. Injecting
+either strategy allows orchestration to be tested independently.
 
 #### `suggest(command, limit=5)`
 
-Разбивает строку по whitespace, переводит tokens в ASCII-lower и возвращает
-не больше `min(limit, 5)` source patterns. Пустая команда или лимит меньше
-одного дают пустой tuple. Последние 256 нормализованных запросов кешируются;
-кеш не входит в публичный result.
+Splits the line on whitespace, converts tokens to ASCII lowercase, and returns
+at most `min(limit, 5)` source patterns. An empty command or a limit below one
+produces an empty tuple. The latest 256 normalized queries are cached; the
+cache is not part of the public result.
 
 #### `_rank(query_tokens)`
 
-1. выбирает nearby roots;
-2. получает кандидатов из индекса;
-3. через `_searchable()` оставляет templates с релевантным suffix; если таких
-   нет вообще, сильная root-опечатка включает fallback по root;
-4. находит лучший template каждого source pattern;
-5. отбрасывает нерелевантные и exact textual self-suggestions;
-6. сортирует по `_SimilarityScore`, затем по JSON pattern index;
-7. удаляет одинаковые `original_pattern`;
-8. возвращает максимум пять строк.
+1. selects nearby roots;
+2. obtains candidates from the index;
+3. uses `_searchable()` to retain templates with a relevant suffix; if none
+   exist, a strong root typo enables a root-based fallback;
+4. finds the best template for each source pattern;
+5. removes irrelevant entries and exact textual self-suggestions;
+6. sorts by `_SimilarityScore`, then by JSON pattern index;
+7. removes duplicate `original_pattern` values;
+8. returns at most five strings.
 
-Группы и placeholders в рекомендациях не разворачиваются: пользователь видит
-ровно исходный pattern из JSON.
+Groups and placeholders in recommendations are not expanded: the user sees
+the exact source pattern from JSON.
 
-## `runtime_errors.py`: английские сообщения matching errors
+## `runtime_errors.py`: English matching error messages
 
 ### `ExpectedElementFormatter`
 
-Преобразует структурированный tuple ожиданий в короткую английскую фразу.
+Converts a structured tuple of expectations into a short English phrase.
 
 #### `format(expected, maximum=5)`
 
-Берёт `ExpectedElement.description`, показывает не более `maximum` элементов,
-а остаток сворачивает в `"and N more options"`. Пустой tuple превращается в
+Takes `ExpectedElement.description`, displays no more than `maximum` items, and
+collapses the rest into `"and N more options"`. An empty tuple becomes
 `"a valid continuation"`.
 
 #### `_join(items)`
 
-Использует английские `or` и Oxford comma для одного, двух или нескольких
-видимых ожиданий.
+Uses English `or` and the Oxford comma for one, two, or several visible
+expectations.
 
 ### `CommandErrorFactory`
 
-Строит `UNKNOWN_COMMAND` и `SYNTAX_ERROR`. Validation errors остаются
-ответственностью `ValidationErrorFactory`.
+Builds `UNKNOWN_COMMAND` and `SYNTAX_ERROR`. Validation errors remain the
+responsibility of `ValidationErrorFactory`.
 
 #### `__init__(suggester, expected_formatter=None)`
 
-Получает обязательный `CommandSuggester` и опциональную стратегию форматирования
-ожиданий.
+Accepts a required `CommandSuggester` and an optional expectation-formatting
+strategy.
 
 #### `create(command, diagnostics, *, span_offset)`
 
-1. выбирает `UNKNOWN_COMMAND`, если furthest position равна `0`, иначе
-   `SYNTAX_ERROR`;
-2. переводит `position` и `ExpectedElement.position` в координаты исходной
-   строки;
-3. вызывает suggester только при
+1. selects `UNKNOWN_COMMAND` if the furthest position is `0`; otherwise
+   selects `SYNTAX_ERROR`;
+2. translates `position` and `ExpectedElement.position` into coordinates in
+   the source line;
+3. calls the suggester only when
    `diagnostics.allows_keyword_suggestions`;
-4. создаёт `ParseError` с `expected` и `suggestions`.
+4. creates a `ParseError` with `expected` and `suggestions`.
 
-`failures`, `candidate_patterns` и `candidate_variations` для этих ошибок
-пусты.
+`failures`, `candidate_patterns`, and `candidate_variations` are empty for
+these errors.
 
 #### `_message(command, code, position, expected, suggestions, suggestions_allowed)`
 
-Все сообщения формируются на английском.
+All messages are produced in English.
 
-При наличии рекомендаций формат стабилен:
+When recommendations are available, the format is stable:
 
 ```text
 Command 'dispaly clock' was not recognized. Did you mean:
@@ -1143,22 +1163,23 @@ Command 'dispaly clock' was not recognized. Did you mean:
 Reason: No complete command pattern accepted the first token.
 ```
 
-Для syntax error строка `Reason` сообщает 1-based column и кратко перечисляет
-ожидания. Структурированные `position` и `expected` остаются полными и
-используют 0-based string offsets.
+For a syntax error, the `Reason` line reports a 1-based column and briefly
+lists expectations. The structured `position` and `expected` values remain
+complete and use 0-based string offsets.
 
-Если рекомендации отсутствуют, message объясняет причину. Для обычного
-`UNKNOWN_COMMAND` это `"No similar literal command patterns were found."`;
-для syntax error без релевантного кандидата — аналогичное сообщение о
-недостаточном сходстве. Если recommendations были подавлены применимым
-parameter-led route, текст явно сообщает и об этом.
+If recommendations are absent, the message explains why. For an ordinary
+`UNKNOWN_COMMAND`, it says
+`"No similar literal command patterns were found."`; for a syntax error with
+no relevant candidate, it gives a similar explanation about insufficient
+similarity. If recommendations were suppressed by an applicable
+parameter-led route, the text explicitly states that as well.
 
-#### `_numbered(suggestions)` и `_no_suggestion_message(code, suggestions_allowed)`
+#### `_numbered(suggestions)` and `_no_suggestion_message(code, suggestions_allowed)`
 
-Первый helper форматирует нумерованный top-5 block. Второй добавляет явное
-объяснение пустого результата или подавления keyword suggestions.
+The first helper formats a numbered top-five block. The second adds an
+explicit explanation of an empty result or suppressed keyword suggestions.
 
-## `resolver.py`: окончательное разрешение совпадений
+## `resolver.py`: final match resolution
 
 ### `ResolvedMatch`
 
@@ -1170,20 +1191,20 @@ class ResolvedMatch:
     alternative_matches: tuple[PatternMatch, ...]
 ```
 
-Внутренний успешный результат:
+The internal successful result:
 
-- `status` — `UNIQUE`, `EQUIVALENT` или `AMBIGUOUS`;
-- `primary_match` — первый представитель по порядку исходного JSON;
-- `alternative_matches` — все остальные сохранившиеся совпадения.
+- `status` — `UNIQUE`, `EQUIVALENT`, or `AMBIGUOUS`;
+- `primary_match` — the first representative in source JSON order;
+- `alternative_matches` — all other matches that survived resolution.
 
-`CommandLineParser` оборачивает его в публичный `ParsedCommand`, добавляя
-исходную строку, отступ и номер строки.
+`CommandLineParser` wraps it in the public `ParsedCommand`, adding the source
+line, indentation, and line number.
 
 ### `MatchResolver`
 
 #### `__init__(frontier=None, matches=None, validation_errors=None)`
 
-Принимает подменяемые:
+Accepts replaceable:
 
 - `CandidateFrontier`;
 - `PatternMatchSet`;
@@ -1195,86 +1216,86 @@ class ResolvedMatch:
 def resolve(...) -> ResolvedMatch | ParseError
 ```
 
-Алгоритм:
+Algorithm:
 
-1. Делит candidates на:
-   - `valid` — `state.rejected` пуст;
-   - `invalid` — есть хотя бы один rejected-параметр.
-2. Вычисляет Pareto frontier валидных кандидатов.
-3. Среди invalid оставляет applicable frontier: все rejected в кандидате
-   должны иметь статус `INVALID`, а не `NOT_APPLICABLE`.
-4. Удаляет из valid frontier кандидаты, доминируемые applicable-invalid
-   кандидатом.
-5. Если валидные были, но все заблокированы, строит validation error только из
-   фактических blockers.
-6. Если валидных результатов нет, строит validation error из applicable
-   frontier; если он пуст — из Pareto frontier всех invalid, включая
-   `NOT_APPLICABLE`.
-7. Иначе создаёт public pattern matches и вычисляет success status.
+1. Divides candidates into:
+   - `valid` — `state.rejected` is empty;
+   - `invalid` — at least one rejected parameter is present.
+2. Computes the Pareto frontier of valid candidates.
+3. Retains the applicable frontier among invalid candidates: every rejected
+   parameter in the candidate must have `INVALID`, not `NOT_APPLICABLE`.
+4. Removes from the valid frontier any candidate dominated by an
+   applicable-invalid candidate.
+5. If valid candidates existed but were all blocked, builds a validation
+   error only from the actual blockers.
+6. If there are no valid results, builds a validation error from the
+   applicable frontier; if that is empty, uses the Pareto frontier of all
+   invalid candidates, including `NOT_APPLICABLE`.
+7. Otherwise, creates public pattern matches and computes the success status.
 
-Пример блокировки:
+Blocking example:
 
 ```text
-паттерны: value INTEGER<1-10>
+patterns: value INTEGER<1-10>
           value STRING<1-20>
-вход:     value 99
+input:    value 99
 ```
 
-Числовой маршрут имеет dispatch `(0, 3)`, применим, но нарушает диапазон. Он
-доминирует общий валидный `(0, 4)`, поэтому результат — `VALIDATION_ERROR`, а
-не успешный `STRING`.
+The numeric route has dispatch `(0, 3)` and is applicable, but violates its
+range. It dominates the generic valid `(0, 4)` route, so the result is
+`VALIDATION_ERROR`, not a successful `STRING`.
 
-Вход `value abc` даёт `NOT_APPLICABLE` для integer; он не блокирует
-`STRING`.
+The input `value abc` produces `NOT_APPLICABLE` for the integer and therefore
+does not block `STRING`.
 
-Аналогично, при паттернах `peer X.X.X.X` и `peer STRING<1-64>` вход
-`peer 192.0.2.999` возвращает `VALIDATION_ERROR` от `ipv4-address`, а
-`peer router.example.com` успешно использует generic string route.
+Similarly, with the patterns `peer X.X.X.X` and `peer STRING<1-64>`, the input
+`peer 192.0.2.999` returns `VALIDATION_ERROR` from `ipv4-address`, while
+`peer router.example.com` successfully uses the generic string route.
 
 #### `_applicable_frontier(invalid)`
 
-Выбирает invalid candidates, у которых:
+Selects invalid candidates for which:
 
-- rejected tuple не пуст;
-- каждый `RejectedParameter.applicable` равен `True`.
+- the rejected tuple is not empty;
+- every `RejectedParameter.applicable` is `True`.
 
-Возвращает их `CandidateFrontier.select()`.
+Returns their `CandidateFrontier.select()`.
 
 #### `_unblocked(valid, invalid)`
 
-Возвращает valid candidates, для которых ни один applicable-invalid dispatch
-не доминирует их dispatch.
+Returns valid candidates whose dispatch is not dominated by any
+applicable-invalid dispatch.
 
 #### `_blockers(invalid, valid)`
 
-Обратная операция: возвращает invalid candidates, доминирующие хотя бы один
-валидный. Они используются для точного validation report.
+The inverse operation: returns invalid candidates that dominate at least one
+valid candidate. They are used for an accurate validation report.
 
 #### `_status(matches)`
 
-- один match → `MatchStatus.UNIQUE`;
-- несколько с одинаковой semantic signature →
+- one match → `MatchStatus.UNIQUE`;
+- several with the same semantic signature →
   `MatchStatus.EQUIVALENT`;
-- несколько разных → `MatchStatus.AMBIGUOUS`.
+- several different signatures → `MatchStatus.AMBIGUOUS`.
 
-## `matches.py`: публичные совпадения и provenance
+## `matches.py`: public matches and provenance
 
 ### `PatternMatchFactory`
 
 #### `create(candidate, route, *, span_offset)`
 
-Преобразует один валидный internal candidate в `PatternMatch`.
+Converts one valid internal candidate to a `PatternMatch`.
 
-- `variation` строится как `" ".join(state.parts)`;
-- полный trace равен `route.static_trace + state.trace`: compile-time
-  развёрнутые choices не теряются;
-- `variation_id` вычисляется `_variation_id()`;
-- каждый `CapturedParameter` преобразуется в `ParameterValue`;
-- span параметра сдвигается на `span_offset`;
-- `pattern_id`, `pattern_index` и `original_pattern` берутся из
+- `variation` is built as `" ".join(state.parts)`;
+- the full trace is `route.static_trace + state.trace`, so compile-time
+  expanded choices are not lost;
+- `variation_id` is computed by `_variation_id()`;
+- each `CapturedParameter` is converted to a `ParameterValue`;
+- the parameter span is shifted by `span_offset`;
+- `pattern_id`, `pattern_index`, and `original_pattern` are taken from
   `RouteSource.pattern`.
 
-Формат результата:
+Result format:
 
 ```python
 PatternMatch(
@@ -1290,85 +1311,86 @@ PatternMatch(
 
 #### `_variation_id(pattern_id, variation, trace)`
 
-Создаёт material из:
+Creates material from:
 
-- pattern ID;
-- ASCII-lower variation;
+- the pattern ID;
+- the ASCII-lower variation;
 - `repr(trace)`.
 
-Элементы соединяются NUL-символом, хешируются SHA-256, возвращаются первые
-20 hex-символов. ID детерминирован для одного pattern content/occurrence и
-одного пути variation; перестановка несвязанных JSON-паттернов его не меняет.
+The elements are joined with a NUL character and hashed with SHA-256; the first
+20 hexadecimal characters are returned. The ID is deterministic for one
+pattern content/occurrence and one variation path; reordering unrelated JSON
+patterns does not change it.
 
 ### `PatternMatchSet`
 
 #### `__init__(factory=None)`
 
-Принимает `PatternMatchFactory`.
+Accepts a `PatternMatchFactory`.
 
 #### `create(candidates, graph, *, span_offset)`
 
-Сортирует кандидаты по:
+Sorts candidates by:
 
-1. `pattern.index` — исходный порядок в JSON;
+1. `pattern.index` — source JSON order;
 2. `route_id`;
 3. `state.source_order`;
-4. порядку кандидата во входном tuple.
+4. candidate order in the input tuple.
 
-Затем создаёт `PatternMatch` и стабильно дедуплицирует их по `_identity()`.
-Первое совпадение после этой операции становится primary match.
+It then creates `PatternMatch` objects and stably deduplicates them by
+`_identity()`. The first match after this operation becomes the primary match.
 
 #### `equivalent(matches)`
 
-Вычисляет `_signature()` каждого match. Возвращает `True`, если количество
-уникальных signatures равно одному. Для пустого tuple также получится
-`False` (`len(set()) != 1`), но resolver вызывает метод только для нескольких
+Computes `_signature()` for every match. Returns `True` if there is exactly one
+unique signature. It also returns `False` for an empty tuple
+(`len(set()) != 1`), but the resolver calls the method only for multiple
 matches.
 
 #### `_identity(match)`
 
-Ключ удаления полностью дублирующихся совпадений:
+A key for removing completely duplicate matches:
 
 - `pattern_id`;
 - ASCII-lower variation;
-- для каждого параметра: `type_id`, declaration, raw.
+- for each parameter: `type_id`, declaration, and raw value.
 
-Trace и normalized намеренно не входят. Два пути одного pattern, давшие
-одинаковую видимую variation и те же raw-параметры, представлены первым
-совпадением.
+Trace and normalized values are deliberately excluded. Two paths through one
+pattern that produce the same visible variation and the same raw parameters
+are represented by the first match.
 
 #### `_signature(match)`
 
-Семантическая сигнатура для статуса `equivalent`:
+A semantic signature for the `equivalent` status:
 
 - ASCII-lower variation;
-- для каждого параметра: `type_id`, declaration, raw,
+- for each parameter: `type_id`, declaration, raw value, and
   `repr(normalized)`.
 
-`pattern_id` не входит, поэтому одинаковые результаты разных исходных
-паттернов считаются equivalent, но каждый pattern match всё равно возвращается
-в `alternative_matches`.
+`pattern_id` is excluded, so identical results from different source patterns
+are considered equivalent, while every pattern match is still returned in
+`alternative_matches`.
 
-## `validation.py`: построение ошибок параметров
+## `validation.py`: building parameter errors
 
 ### `ValidationErrorFactory`
 
 #### `create(candidates, graph, *, span_offset)`
 
-Сортирует кандидаты по JSON pattern index и route ID. Для каждого:
+Sorts candidates by JSON pattern index and route ID. For each one, it:
 
-- сохраняет `route.pattern.original`;
-- строит candidate variation через `" ".join(state.parts)`;
-- преобразует все rejected-параметры в `ValidationFailure`.
+- preserves `route.pattern.original`;
+- builds the candidate variation with `" ".join(state.parts)`;
+- converts every rejected parameter to `ValidationFailure`.
 
-После этого стабильно удаляет дубли failures, patterns и variations и
-возвращает:
+It then stably removes duplicate failures, patterns, and variations and
+returns:
 
 ```python
 ParseError(
     code=ErrorCode.VALIDATION_ERROR,
-    message=<подробное английское описание>,
-    position=<start первого failure или None>,
+    message=<detailed English description>,
+    position=<start of the first failure or None>,
     failures=(...),
     candidate_patterns=(...),
     candidate_variations=(...),
@@ -1376,40 +1398,41 @@ ParseError(
 )
 ```
 
-Message называет один matched pattern или количество candidate patterns,
-указывает число невалидных значений и включает до трёх причин. Если failures
-больше, остаток сворачивается в `"and N more failures"`. Полный набор никогда
-не теряется и остаётся в структурированном поле `failures`.
+The message names the one matched pattern or gives the number of candidate
+patterns, states the number of invalid values, and includes up to three
+reasons. If there are more failures, the remainder is collapsed into
+`"and N more failures"`. The complete set is never lost and remains in the
+structured `failures` field.
 
-`expected` и `suggestions` для validation error остаются пустыми: command
-structure уже найдена, поэтому предлагать похожие keywords неправильно.
+`expected` and `suggestions` remain empty for a validation error: the command
+structure was found, so suggesting similar keywords would be incorrect.
 
 #### `_failure(rejected, *, span_offset)`
 
-Создаёт один `ValidationFailure`.
+Creates one `ValidationFailure`.
 
-- Для `NOT_APPLICABLE` message:
+- For `NOT_APPLICABLE`, the message is:
   `"value does not match <declaration>"`, `reason_code="not_applicable"`,
-  `expected=<declaration>` и `actual=<raw token>`.
-- Для `INVALID` используется `ParameterIssue.message`; если plugin нарушил
-  ожидаемый контракт и issue отсутствует, fallback —
-  `"invalid parameter value"` с `reason_code="invalid_value"`.
-- При наличии `ParameterIssue` его `code`, `expected` и `actual` переносятся
-  в одноимённые machine-readable поля failure.
-- `type_id`, declaration и raw переносятся без изменений.
-- token span сдвигается на `span_offset`.
+  `expected=<declaration>`, and `actual=<raw token>`.
+- For `INVALID`, `ParameterIssue.message` is used; if a plugin violates the
+  expected contract and the issue is absent, the fallback is
+  `"invalid parameter value"` with `reason_code="invalid_value"`.
+- When `ParameterIssue` is present, its `code`, `expected`, and `actual`
+  values are copied to the corresponding machine-readable failure fields.
+- `type_id`, declaration, and raw value are copied unchanged.
+- The token span is shifted by `span_offset`.
 
 #### `_message(failures, patterns)`
 
-Формирует human-readable summary, не пытаясь заменить структурированные поля.
-Для одного source pattern использует его полное `repr`; для нескольких
-сообщает число candidates. Каждая видимая причина включает raw value,
-declaration и validator message. Завершающая фраза направляет API-пользователя
-к `failures`, `candidate_patterns` и `candidate_variations`.
+Builds a human-readable summary without attempting to replace the structured
+fields. For one source pattern, it uses its full `repr`; for several, it
+reports the candidate count. Each visible reason includes the raw value,
+declaration, and validator message. The final sentence directs the API user to
+`failures`, `candidate_patterns`, and `candidate_variations`.
 
-## `__init__.py`: экспорт подсистемы
+## `__init__.py`: subsystem exports
 
-Модуль экспортирует:
+The module exports:
 
 ```python
 from vrp_parser.matching import CommandMatcher, ResolvedMatch
@@ -1417,90 +1440,89 @@ from vrp_parser.matching import CommandMatcher, ResolvedMatch
 
 `__all__ = ["CommandMatcher", "ResolvedMatch"]`.
 
-Это экспорт для связи внутренних слоёв проекта. Обычному пользователю следует
-импортировать `CommandLineParser` и `ConfigurationParser` непосредственно из
-`vrp_parser`.
+These exports connect internal project layers. Application code should import
+`CommandLineParser` and `ConfigurationParser` directly from `vrp_parser`.
 
-## Backtracking и защита от ложного crossover
+## Backtracking and protection against false crossover
 
-Граф объединяет одинаковые префиксы разных паттернов, но каждое ребро хранит
-`frozenset[route_id]`. При переходе `_walk()` пересекает набор ребра с набором
-маршрутов, допустимых до этого перехода.
+The graph merges identical prefixes from different patterns, but every edge
+stores a `frozenset[route_id]`. During a transition, `_walk()` intersects the
+edge's set with the set of routes allowed before that transition.
 
-Например, при условном графе:
+For example, consider this hypothetical graph:
 
 ```text
 a STRING x
 a INTEGER y
 ```
 
-общее начало `a` и общий graph node не позволяют пройти `STRING`, а затем
-закончить терминалом маршрута `INTEGER y`: после каждого перехода остаются
-только route IDs, участвовавшие во всём префиксе.
+The shared `a` prefix and graph node do not allow traversal through `STRING`
+followed by the terminal of the `INTEGER y` route: after every transition,
+only route IDs participating in the entire prefix remain.
 
-Backtracking сохраняется на трёх уровнях:
+Backtracking is preserved at three levels:
 
-- graph walker пробует literal edge и все expression edges;
-- sequence продолжает каждое состояние от предыдущего выражения;
-- groups/repeats выдают все допустимые выборы и количества.
+- the graph walker tries the literal edge and all expression edges;
+- a sequence continues every state from the preceding expression;
+- groups and repeats yield every valid choice and count.
 
-Раннее Pareto-сокращение применяется только там, где ветви имеют одинаковую
-позицию и одинаковое продолжение. Для unordered set альтернативы сокращаются
-раздельно, поскольку выбранный индекс меняет будущие возможности.
+Early Pareto pruning is applied only where branches have the same position and
+the same continuation. For an unordered set, alternatives are pruned
+separately because the selected index changes future possibilities.
 
-## Как интерпретировать результат
+## Interpreting the result
 
-### Успех
+### Success
 
-`ResolvedMatch` всегда содержит хотя бы один `PatternMatch`.
+`ResolvedMatch` always contains at least one `PatternMatch`.
 
-- `unique` — остался один match;
-- `equivalent` — совпало несколько источников, но их variation и параметры
-  семантически одинаковы;
-- `ambiguous` — осталось несколько несравнимых интерпретаций.
+- `unique` — one match remains;
+- `equivalent` — several sources matched, but their variations and parameters
+  are semantically identical;
+- `ambiguous` — several incomparable interpretations remain.
 
-И `equivalent`, и `ambiguous` являются успешным parsing. Все варианты доступны
-в `ParsedCommand.matches`, а первый по JSON-order — в `primary_match`.
+Both `equivalent` and `ambiguous` are successful parsing outcomes. Every
+variant is available in `ParsedCommand.matches`, and the first one in JSON
+order is available in `primary_match`.
 
-### Неизвестная команда
+### Unknown command
 
-`ErrorCode.UNKNOWN_COMMAND` означает, что ни одна ветвь не продвинулась дальше
-нулевой позиции. Bare/root `TEXT<min-max>` в позиции `0` не маскирует
-неизвестные команды: он разрешён только для строк, начинающихся с `!`. Это
-ограничение не относится к remainder-параметру после совпавшего keyword,
-например `description TEXT<1-80>`.
+`ErrorCode.UNKNOWN_COMMAND` means that no branch advanced beyond position
+zero. Bare/root `TEXT<min-max>` at position `0` does not hide unknown commands:
+it is allowed only for lines beginning with `!`. This restriction does not
+apply to a remainder parameter after a matched keyword, such as
+`description TEXT<1-80>`.
 
-Для literal-led опечатки `suggestions` может содержать до пяти релевантных
-original patterns, а `message` показывает тот же список после английского
-`"Did you mean:"`. Root `TEXT` и parameter-first patterns не становятся
-recommendation targets. Если похожих literals нет, tuple пуст, а message прямо
-объясняет отсутствие похожих команд.
+For a literal-led typo, `suggestions` may contain up to five relevant original
+patterns, and `message` displays the same list after `"Did you mean:"`. Root
+`TEXT` and parameter-first patterns do not become recommendation targets. If
+there are no similar literals, the tuple is empty and the message explicitly
+explains that no similar commands were found.
 
-### Синтаксическая ошибка
+### Syntax error
 
-`ErrorCode.SYNTAX_ERROR` означает, что совпал некоторый префикс, но ни один
-маршрут не принял строку полностью. `expected` содержит объединённые ожидания
-в самой дальней позиции. Message показывает 1-based column, не более пяти
-ожиданий и при наличии — top-5 suggestions. Если дальше всех продвинулся
-route, начинающийся с применимого parameter, keyword recommendations
-подавляются.
+`ErrorCode.SYNTAX_ERROR` means that a prefix matched, but no route accepted the
+entire line. `expected` contains the combined expectations at the furthest
+position. The message displays the 1-based column, up to five expectations,
+and top-five suggestions when available. If a route starting with an
+applicable parameter advanced furthest, keyword recommendations are
+suppressed.
 
-### Ошибка валидации
+### Validation error
 
-`ErrorCode.VALIDATION_ERROR` означает, что форма хотя бы одного полного
-паттерна совпала, но ни один допустимый candidate не остался: validator мог
-вернуть `INVALID` или, при отсутствии другой завершённой ветки,
-`NOT_APPLICABLE`. Отдельный важный случай — применимый более специфичный
-`INVALID` parameter блокирует менее специфичный валидный fallback. В
-`failures` находятся токены, диапазоны и сообщения validator, а в
-`candidate_patterns`/`candidate_variations` — все релевантные источники.
-`ValidationFailure.reason_code`, `expected` и `actual` предназначены для
-автоматической диагностики. `ParseError.message` даёт подробный английский
-summary, но `suggestions` всегда остаётся пустым.
+`ErrorCode.VALIDATION_ERROR` means that at least one complete pattern shape
+matched, but no acceptable candidate remained: a validator may have returned
+`INVALID` or, when no other branch completed, `NOT_APPLICABLE`. One important
+special case is an applicable, more-specific `INVALID` parameter blocking a
+less-specific valid fallback. `failures` contains validator tokens, spans, and
+messages, while `candidate_patterns`/`candidate_variations` contain every
+relevant source. `ValidationFailure.reason_code`, `expected`, and `actual` are
+intended for automated diagnostics. `ParseError.message` provides a detailed
+English summary, but `suggestions` is always empty.
 
-## Низкоуровневый пример
+## Low-level example
 
-Этот способ полезен в тестах инфраструктуры, но не заменяет
+This approach is useful in infrastructure tests, but does not replace
 `CommandLineParser`:
 
 ```python
@@ -1521,13 +1543,13 @@ matcher = CommandMatcher(graph, registry)
 outcome = matcher.match("preference 100")
 
 if isinstance(outcome, ParseError):
-    # Здесь это validation_error: INTEGER применим, но вне диапазона.
+    # This is validation_error: INTEGER is applicable but outside the range.
     print(outcome.code, outcome.failures)
 else:
     assert isinstance(outcome, ResolvedMatch)
     print(outcome.status, outcome.primary_match)
 ```
 
-При прямом вызове ответственность за согласованность registry и graph, снятие
-отступа, проверку одной физической строки и корректный `span_offset` лежит на
-вызывающем коде.
+When calling this API directly, the caller is responsible for keeping the
+registry and graph consistent, removing indentation, enforcing one physical
+line, and supplying the correct `span_offset`.

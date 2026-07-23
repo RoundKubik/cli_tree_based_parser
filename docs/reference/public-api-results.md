@@ -1,22 +1,22 @@
-# Публичный API, результаты, CLI и сериализация
+# Public API, Results, CLI, and Serialization
 
-Этот документ описывает production-сущности из:
+This document describes the production entities from:
 
 - `src/vrp_parser/api.py`;
 - `src/vrp_parser/results.py`;
 - `src/vrp_parser/serialization.py`;
 - `src/vrp_parser/cli.py`;
-- `src/vrp_parser/__init__.py` и `src/vrp_parser/__main__.py`;
-- ручного стенда `manual_test.py`.
+- `src/vrp_parser/__init__.py` and `src/vrp_parser/__main__.py`;
+- the `manual_test.py` manual test harness.
 
-Все позиции в строках — нулевые, а диапазоны имеют полуоткрытый формат
-`[start, end)`: символ с индексом `end` в диапазон не входит. Номера физических
-строк начинаются с единицы.
+All string positions are zero-based, and ranges use the half-open
+`[start, end)` convention: the character at index `end` is not included.
+Physical line numbers start at one.
 
 ## `CommandLineParser`
 
-Публичная точка входа для компиляции каталога паттернов и разбора одной
-физической CLI-строки.
+The public entry point for compiling a pattern catalog and parsing one
+physical CLI line.
 
 ### `CommandLineParser.__init__`
 
@@ -28,7 +28,7 @@ CommandLineParser(
 )
 ```
 
-Входной `pattern_document` должен иметь формат:
+The input `pattern_document` must have the following format:
 
 ```json
 {
@@ -42,31 +42,31 @@ CommandLineParser(
 }
 ```
 
-Правила документа:
+Document rules:
 
-- корень — mapping/object;
-- ключ `commands` обязателен;
-- значение `commands` — непустая последовательность строк;
-- пустые и состоящие только из пробелов паттерны запрещены;
-- порядок строк значим: он определяет первичный результат при равных матчах;
-- одинаковые паттерны допустимы и сохраняются как разные source entries.
+- the root is a mapping/object;
+- the `commands` key is required;
+- `commands` must be a non-empty sequence of strings;
+- empty and whitespace-only patterns are rejected;
+- string order matters: it determines the primary result for tied matches;
+- duplicate patterns are allowed and retained as separate source entries.
 
-Если `parameter_types` не передан, создаётся стандартный registry. Переданный
-registry клонируется и замораживается, поэтому его последующие изменения не
-влияют на готовый parser.
+If `parameter_types` is omitted, the default registry is created. A supplied
+registry is cloned and frozen, so later changes to the source registry do not
+affect the constructed parser.
 
-Конструктор:
+The constructor:
 
-1. проверяет формат документа;
-2. парсит все паттерны в AST;
-3. применяет runtime policy;
-4. строит общий immutable command graph;
-5. создаёт matcher.
+1. validates the document format;
+2. parses every pattern into an AST;
+3. applies the runtime policy;
+4. builds the shared immutable command graph;
+5. creates the matcher.
 
-Возможные исключения:
+Possible exceptions:
 
-- `PatternDocumentError` — неверная структура документа;
-- `PatternCompilationError` — один или несколько ошибочных паттернов.
+- `PatternDocumentError` — the document structure is invalid;
+- `PatternCompilationError` — one or more patterns are invalid.
 
 ### `command_count`
 
@@ -74,8 +74,8 @@ registry клонируется и замораживается, поэтому 
 parser.command_count -> int
 ```
 
-Количество source-паттернов в скомпилированном документе. Дубликаты считаются
-отдельно.
+The number of source patterns in the compiled document. Duplicates are counted
+separately.
 
 ### `command_graph`
 
@@ -83,8 +83,8 @@ parser.command_count -> int
 parser.command_graph -> CommandGraph
 ```
 
-Read-only доступ к внутреннему общему графу. Нужен для диагностики,
-визуализации и тестов. Обычному пользователю для парсинга не требуется.
+Read-only access to the internal shared graph. This is useful for diagnostics,
+visualization, and tests; ordinary parser users do not need it.
 
 ### `parameter_types`
 
@@ -92,8 +92,8 @@ Read-only доступ к внутреннему общему графу. Нуж
 parser.parameter_types -> ParameterTypeRegistry
 ```
 
-Возвращает замороженный registry, которым был скомпилирован parser.
-`register()` для него завершится ошибкой.
+Returns the frozen registry used to compile the parser. Calling `register()`
+on it fails.
 
 ### `parse`
 
@@ -101,33 +101,34 @@ parser.parameter_types -> ParameterTypeRegistry
 parser.parse(line: str, line_number: int = 1) -> LineResult
 ```
 
-Разбирает ровно одну физическую строку без `\n` или `\r`.
+Parses exactly one physical line without `\n` or `\r`.
 
-Вход:
+Input:
 
-- `line` — исходная строка, включая отступ и завершающие пробелы;
-- `line_number` — положительный целый номер, записываемый в результат.
+- `line` — the original string, including indentation and trailing spaces;
+- `line_number` — a positive integer stored in the result.
 
-Поведение:
+Behavior:
 
-- исходный `raw` сохраняется без изменений;
-- ведущие whitespace-символы сохраняются в `indent`;
-- завершающие пробелы не участвуют в распознавании;
-- пустая или whitespace-only строка возвращает `BlankLine`;
-- `description TEXT<1-80>` читает remainder после keyword, а bare/root
-  `TEXT<min-max>` в позиции `0` принимает только строки, начинающиеся с `!`;
-- успешный матч, включая неоднозначный, возвращает `ParsedCommand`;
-- неизвестная, синтаксически незавершённая или невалидная команда возвращает
+- the original `raw` value is preserved unchanged;
+- leading whitespace characters are preserved in `indent`;
+- trailing spaces do not participate in recognition;
+- an empty or whitespace-only line returns `BlankLine`;
+- `description TEXT<1-80>` reads the remainder after the keyword, while
+  bare/root `TEXT<min-max>` at position `0` accepts only lines beginning with
+  `!`;
+- a successful match, including an ambiguous one, returns `ParsedCommand`;
+- an unknown, syntactically incomplete, or invalid command returns
   `ErrorLine`.
 
-Исключения относятся только к неправильному вызову API:
+Exceptions indicate an invalid API call only:
 
-- `TypeError`, если `line` не строка;
-- `ValueError`, если передано несколько физических строк;
-- `TypeError`, если `line_number` не `int` или является `bool`;
-- `ValueError`, если `line_number < 1`.
+- `TypeError` if `line` is not a string;
+- `ValueError` if multiple physical lines are supplied;
+- `TypeError` if `line_number` is not an `int` or is a `bool`;
+- `ValueError` if `line_number < 1`.
 
-Ошибочная CLI-команда не вызывает исключение: она представляется объектом
+An invalid CLI command does not raise an exception; it is represented by an
 `ErrorLine`.
 
 ### `from_json`
@@ -140,8 +141,8 @@ CommandLineParser.from_json(
 ) -> CommandLineParser
 ```
 
-Принимает JSON-текст, проверяет, что JSON-корень является object/mapping, и
-вызывает конструктор. Невалидный JSON преобразуется в `PatternDocumentError`.
+Accepts JSON text, verifies that the JSON root is an object/mapping, and calls
+the constructor. Invalid JSON is converted to `PatternDocumentError`.
 
 ### `from_json_file`
 
@@ -153,29 +154,29 @@ CommandLineParser.from_json_file(
 ) -> CommandLineParser
 ```
 
-Читает UTF-8 файл и делегирует `from_json()`.
+Reads a UTF-8 file and delegates to `from_json()`.
 
-Дополнительные ошибки:
+Additional errors:
 
-- `OSError`/`FileNotFoundError` — файл невозможно прочитать;
-- `UnicodeDecodeError` — файл не является корректным UTF-8.
+- `OSError`/`FileNotFoundError` — the file cannot be read;
+- `UnicodeDecodeError` — the file is not valid UTF-8.
 
-### Внутренние методы `CommandLineParser`
+### Internal `CommandLineParser` Methods
 
-Эти методы являются деталями реализации и не предназначены для вызова
-пользователем.
+These methods are implementation details and are not intended to be called by
+users.
 
-| Метод | Назначение и результат |
+| Method | Purpose and result |
 | --- | --- |
-| `_parsed(line_number, raw, indent, outcome)` | Преобразует внутренний `ResolvedMatch` в публичный `ParsedCommand`. |
-| `_validate_input(line, line_number)` | Проверяет типы, отсутствие line terminator и положительный номер; возвращает `None` или поднимает `TypeError`/`ValueError`. |
-| `_indent_end(line)` | Возвращает индекс первого не-whitespace символа или `len(line)`. |
-| `_commands(document)` | Извлекает и валидирует `commands`, возвращает `tuple[str, ...]`. |
+| `_parsed(line_number, raw, indent, outcome)` | Converts an internal `ResolvedMatch` into a public `ParsedCommand`. |
+| `_validate_input(line, line_number)` | Validates types, the absence of a line terminator, and a positive line number; returns `None` or raises `TypeError`/`ValueError`. |
+| `_indent_end(line)` | Returns the index of the first non-whitespace character or `len(line)`. |
+| `_commands(document)` | Extracts and validates `commands`, returning `tuple[str, ...]`. |
 
 ## `ConfigurationParser`
 
-Обёртка над уже скомпилированным `CommandLineParser`. Она не строит второй
-граф и не меняет правила распознавания.
+A wrapper around an already compiled `CommandLineParser`. It does not build a
+second graph or change recognition rules.
 
 ### `ConfigurationParser.__init__`
 
@@ -186,9 +187,9 @@ ConfigurationParser(
 )
 ```
 
-- `line_parser` повторно используется для каждой физической строки;
-- `report_factory` — необязательная dependency-injection точка для сборки
-  итогового отчёта.
+- `line_parser` is reused for every physical line;
+- `report_factory` is an optional dependency-injection point for constructing
+  the final report.
 
 ### `line_parser`
 
@@ -196,7 +197,7 @@ ConfigurationParser(
 configuration_parser.line_parser -> CommandLineParser
 ```
 
-Возвращает исходный parser строк.
+Returns the original line parser.
 
 ### `parse`
 
@@ -204,17 +205,17 @@ configuration_parser.line_parser -> CommandLineParser
 configuration_parser.parse(content: str) -> ParseReport
 ```
 
-Принимает весь конфигурационный текст. Поддерживает `LF`, `CRLF` и `CR`.
+Accepts the complete configuration text. It supports `LF`, `CRLF`, and `CR`.
 
-Особенности:
+Behavior:
 
-- пустой текст даёт отчёт с `lines == ()`;
-- один завершающий line terminator не создаёт фиктивную дополнительную строку;
-- пустые строки внутри файла сохраняются как `BlankLine`;
-- ошибка одной строки не останавливает разбор следующих;
-- номера строк назначаются начиная с `1`.
+- empty text produces a report with `lines == ()`;
+- one trailing line terminator does not create a synthetic extra line;
+- blank lines inside the file are preserved as `BlankLine`;
+- an error on one line does not stop parsing of subsequent lines;
+- line numbers start at `1`.
 
-Если `content` не строка, поднимается `TypeError`.
+If `content` is not a string, `TypeError` is raised.
 
 ### `_physical_lines`
 
@@ -222,20 +223,20 @@ configuration_parser.parse(content: str) -> ParseReport
 ConfigurationParser._physical_lines(content: str) -> tuple[str, ...]
 ```
 
-Внутренний splitter для трёх видов line terminator. Возвращает строки без
-самих terminator-символов.
+An internal splitter for the three line-terminator forms. It returns strings
+without the terminator characters.
 
-## Формат успешного результата
+## Successful Result Format
 
 ### `MatchStatus`
 
-`StrEnum`, поэтому его значения непосредственно сериализуются как строки.
+`StrEnum`, so its values serialize directly as strings.
 
-| Значение | Смысл |
+| Value | Meaning |
 | --- | --- |
-| `UNIQUE = "unique"` | Осталась одна лучшая интерпретация. |
-| `EQUIVALENT = "equivalent"` | Несколько source-паттернов описывают одинаковую интерпретацию. |
-| `AMBIGUOUS = "ambiguous"` | Остались разные, но одинаково приоритетные интерпретации. Это успех, а не ошибка. |
+| `UNIQUE = "unique"` | One best interpretation remains. |
+| `EQUIVALENT = "equivalent"` | Multiple source patterns describe the same interpretation. |
+| `AMBIGUOUS = "ambiguous"` | Different but equally ranked interpretations remain. This is a success, not an error. |
 
 ### `TextSpan`
 
@@ -243,8 +244,10 @@ ConfigurationParser._physical_lines(content: str) -> tuple[str, ...]
 TextSpan(start: int, end: int)
 ```
 
-Полуоткрытый диапазон в оригинальной строке, включая учёт отступа.
-`__post_init__()` требует `0 <= start <= end`, иначе поднимает `ValueError`.
+A half-open range in the original string whose offsets account for
+indentation.
+`__post_init__()` requires `0 <= start <= end`; otherwise it raises
+`ValueError`.
 
 ### `ParameterValue`
 
@@ -258,18 +261,18 @@ ParameterValue(
 )
 ```
 
-| Поле | Формат |
+| Field | Format |
 | --- | --- |
-| `type_id` | Стабильный ID типа: например `integer`, `date-iso`, `ipv4-address`. |
-| `declaration` | Placeholder из паттерна, например `INTEGER<1-15>`. |
-| `raw` | Реальный фрагмент CLI без преобразования. |
-| `normalized` | Результат validator: `int`, строка, `None` или custom object. |
-| `span` | Позиция `raw` в исходной физической строке. |
+| `type_id` | Stable type ID, such as `integer`, `date-iso`, or `ipv4-address`. |
+| `declaration` | The placeholder from the pattern, such as `INTEGER<1-15>`. |
+| `raw` | The actual CLI fragment without conversion. |
+| `normalized` | The validator result: an `int`, string, `None`, or a custom object. |
+| `span` | The position of `raw` in the original physical line. |
 
-Например, для `peer 192.168.001.001` и паттерна `peer X.X.X.X` сохраняются
-`raw="192.168.001.001"` и `normalized="192.168.1.1"`. IPv6-типы аналогично
-сохраняют исходную запись в `raw`, а в `normalized` возвращают каноническую
-lowercase/compressed строку.
+For example, parsing `peer 192.168.001.001` against `peer X.X.X.X` preserves
+`raw="192.168.001.001"` and produces `normalized="192.168.1.1"`. IPv6 types
+likewise preserve the source representation in `raw` and return a canonical
+lowercase/compressed string in `normalized`.
 
 ### `VariationStep`
 
@@ -281,18 +284,18 @@ VariationStep(
 )
 ```
 
-Описывает одно решение при получении конкретной variation.
+Describes one decision made while producing a concrete variation.
 
-| `kind` | Формат `selected` |
+| `kind` | `selected` format |
 | --- | --- |
-| `choice` | Индекс выбранной альтернативы. |
-| `optional` | Пустой tuple при пропуске или индекс выбранной альтернативы. |
-| `set` | Индексы альтернатив в порядке их появления во входной CLI-строке. |
-| `repeat` | Единственное целое число — фактическое количество повторов. |
-| `enum` | Нормализованное строковое значение enum. |
+| `choice` | Index of the selected alternative. |
+| `optional` | An empty tuple when omitted, or the selected alternative index. |
+| `set` | Alternative indices in their order of appearance in the input CLI line. |
+| `repeat` | One integer: the actual repetition count. |
+| `enum` | The normalized enum string value. |
 
-`path` — стабильный внутренний адрес узла/шага, полезный для сравнения и
-диагностики.
+`path` is a stable internal node/step address useful for comparison and
+diagnostics.
 
 ### `PatternMatch`
 
@@ -308,15 +311,15 @@ PatternMatch(
 )
 ```
 
-| Поле | Смысл |
+| Field | Meaning |
 | --- | --- |
-| `pattern_id` | Content-based ID source-паттерна с номером дубликата. |
-| `pattern_index` | Индекс паттерна в JSON-массиве `commands`. |
-| `original_pattern` | Исходная строка паттерна без изменений. |
-| `variation` | Выбранный линейный путь; литералы приведены к canonical ASCII lowercase, параметры остаются declarations. |
-| `variation_id` | Стабильный hash от pattern ID, variation и trace. |
-| `parameters` | Значения параметров данного матча. |
-| `trace` | Структурированные решения групп, повторов и enum. |
+| `pattern_id` | Content-based source-pattern ID with a duplicate occurrence number. |
+| `pattern_index` | Pattern index in the JSON `commands` array. |
+| `original_pattern` | The unchanged source pattern string. |
+| `variation` | The selected linear path; literals use canonical ASCII lowercase, while parameters remain declarations. |
+| `variation_id` | Stable hash of the pattern ID, variation, and trace. |
+| `parameters` | Parameter values captured by this match. |
+| `trace` | Structured group, repetition, and enum decisions. |
 
 ### `ParsedCommand`
 
@@ -331,19 +334,21 @@ ParsedCommand(
 )
 ```
 
-Автоматическое поле `kind == "command"`.
+The generated `kind` field has the value `"command"`
+(`kind == "command"`).
 
 Properties:
 
-- `parsed -> True` — в том числе при `status == AMBIGUOUS`;
-- `matches -> tuple[PatternMatch, ...]` — primary и все alternatives;
-- `parameters -> tuple[ParameterValue, ...]` — shortcut к параметрам primary
-  match.
+- `parsed -> True`, including when `status == AMBIGUOUS`;
+- `matches -> tuple[PatternMatch, ...]`, containing the primary and all
+  alternatives;
+- `parameters -> tuple[ParameterValue, ...]`, a shortcut to the primary
+  match's parameters.
 
-Primary выбирается по порядку source-паттернов и вариаций, но альтернативы не
-теряются.
+The primary match is selected by source-pattern and variation order, but
+alternatives are not discarded.
 
-## Пустые и ошибочные строки
+## Blank and Error Lines
 
 ### `BlankLine`
 
@@ -355,19 +360,20 @@ BlankLine(
 )
 ```
 
-Имеет автоматическое `kind == "blank"`. `indent` равен всей строке.
+The generated `kind` field has the value `"blank"` (`kind == "blank"`).
+`indent` contains the entire line.
 
 ### `ErrorCode`
 
-| Значение | Когда используется |
+| Value | When it is used |
 | --- | --- |
-| `UNKNOWN_COMMAND = "unknown_command"` | Ни один полный маршрут не найден, furthest matching position равна `0`. |
-| `SYNTAX_ERROR = "syntax_error"` | Prefix распознан и matching продвинулся дальше position `0`, но ни один маршрут не завершился. |
-| `VALIDATION_ERROR = "validation_error"` | Структура команды завершилась, но параметры отклонены validator-ами. |
+| `UNKNOWN_COMMAND = "unknown_command"` | No complete route was found and the furthest matching position is `0`. |
+| `SYNTAX_ERROR = "syntax_error"` | A prefix was recognized and matching advanced beyond position `0`, but no route completed. |
+| `VALIDATION_ERROR = "validation_error"` | The command structure completed, but validators rejected its parameters. |
 
-Значения enum являются стабильным программным контрактом. Поле `message`
-предназначено для человека, всегда формируется на английском и может
-становиться подробнее без добавления нового error code.
+Enum values are the stable programmatic contract. The human-facing `message`
+field is always generated in English and can become more detailed without
+introducing a new error code.
 
 ### `ExpectedElement`
 
@@ -375,7 +381,7 @@ BlankLine(
 ExpectedElement(description: str, position: int)
 ```
 
-Ожидаемый literal/placeholder в самой дальней достигнутой позиции.
+The literal or placeholder expected at the furthest reached position.
 
 ### `ValidationFailure`
 
@@ -392,23 +398,23 @@ ValidationFailure(
 )
 ```
 
-Описывает один невалидный параметр: тип, declaration, фактическое значение,
-позицию и человекочитаемую причину.
+Describes one invalid parameter: its type, declaration, actual value,
+position, and human-readable reason.
 
-- `message` — подробная английская причина от validator, например
+- `message` is the detailed English validator reason, for example
   `"value must be at most 15"`;
-- `reason_code` — стабильная машинная категория validator-а, например
-  `"above_maximum"`; fallback-значения parser-а —
-  `"not_applicable"` и `"invalid_value"`;
-- `expected` — ожидаемое ограничение или форма, например `"<= 15"`;
-- `actual` — фактическое представление, например `"16"`.
+- `reason_code` is the stable machine-readable validator category, such as
+  `"above_maximum"`; parser fallback values are `"not_applicable"` and
+  `"invalid_value"`;
+- `expected` is the expected constraint or form, such as `"<= 15"`;
+- `actual` is the actual representation, such as `"16"`.
 
-Defaults `None` сохраняют совместимость при ручном создании dataclass.
-Runtime-фабрика всегда заполняет `reason_code`; `expected` или `actual` могут
-остаться `None`, если custom `ParameterIssue` не предоставил эти сведения. При
-`ParameterStatus.NOT_APPLICABLE` parser сам устанавливает
-`reason_code="not_applicable"`, declaration в `expected` и raw token в
-`actual`.
+The `None` defaults preserve compatibility when constructing the dataclass
+manually. The runtime factory always sets `reason_code`; `expected` or
+`actual` can remain `None` when a custom `ParameterIssue` does not provide
+them. For `ParameterStatus.NOT_APPLICABLE`, the parser itself sets
+`reason_code="not_applicable"`, places the declaration in `expected`, and
+places the raw token in `actual`.
 
 ### `ParseError`
 
@@ -425,34 +431,36 @@ ParseError(
 )
 ```
 
-- для syntax/unknown основными полями являются `position` и `expected`;
-- `suggestions` содержит до пяти уникальных релевантных original patterns
-  для допустимой literal-led ошибки;
-- для validation основными полями являются `failures`,
-  `candidate_patterns` и `candidate_variations`.
+- for syntax/unknown errors, the primary fields are `position` and `expected`;
+- `suggestions` contains up to five unique, relevant original patterns for an
+  eligible literal-led error;
+- for validation errors, the primary fields are `failures`,
+  `candidate_patterns`, and `candidate_variations`.
 
-`suggestions` — структурированное поле, соответствующее нумерованному блоку
-`Did you mean:` внутри `message`. Это исходные patterns из JSON, а не
-сгенерированные concrete CLI-команды. Их порядок детерминирован ранжированием
-и source order.
+`suggestions` is the structured counterpart of the numbered `Did you mean:`
+block in `message`. These are source patterns from JSON, not fabricated
+concrete CLI commands. Their order is determined by deterministic ranking and
+source order.
 
-Recommendation не строится в трёх случаях:
+Recommendations are not generated in three cases:
 
-1. pattern/наиболее продвинувшийся route начинается с применимого параметра;
-2. единственный потенциальный fallback — bare/root `TEXT<min-max>`;
-3. ошибка имеет код `VALIDATION_ERROR`, то есть command shape уже известен.
+1. the pattern or furthest-progressing route starts with an applicable
+   parameter;
+2. the only potential fallback is bare/root `TEXT<min-max>`;
+3. the error code is `VALIDATION_ERROR`, meaning the command shape is already
+   known.
 
-Root `TEXT` не индексируется как подсказка. Он по-прежнему принимает допустимые
-строки с `!`; для обычной неизвестной строки parser может предложить другие
-релевантные literal-led patterns.
+Root `TEXT` is not indexed as a suggestion. It still accepts eligible lines
+beginning with `!`; for an ordinary unknown line, the parser can suggest other
+relevant literal-led patterns.
 
-`NOT_APPLICABLE` root parameter не подавляет подсказку сам по себе: такой
-token не был распознан значением parameter type и всё ещё может быть опечаткой
-literal keyword.
+A `NOT_APPLICABLE` root parameter does not suppress a suggestion by itself:
+that token was not recognized as a value of the parameter type and can still
+be a misspelled literal keyword.
 
-### Примеры runtime errors
+### Runtime Error Examples
 
-#### `UNKNOWN_COMMAND` с рекомендацией
+#### `UNKNOWN_COMMAND` with a Recommendation
 
 ```python
 ParseError(
@@ -467,15 +475,16 @@ ParseError(
 )
 ```
 
-Если похожих literal patterns нет, `suggestions == ()`, а message завершается
-текстом `"No similar literal command patterns were found."`.
-Для `syntax_error` используется формулировка
-`"No sufficiently similar literal command patterns were found."`. Если поиск
-подавлен применимым parameter-led route, message явно называет эту причину.
+If no similar literal patterns exist, `suggestions == ()`, and the message
+ends with `"No similar literal command patterns were found."`. For
+`syntax_error`, the exact text is
+`"No sufficiently similar literal command patterns were found."`. If an
+applicable parameter-led route suppresses the search, the message states that
+reason explicitly.
 
 #### `SYNTAX_ERROR`
 
-Для `display clok` и pattern `display clock`:
+For `display clok` and the pattern `display clock`:
 
 ```python
 ParseError(
@@ -491,13 +500,14 @@ ParseError(
 )
 ```
 
-`position` использует 0-based индекс Python, но column в английском message
-показывается человеку как 1-based. Оба значения учитывают исходный indent.
-Message перечисляет не более пяти ожиданий; поле `expected` сохраняет их все.
+`position` uses a zero-based Python index, while the column in the English
+message is presented as one-based. Both values account for the original
+indentation. The message lists no more than five expectations; the `expected`
+field preserves all of them.
 
 #### `VALIDATION_ERROR`
 
-Для `preference 16` и pattern `preference INTEGER<1-15>`:
+For `preference 16` and the pattern `preference INTEGER<1-15>`:
 
 ```python
 ValidationFailure(
@@ -512,9 +522,9 @@ ValidationFailure(
 )
 ```
 
-Внешний `ParseError.message` называет совпавший pattern или число candidate
-patterns и включает до трёх причин. Полные данные всегда сохраняются в
-`failures`, `candidate_patterns` и `candidate_variations`;
+The outer `ParseError.message` names the matched pattern or the number of
+candidate patterns and includes up to three reasons. Complete data is always
+preserved in `failures`, `candidate_patterns`, and `candidate_variations`;
 `suggestions == ()`.
 
 ### `ErrorLine`
@@ -528,7 +538,8 @@ ErrorLine(
 )
 ```
 
-Имеет `kind == "error"` и property `parsed -> False`.
+The generated `kind` field has the value `"error"` (`kind == "error"`), and
+the property is `parsed -> False`.
 
 ### `LineResult`
 
@@ -538,9 +549,9 @@ Type alias:
 LineResult = BlankLine | ParsedCommand | ErrorLine
 ```
 
-Для безопасной обработки используйте `isinstance()`.
+Use `isinstance()` for safe result handling.
 
-## Отчёт полного конфигурационного файла
+## Complete Configuration Report
 
 ### `ParseSummary`
 
@@ -554,7 +565,7 @@ ParseSummary(
 )
 ```
 
-`commands` включает `unique`, `equivalent` и `ambiguous`.
+`commands` includes `unique`, `equivalent`, and `ambiguous`.
 
 ### `ParseReport`
 
@@ -567,20 +578,20 @@ ParseReport(
 
 #### `has_errors`
 
-Возвращает `True`, когда `summary.errors > 0`.
+Returns `True` when `summary.errors > 0`.
 
 #### `to_dict`
 
-Возвращает JSON-совместимый mapping:
+Returns a JSON-compatible mapping:
 
-- dataclass преобразуется в object;
-- tuple/list — в array;
-- mapping — в object со строковыми ключами;
-- set/frozenset — в стабильно отсортированный array;
-- неизвестное custom normalized value — в `str(value)`;
-- `None` остаётся JSON `null`.
+- a dataclass becomes an object;
+- a tuple/list becomes an array;
+- a mapping becomes an object with string keys;
+- a set/frozenset becomes a stably sorted array;
+- an unknown custom normalized value becomes `str(value)`;
+- `None` remains JSON `null`.
 
-Объекты исходного `ParseReport` при этом не меняются.
+`to_dict()` does not modify the original `ParseReport` object.
 
 ### `ParseReportFactory`
 
@@ -592,12 +603,12 @@ ParseReportFactory.create(
 ) -> ParseReport
 ```
 
-Подсчитывает все поля `ParseSummary` и создаёт immutable `ParseReport`.
-Не выполняет повторный парсинг.
+Counts all `ParseSummary` fields and creates an immutable `ParseReport`. It
+does not parse the input again.
 
 ## `JsonValueConverter`
 
-Internal service, используемый `ParseReport.to_dict()`.
+Internal service used by `ParseReport.to_dict()`.
 
 ### `convert`
 
@@ -605,14 +616,14 @@ Internal service, используемый `ParseReport.to_dict()`.
 JsonValueConverter.convert(value: Any) -> Any
 ```
 
-Рекурсивно преобразует значение по правилам из секции `to_dict`. Метод
-гарантирует удобный для обычного `json.dumps()` результат для поддерживаемого
-дерева и string fallback для plugin-объектов.
+Recursively converts a value according to the rules in the `to_dict` section.
+For supported trees, the method produces a result suitable for ordinary
+`json.dumps()` and uses a string fallback for plugin objects.
 
 ## CLI
 
-После установки package доступна команда `vrp-parser`; без установки можно
-использовать `PYTHONPATH=src python3 -m vrp_parser`.
+After installing the package, the `vrp-parser` command is available. Without
+installation, use `PYTHONPATH=src python3 -m vrp_parser`.
 
 ### `JsonOutput`
 
@@ -622,8 +633,8 @@ JsonValueConverter.convert(value: Any) -> Any
 JsonOutput.write(value: Any) -> None
 ```
 
-Печатает UTF-8 JSON в stdout с отступом в два пробела. `ensure_ascii=False`
-сохраняет читаемые Unicode-символы, `default=str` страхует custom values.
+Prints UTF-8 JSON to stdout with two-space indentation. `ensure_ascii=False`
+keeps Unicode characters readable, while `default=str` handles custom values.
 
 ### `_parser`
 
@@ -631,7 +642,7 @@ JsonOutput.write(value: Any) -> None
 _parser() -> argparse.ArgumentParser
 ```
 
-Создаёт parser с обязательными подкомандами:
+Creates an argument parser with required subcommands:
 
 ```text
 vrp-parser check-patterns PATTERNS_JSON
@@ -644,17 +655,17 @@ vrp-parser parse --patterns PATTERNS_JSON --config CONFIG_FILE
 main(argv: list[str] | None = None) -> int
 ```
 
-| Код | Значение |
+| Code | Meaning |
 | --- | --- |
-| `0` | Каталог корректен или конфигурация разобрана без line errors. |
-| `1` | Конфигурация разобрана, но содержит хотя бы один `ErrorLine`. |
-| `2` | Перехваченный `OSError`, ошибка структуры JSON или компиляции паттернов. |
+| `0` | The catalog is valid, or the configuration was parsed without line errors. |
+| `1` | The configuration was parsed but contains at least one `ErrorLine`. |
+| `2` | A caught `OSError`, JSON document-shape error, or pattern compilation error. |
 
-Оба входных файла читаются как UTF-8. `UnicodeDecodeError` не входит в
-обрабатываемый `except` функции `main()` и поэтому сейчас выходит наружу, а не
-преобразуется в JSON с кодом `2`.
+Both input files are read as UTF-8. `UnicodeDecodeError` is not part of the
+`except` clause handled by `main()`, so it currently propagates instead of
+being converted to JSON with exit code `2`.
 
-Для поставляемого `data/commands.json` команда `check-patterns` печатает:
+For the bundled `data/commands.json`, `check-patterns` prints:
 
 ```json
 {
@@ -663,34 +674,36 @@ main(argv: list[str] | None = None) -> int
 }
 ```
 
-`parse` печатает JSON-представление `ParseReport`.
+`parse` prints the JSON representation of `ParseReport`.
 
 ### `__main__.py`
 
-Вызов `python3 -m vrp_parser ...` делегирует `cli.main()` и возвращает его exit
-code через `SystemExit`.
+Calling `python3 -m vrp_parser ...` delegates to `cli.main()` and returns its
+exit code through `SystemExit`.
 
 ### Package exports
 
-`src/vrp_parser/__init__.py` экспортирует только пользовательские parser,
-result/error values и API расширения parameter registry. В частности, старого
-фасада `VRPParser` и метода `parse_line()` в API нет.
+`src/vrp_parser/__init__.py` exports only user-facing parsers, result/error
+values, and the parameter-registry extension API. In particular, the old
+`VRPParser` facade and `parse_line()` method are not part of the API.
 
 ## `manual_test.py`
 
-Ручной стенд не является библиотечным API, но показывает реальные форматы.
+The manual test harness is not part of the library API, but it demonstrates
+the actual formats.
 
-| Сущность | Назначение |
+| Entity | Purpose |
 | --- | --- |
-| `PATTERN_DOCUMENT` | Небольшой изменяемый вручную каталог. |
-| `main()` | Пытается создать line/configuration parsers из текущего scratchpad-каталога, обрабатывает hardcoded-вход и печатает результат. При невалидном экспериментальном pattern исключение компиляции выходит наружу. |
+| `PATTERN_DOCUMENT` | A small catalog intended for manual editing. |
+| `main()` | Attempts to create line/configuration parsers from the current scratchpad catalog, processes hard-coded input, and prints the result. An invalid experimental pattern lets the compilation exception propagate. |
 
-Запуск:
+Run it with:
 
 ```bash
 python3 manual_test.py
 ```
 
-Аргументы командной строки стенд не обрабатывает. Для другого сценария
-измените pattern document и входной текст вызова `parse()` в самом файле.
-Успешный exit code не гарантируется для намеренно невалидного содержимого.
+The harness does not process command-line arguments. For a different
+scenario, edit the pattern document and the input text passed to `parse()` in
+the file itself. A successful exit code is not guaranteed for intentionally
+invalid content.
