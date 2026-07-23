@@ -39,15 +39,18 @@ PATTERN_DOCUMENT = {
 config = """
 interface Eth-Trunk1
     description eth-trunk descritpion
-    show up
+    show down
 """
 
 
 def main() -> None:
     parser = CommandLineParser(PATTERN_DOCUMENT)
     configuration_parser = ConfigurationParser(parser)
-    result = configuration_parser.parse("!interface Vlanif100")
-    print(result)
+    result = configuration_parser.parse(config)
+
+    for line in result.lines:
+        print(line)
+        print()
 
 
 if __name__ == "__main__":

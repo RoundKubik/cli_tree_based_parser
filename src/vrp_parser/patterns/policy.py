@@ -82,7 +82,7 @@ class RuntimePatternPolicy:
                         position + len(placeholder),
                     )
                 position = source.find(placeholder, position + 1)
-        self._validate_text(parameters, ast, source)
+        self._validate_text_sequence(ast, source, followed=False)
 
     @staticmethod
     def _claimed(
@@ -95,33 +95,51 @@ class RuntimePatternPolicy:
             for item in parameters
         )
 
-    def _validate_text(
+    def _validate_text_sequence(
         self,
-        parameters: tuple[Parameter, ...],
-        ast: Sequence,
+        sequence: Sequence,
         source: str,
+        *,
+        followed: bool,
     ) -> None:
-        text = tuple(
-            item
-            for item in parameters
-            if self._declaration(item).type_id == "text"
-        )
-        if not text:
-            return
-        if (
-            len(ast.items) == 1
-            and len(text) == 1
-            and ast.items[0] is text[0]
-            and text[0].source == "TEXT<1-4096>"
-        ):
-            return
-        item = text[0]
-        self._fail(
-            "TEXT<1-4096> is allowed only as a standalone pattern",
-            source,
-            item.span.start,
-            item.span.end,
-        )
+        for index, node in enumerate(sequence.items):
+            has_continuation = followed or index < len(sequence.items) - 1
+            if isinstance(node, Parameter) and self._is_text(node):
+                if has_continuation:
+                    self._fail(
+                        f"{node.source} must be the final pattern element",
+                        source,
+                        node.span.start,
+                        node.span.end,
+                    )
+            elif isinstance(node, Group):
+                for alternative in node.alternatives:
+                    self._validate_text_sequence(
+                        alternative,
+                        source,
+                        followed=has_continuation,
+                    )
+            elif isinstance(node, Repeat):
+                self._validate_repeated_text(node, source)
+
+    def _validate_repeated_text(self, repeat: Repeat, source: str) -> None:
+        if isinstance(repeat.atom, Parameter) and self._is_text(repeat.atom):
+            self._fail(
+                f"{repeat.atom.source} cannot be repeated",
+                source,
+                repeat.span.start,
+                repeat.span.end,
+            )
+        if isinstance(repeat.atom, Group):
+            for alternative in repeat.atom.alternatives:
+                self._validate_text_sequence(
+                    alternative,
+                    source,
+                    followed=True,
+                )
+
+    def _is_text(self, parameter: Parameter) -> bool:
+        return self._declaration(parameter).type_id == "text"
 
     def _parameters(self, sequence: Sequence) -> Iterator[Parameter]:
         for node in sequence.items:

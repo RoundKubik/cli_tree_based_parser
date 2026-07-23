@@ -61,6 +61,7 @@ required property:
   "commands": [
     "#",
     "TEXT<1-4096>",
+    "description TEXT<1-80>",
     "interface STRING<1-63>",
     "preference INTEGER<1-15>",
     "value { INTEGER<1-10> | HEX<1-A> }"
@@ -154,11 +155,22 @@ rejected value, its span, declaration, and validation message. A line whose
 command prefix is not recognized produces `unknown_command`. A recognized
 prefix that cannot reach a complete pattern produces `syntax_error`.
 
-The exact standalone pattern `TEXT<1-4096>` has a narrow runtime role: it
-matches only when the first non-whitespace input character is `!`. Such a line
-is returned as an ordinary `ParsedCommand`; the leading `!` is captured in its
-text parameter. It is not a catch-all for unknown commands. `#` is also an
-ordinary literal command when the `"#"` pattern is present.
+`TEXT<min-max>` reads and validates the complete remaining text, so it can be
+used after a command keyword:
+
+```text
+description TEXT<1-80>
+```
+
+For `description uplink to core`, the parameter value is
+`"uplink to core"`. Because this parameter consumes the remainder, `TEXT`
+must be the final pattern element and cannot be repeated; invalid placements
+are rejected while the catalogue is compiled.
+
+When `TEXT<min-max>` is matched at command position zero—a bare/root text
+route—it has a narrower role: the first non-whitespace input character must be
+`!`. This keeps that route from becoming a catch-all for unknown commands. `#`
+is also an ordinary literal command when the `"#"` pattern is present.
 
 ## Huawei pattern syntax
 
@@ -208,7 +220,7 @@ The default registry recognizes exactly these declarations:
 | `YYYY/MM/DD,HH:MM:SS` | Valid date and time |
 | `HH:MM:SS` | Valid time with seconds |
 | `<hh:mm>` | Valid hour and minute |
-| `TEXT<1-4096>` | The complete remaining text; standalone pattern only |
+| `TEXT<min-max>` | The complete remaining text with bounded character length |
 
 The default runtime deliberately rejects `X.X.X.X`, `X:X::X:X`, and
 `X:X::X:X/M`: IPv4 and IPv6 placeholders are disabled and do not occur in the

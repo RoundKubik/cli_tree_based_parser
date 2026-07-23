@@ -35,6 +35,7 @@ CommandLineParser(
   "commands": [
     "#",
     "TEXT<1-4096>",
+    "description TEXT<1-80>",
     "interface STRING<1-63>"
   ]
 }
@@ -112,6 +113,8 @@ parser.parse(line: str, line_number: int = 1) -> LineResult
 - ведущие whitespace-символы сохраняются в `indent`;
 - завершающие пробелы не участвуют в распознавании;
 - пустая или whitespace-only строка возвращает `BlankLine`;
+- `description TEXT<1-80>` читает remainder после keyword, а bare/root
+  `TEXT<min-max>` в позиции `0` принимает только строки, начинающиеся с `!`;
 - успешный матч, включая неоднозначный, возвращает `ParsedCommand`;
 - неизвестная, синтаксически незавершённая или невалидная команда возвращает
   `ErrorLine`.

@@ -155,9 +155,7 @@ def builtin_parameter_types() -> tuple[ParameterType, ...]:
         ParameterType(
             "text",
             ParameterFamily.REMAINDER,
-            ExactDeclarationRecognizer(
-                "TEXT<1-4096>", minimum=1, maximum=4096
-            ),
+            BoundedDeclarationRecognizer("TEXT"),
             RemainderReader(),
             TextValidator(),
         ),

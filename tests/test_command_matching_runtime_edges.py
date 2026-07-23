@@ -123,6 +123,36 @@ def test_root_standalone_star_is_matched_as_a_literal() -> None:
     assert isinstance(missing, ErrorLine)
 
 
+def test_root_text_policy_is_applied_inside_a_symbolic_set() -> None:
+    pattern = "{ TEXT<1-80> | known } *"
+    parser = CommandLineParser({"commands": [pattern]})
+
+    comment = _parsed(parser, "! generated")
+    embedded = _parsed(parser, "known trailing words")
+    unknown = parser.parse("totally unknown")
+
+    assert comment.parameters[0].raw == "! generated"
+    assert embedded.primary_match.variation == "known TEXT<1-80>"
+    assert embedded.parameters[0].raw == "trailing words"
+    assert isinstance(unknown, ErrorLine)
+    assert unknown.error.code is ErrorCode.UNKNOWN_COMMAND
+
+
+def test_root_text_policy_is_applied_after_symbolic_route_fallback() -> None:
+    alternatives = " | ".join(
+        ("TEXT<1-80>", *(f"known{index}" for index in range(512)))
+    )
+    parser = CommandLineParser({"commands": [f"{{ {alternatives} }}"]})
+
+    comment = _parsed(parser, "! generated")
+    unknown = parser.parse("totally unknown")
+
+    assert len(parser.command_graph.routes) == 1
+    assert comment.parameters[0].raw == "! generated"
+    assert isinstance(unknown, ErrorLine)
+    assert unknown.error.code is ErrorCode.UNKNOWN_COMMAND
+
+
 def test_invalid_structured_value_blocks_generic_fallback() -> None:
     structured = "date YYYY-MM-DD"
     generic = "date STRING<1-20>"

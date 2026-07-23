@@ -42,7 +42,7 @@ def _declaration(
         ("HH:MM:SS", "time-seconds"),
         ("PASSWORDEX<1-64>", "passwordex"),
         ("H-H-H", "mac"),
-        ("TEXT<1-4096>", "text"),
+        ("TEXT<1-80>", "text"),
     ],
 )
 def test_registry_recognizes_each_builtin_declaration(
@@ -128,7 +128,7 @@ def test_registry_exposes_type_families(
             'afsd!##24"value"',
         ),
         ("H-H-H", "1-aB-CD09", "0001-00ab-cd09"),
-        ("TEXT<1-4096>", "description with spaces", "description with spaces"),
+        ("TEXT<1-80>", "description with spaces", "description with spaces"),
     ],
 )
 def test_valid_values_are_normalized(
@@ -181,7 +181,7 @@ def test_lexically_unrelated_values_are_not_applicable(
         ("H-H-H", "00000-0-0"),
         ("STRING<1-3>", "four"),
         ("PASSWORDEX<2-4>", "x"),
-        ("TEXT<1-4096>", "x" * 4097),
+        ("TEXT<1-80>", "x" * 81),
     ],
 )
 def test_applicable_values_that_violate_constraints_are_invalid(
@@ -222,7 +222,7 @@ def test_parameter_type_returns_not_applicable_for_another_declaration() -> None
 def test_readers_preserve_token_spans_and_text_remainder() -> None:
     registry = default_parameter_registry()
     string = _declaration(registry, "STRING<1-20>")
-    text = _declaration(registry, "TEXT<1-4096>")
+    text = _declaration(registry, "TEXT<1-80>")
 
     token = registry.read(string, "  first second")
     remainder = registry.read(text, "  first second")

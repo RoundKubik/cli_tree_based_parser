@@ -66,9 +66,7 @@ def test_frontend_collects_all_pattern_errors() -> None:
     [
         "peer X.X.X.X",
         "peer X:X::X:X",
-        "description TEXT<1-80>",
         "pair STRING<1-10>/<1-10>",
-        "description TEXT<1-4096>",
         "mac H-H-H/suffix",
         "clock <hh:mm>/suffix",
         "date YYYY-MM-DD/suffix",
@@ -82,10 +80,28 @@ def test_disabled_or_unsupported_placeholders_fail_at_construction(
         CommandLineParser({"commands": [pattern]})
 
 
-def test_standalone_text_is_the_only_supported_text_declaration() -> None:
-    parser = CommandLineParser({"commands": ["TEXT<1-4096>"]})
+def test_standalone_and_terminal_embedded_text_declarations_are_supported() -> None:
+    parser = CommandLineParser(
+        {"commands": ["TEXT<1-4096>", "description TEXT<1-80>"]}
+    )
 
-    assert parser.command_count == 1
+    assert parser.command_count == 2
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "description TEXT<1-80> forbidden-suffix",
+        "description { TEXT<1-80> } forbidden-suffix",
+        "description TEXT<1-80> &<1-2>",
+        "description { TEXT<1-80> | fixed } &<1-2>",
+    ],
+)
+def test_text_declaration_must_be_terminal_and_non_repeated(
+    pattern: str,
+) -> None:
+    with pytest.raises(PatternCompilationError):
+        CommandLineParser({"commands": [pattern]})
 
 
 def test_disabled_builtin_spelling_can_be_added_as_a_plugin() -> None:

@@ -87,6 +87,8 @@ class ParameterExpressionMatcher:
         declaration = expression.declaration
         if not isinstance(declaration, ParameterDeclaration):
             raise TypeError("parameter AST contains an unknown declaration")
+        if not self._text_policy_allows(declaration, state, command):
+            return
         token = self._parameter_types.read(
             declaration,
             command.value,
@@ -123,6 +125,17 @@ class ParameterExpressionMatcher:
             dispatch=state.dispatch + (rank,),
             trace=trace,
         )
+
+    @staticmethod
+    def _text_policy_allows(
+        declaration: ParameterDeclaration,
+        state: WalkState,
+        command: CommandText,
+    ) -> bool:
+        if declaration.type_id != "text" or state.position != 0:
+            return True
+        start = command.skip_space(0)
+        return start < len(command.value) and command.value[start] == "!"
 
     def _trace(
         self,

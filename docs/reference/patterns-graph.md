@@ -53,6 +53,7 @@ CommandGraphBuilder ──► CommandGraph
   "commands": [
     "#",
     "TEXT<1-4096>",
+    "description TEXT<1-80>",
     "interface STRING<1-63>",
     "interface { STRING<1-63> | ENUM{Eth-trunk,Vlanif,Vbdif} STRING<1-63> }"
   ]
@@ -195,7 +196,7 @@ STRING<min-max>
 INTEGER<min-max>
 ENUM{value1,value2,...}
 PASSWORDEX<min-max>
-TEXT<1-4096>
+TEXT<min-max>
 YYYY/MM/DD
 YYYY-MM-DD
 MM-DD
@@ -206,9 +207,14 @@ HH:MM:SS
 H-H-H
 ```
 
-`TEXT<1-4096>` разрешён только как весь паттерн целиком. Ограничение, что
-такой паттерн принимает лишь CLI-строки, начинающиеся после отступа с `!`,
-реализовано matcher-слоем, а не frontend.
+`TEXT<min-max>` является bounded remainder-параметром. Он может находиться
+после keyword, например `description TEXT<1-80>`, и тогда принимает весь
+оставшийся текст. Он обязан завершать возможный route и не может повторяться.
+Если `TEXT` сопоставляется в позиции `0` — на bare/root route без уже
+совпавшего keyword, — matcher разрешает его только для CLI-строк, начинающихся
+после отступа с `!`. Это runtime-правило не даёт такой remainder-ветке
+поглощать неизвестные команды; frontend при этом разрешает terminal embedded
+`TEXT`.
 
 Следующие placeholders отключены по умолчанию:
 
@@ -719,14 +725,16 @@ Return type — `NoReturn`.
 2. найти каждое появление известного declaration prefix в исходной строке;
 3. убедиться, что его диапазон покрыт span реального `Parameter`;
 4. аналогично проверить disabled и exact placeholders;
-5. применить отдельное правило `TEXT`.
+5. проверить, что каждый `TEXT` является последним элементом возможного
+   route и не находится под repeat.
 
 Ничего не возвращает.
 
 Исключения:
 
 - `PatternLanguageError`, если известное написание осталось literal,
-  malformed или отключено;
+  malformed или отключено, а также если `TEXT` не завершает route либо
+  повторяется;
 - `TypeError`, если production AST содержит неизвестный тип declaration.
 
 Важно: disabled placeholder разрешается plugin-ом без изменения policy, если
@@ -740,21 +748,35 @@ Return type — `NoReturn`.
 Это проверка владения исходным фрагментом. Простого пересечения диапазонов
 недостаточно.
 
-### `RuntimePatternPolicy._validate_text(parameters, ast, source)`
+### `RuntimePatternPolicy._validate_text_sequence(sequence, source, *, followed)`
 
-Выбирает параметры с `declaration.type_id == "text"`.
+Рекурсивно проверяет расположение bounded remainder-параметров
+`TEXT<min-max>`.
 
-Допускается только структура:
+- `TEXT` допустим как последний элемент корневой последовательности:
+  `TEXT<1-4096>`;
+- `TEXT` допустим после keyword: `description TEXT<1-80>`;
+- если после текущей последовательности существует продолжение,
+  `followed=True`;
+- `TEXT` с последующим literal, parameter или внешним продолжением group
+  отклоняется с `PatternLanguageError`;
+- для обычной `Group` метод проверяет каждую alternative с учётом того,
+  следует ли что-либо за самой группой.
 
-```text
-Sequence(items=(Parameter(source="TEXT<1-4096>"),))
-```
+Ограничение связано с reader-семантикой: `TEXT` поглощает весь остаток строки,
+поэтому никакой следующий элемент сопоставить уже невозможно.
 
-Любой другой размер, соседний literal, группа, repeat, другая граница или
-другое исходное написание приводит к `PatternLanguageError` по span первого
-text-параметра.
+### `RuntimePatternPolicy._validate_repeated_text(repeat, source)`
 
-Если text-параметров нет, метод ничего не делает.
+Запрещает непосредственно повторяемый `TEXT<min-max>`, поскольку первый
+remainder уже поглощает весь доступный ввод. Для повторяемой группы рекурсивно
+проверяет каждую alternative как имеющую продолжение: после одного повторения
+потенциально должен начаться следующий.
+
+### `RuntimePatternPolicy._is_text(parameter)`
+
+Возвращает `True`, когда `parameter.declaration.type_id == "text"`. Для
+проверки production-инварианта использует `_declaration()`.
 
 ### `RuntimePatternPolicy._parameters(sequence)`
 

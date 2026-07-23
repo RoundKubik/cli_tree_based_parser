@@ -417,14 +417,15 @@ def match(...) -> Iterator[WalkState]
 
 1. Проверяет, что `expression.declaration` является
    `ParameterDeclaration`; иначе выбрасывает `TypeError`.
-2. Просит registry reader прочитать значение с `state.position`.
-3. Если reader не нашёл значение, ничего не выдаёт и записывает declaration в
+2. Применяет `_text_policy_allows()` к declaration и текущей позиции.
+3. Просит registry reader прочитать значение с `state.position`.
+4. Если reader не нашёл значение, ничего не выдаёт и записывает declaration в
    diagnostics.
-4. Передаёт `token.raw` validator через `registry.probe()`.
-5. Добавляет семейный ранг в dispatch.
-6. Для `VALID` добавляет `CapturedParameter`; для `INVALID` и
+5. Передаёт `token.raw` validator через `registry.probe()`.
+6. Добавляет семейный ранг в dispatch.
+7. Для `VALID` добавляет `CapturedParameter`; для `INVALID` и
    `NOT_APPLICABLE` — `RejectedParameter`.
-7. В обоих случаях потребляет токен, добавляет исходный текст declaration в
+8. В обоих случаях потребляет токен, добавляет исходный текст declaration в
    `parts` и выдаёт ровно одно состояние.
 
 Важно: отклонённый параметр не завершает маршрут немедленно. Ветка должна
@@ -433,6 +434,21 @@ def match(...) -> Iterator[WalkState]
 
 `path` — стабильный адрес выражения внутри маршрута, например `step:2` или
 `step:2.1.0`; он попадает в provenance trace.
+
+#### `_text_policy_allows(declaration, state, command)`
+
+Защищает от catch-all поведения bare/root `TEXT<min-max>`:
+
+- для declaration не типа `text` возвращает `True`;
+- для `TEXT`, сопоставляемого не в позиции `0`, возвращает `True`;
+- для `TEXT` в позиции `0` возвращает `True` только тогда, когда первый
+  непробельный символ команды — `!`.
+
+Guard находится непосредственно в `ParameterExpressionMatcher`, поэтому
+применяется к каждому `Parameter` независимо от его вложенности: на обычном
+graph edge, внутри symbolic `Group`, `Repeat` или symbolic route, оставленного
+после fallback route expansion. При этом `description TEXT<1-80>` разрешён,
+поскольку keyword уже продвинул `state.position`.
 
 #### `_trace(declaration, valid, normalized, state, path)`
 
@@ -815,8 +831,9 @@ def match(
 6. Для каждого ребра пересекает его route IDs с активными. Это критически
    важно: общие graph nodes не позволяют «начать одним паттерном, а закончить
    другим».
-7. Проверяет особую TEXT-policy.
-8. Сопоставляет expression и рекурсивно продолжает каждый resulting state.
+7. Сопоставляет expression и рекурсивно продолжает каждый resulting state.
+   TEXT-policy при необходимости применяется внутри
+   `ParameterExpressionMatcher`.
 
 В candidates попадают как валидные, так и validation-rejected полные маршруты.
 Частичный маршрут никогда не становится кандидатом.
@@ -831,19 +848,6 @@ def match(
 Таким образом literal пробуется первым, но generic/parameter ветви не
 отбрасываются преждевременно. Окончательный выбор делает Pareto resolver после
 проверки полного продолжения.
-
-#### `_text_policy_allows(edge, state, command)`
-
-Особая защита catch-all типа `TEXT`:
-
-- для не-parameter edge возвращает `True`;
-- для параметра не типа `text` — `True`;
-- для `text`, расположенного не в начале команды, — `True`;
-- корневой TEXT разрешён только если declaration в точности
-  `TEXT<1-4096>` и первый непробельный символ команды — `!`.
-
-Вместе с compile-time policy это не даёт паттерну `TEXT<1-4096>` поглотить
-любую неизвестную команду.
 
 #### `_syntax_error(diagnostics, *, span_offset)`
 
@@ -1141,8 +1145,10 @@ Backtracking сохраняется на трёх уровнях:
 ### Неизвестная команда
 
 `ErrorCode.UNKNOWN_COMMAND` означает, что ни одна ветвь не продвинулась дальше
-нулевой позиции. Корневой `TEXT<1-4096>` не маскирует неизвестные команды:
-он разрешён только для строк, начинающихся с `!`.
+нулевой позиции. Bare/root `TEXT<min-max>` в позиции `0` не маскирует
+неизвестные команды: он разрешён только для строк, начинающихся с `!`. Это
+ограничение не относится к remainder-параметру после совпавшего keyword,
+например `description TEXT<1-80>`.
 
 ### Синтаксическая ошибка
 

@@ -5,8 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from vrp_parser.graph import CommandEdge, CommandGraph, CommandNode
-from vrp_parser.parameters import ParameterDeclaration, ParameterTypeRegistry
-from vrp_parser.patterns import Parameter
+from vrp_parser.parameters import ParameterTypeRegistry
 from vrp_parser.results import ErrorCode, ParseError
 
 from .deduplication import CandidateSet
@@ -119,8 +118,6 @@ class CommandMatcher:
                 route_ids = route_ids & active
             if not route_ids:
                 continue
-            if not self._text_policy_allows(edge, state, command):
-                continue
             for result in self._expressions.match(
                 edge.step.expression,
                 state,
@@ -155,27 +152,6 @@ class CommandMatcher:
         if literal is None:
             return node.expression_edges
         return (literal, *node.expression_edges)
-
-    @staticmethod
-    def _text_policy_allows(
-        edge: CommandEdge,
-        state: WalkState,
-        command: CommandText,
-    ) -> bool:
-        expression = edge.step.expression
-        if not isinstance(expression, Parameter):
-            return True
-        declaration = expression.declaration
-        if not isinstance(declaration, ParameterDeclaration):
-            return True
-        if declaration.type_id != "text" or state.position != 0:
-            return True
-        start = command.skip_space(0)
-        return (
-            declaration.source == "TEXT<1-4096>"
-            and start < len(command.value)
-            and command.value[start] == "!"
-        )
 
     @staticmethod
     def _syntax_error(
