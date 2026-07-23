@@ -1,0 +1,66 @@
+"""Huawei VRP command-pattern parser."""
+
+from .api import CommandLineParser, ConfigurationParser
+from .errors import (
+    PatternCompilationError,
+    PatternDocumentError,
+    PatternIssue,
+)
+from .parameters import (
+    ParameterDeclaration,
+    ParameterFamily,
+    ParameterIssue,
+    ParameterResult,
+    ParameterStatus,
+    ParameterType,
+    ParameterTypeRegistry,
+    default_parameter_registry,
+)
+from .results import (
+    BlankLine,
+    ErrorCode,
+    ErrorLine,
+    ExpectedElement,
+    LineResult,
+    MatchStatus,
+    ParameterValue,
+    ParsedCommand,
+    ParseError,
+    ParseReport,
+    ParseSummary,
+    PatternMatch,
+    TextSpan,
+    ValidationFailure,
+    VariationStep,
+)
+
+__all__ = [
+    "BlankLine",
+    "CommandLineParser",
+    "ConfigurationParser",
+    "ErrorCode",
+    "ErrorLine",
+    "ExpectedElement",
+    "LineResult",
+    "MatchStatus",
+    "ParameterDeclaration",
+    "ParameterFamily",
+    "ParameterIssue",
+    "ParameterResult",
+    "ParameterStatus",
+    "ParameterType",
+    "ParameterTypeRegistry",
+    "ParameterValue",
+    "ParseError",
+    "ParseReport",
+    "ParseSummary",
+    "ParsedCommand",
+    "PatternCompilationError",
+    "PatternDocumentError",
+    "PatternIssue",
+    "PatternMatch",
+    "TextSpan",
+    "ValidationFailure",
+    "VariationStep",
+    "default_parameter_registry",
+]
