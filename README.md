@@ -153,9 +153,36 @@ constraint, the result is `validation_error`; a generic fallback does not hide
 that error.
 
 For example, `preference 16` against `preference INTEGER<1-15>` reports the
-rejected value, its span, declaration, and validation message. A line whose
-command prefix is not recognized produces `unknown_command`. A recognized
-prefix that cannot reach a complete pattern produces `syntax_error`.
+rejected value, its span, declaration, validation message, stable
+`reason_code`, expected constraint, and actual value. A line whose command
+prefix is not recognized produces `unknown_command`. A recognized prefix that
+cannot reach a complete pattern produces `syntax_error`.
+
+Every runtime `ParseError.message` is an English, self-contained explanation.
+The structured fields remain the preferred interface for programs:
+
+- `position` and `expected` locate an unknown or incomplete command;
+- `failures`, `candidate_patterns`, and `candidate_variations` explain
+  parameter validation;
+- `suggestions` contains up to five relevant original patterns for a failed
+  literal-led command.
+
+For example, a typo can produce:
+
+```text
+Command 'dispaly clock' was not recognized. Did you mean:
+  1. display clock
+Reason: No complete command pattern accepted the first token.
+```
+
+Suggestions are deterministic, unique, and returned in relevance order. They
+are source patterns, not fabricated concrete commands, so placeholders and
+groups remain visible. Only patterns with a literal-led variation participate.
+A clearly applicable parameter-first route suppresses keyword suggestions;
+bare/root `TEXT<min-max>` and `validation_error` never produce them.
+Unrelated input may therefore return an empty `suggestions` tuple together
+with an explicit `No similar literal command patterns were found.`
+explanation.
 
 `TEXT<min-max>` reads and validates the complete remaining text, so it can be
 used after a command keyword:

@@ -361,9 +361,13 @@ BlankLine(
 
 | Значение | Когда используется |
 | --- | --- |
-| `UNKNOWN_COMMAND = "unknown_command"` | Ни один command prefix не распознан. |
-| `SYNTAX_ERROR = "syntax_error"` | Prefix распознан, но ни один маршрут не завершился. |
+| `UNKNOWN_COMMAND = "unknown_command"` | Ни один полный маршрут не найден, furthest matching position равна `0`. |
+| `SYNTAX_ERROR = "syntax_error"` | Prefix распознан и matching продвинулся дальше position `0`, но ни один маршрут не завершился. |
 | `VALIDATION_ERROR = "validation_error"` | Структура команды завершилась, но параметры отклонены validator-ами. |
+
+Значения enum являются стабильным программным контрактом. Поле `message`
+предназначено для человека, всегда формируется на английском и может
+становиться подробнее без добавления нового error code.
 
 ### `ExpectedElement`
 
@@ -382,11 +386,29 @@ ValidationFailure(
     raw: str,
     span: TextSpan,
     message: str,
+    reason_code: str | None = None,
+    expected: str | None = None,
+    actual: str | None = None,
 )
 ```
 
 Описывает один невалидный параметр: тип, declaration, фактическое значение,
 позицию и человекочитаемую причину.
+
+- `message` — подробная английская причина от validator, например
+  `"value must be at most 15"`;
+- `reason_code` — стабильная машинная категория validator-а, например
+  `"above_maximum"`; fallback-значения parser-а —
+  `"not_applicable"` и `"invalid_value"`;
+- `expected` — ожидаемое ограничение или форма, например `"<= 15"`;
+- `actual` — фактическое представление, например `"16"`.
+
+Defaults `None` сохраняют совместимость при ручном создании dataclass.
+Runtime-фабрика всегда заполняет `reason_code`; `expected` или `actual` могут
+остаться `None`, если custom `ParameterIssue` не предоставил эти сведения. При
+`ParameterStatus.NOT_APPLICABLE` parser сам устанавливает
+`reason_code="not_applicable"`, declaration в `expected` и raw token в
+`actual`.
 
 ### `ParseError`
 
@@ -399,12 +421,101 @@ ParseError(
     failures: tuple[ValidationFailure, ...] = (),
     candidate_patterns: tuple[str, ...] = (),
     candidate_variations: tuple[str, ...] = (),
+    suggestions: tuple[str, ...] = (),
 )
 ```
 
 - для syntax/unknown основными полями являются `position` и `expected`;
+- `suggestions` содержит до пяти уникальных релевантных original patterns
+  для допустимой literal-led ошибки;
 - для validation основными полями являются `failures`,
   `candidate_patterns` и `candidate_variations`.
+
+`suggestions` — структурированное поле, соответствующее нумерованному блоку
+`Did you mean:` внутри `message`. Это исходные patterns из JSON, а не
+сгенерированные concrete CLI-команды. Их порядок детерминирован ранжированием
+и source order.
+
+Recommendation не строится в трёх случаях:
+
+1. pattern/наиболее продвинувшийся route начинается с применимого параметра;
+2. единственный потенциальный fallback — bare/root `TEXT<min-max>`;
+3. ошибка имеет код `VALIDATION_ERROR`, то есть command shape уже известен.
+
+Root `TEXT` не индексируется как подсказка. Он по-прежнему принимает допустимые
+строки с `!`; для обычной неизвестной строки parser может предложить другие
+релевантные literal-led patterns.
+
+`NOT_APPLICABLE` root parameter не подавляет подсказку сам по себе: такой
+token не был распознан значением parameter type и всё ещё может быть опечаткой
+literal keyword.
+
+### Примеры runtime errors
+
+#### `UNKNOWN_COMMAND` с рекомендацией
+
+```python
+ParseError(
+    code=ErrorCode.UNKNOWN_COMMAND,
+    message=(
+        "Command 'dispaly clock' was not recognized. Did you mean:\n"
+        "  1. display clock\n"
+        "Reason: No complete command pattern accepted the first token."
+    ),
+    position=0,
+    suggestions=("display clock",),
+)
+```
+
+Если похожих literal patterns нет, `suggestions == ()`, а message завершается
+текстом `"No similar literal command patterns were found."`.
+Для `syntax_error` используется формулировка
+`"No sufficiently similar literal command patterns were found."`. Если поиск
+подавлен применимым parameter-led route, message явно называет эту причину.
+
+#### `SYNTAX_ERROR`
+
+Для `display clok` и pattern `display clock`:
+
+```python
+ParseError(
+    code=ErrorCode.SYNTAX_ERROR,
+    message=(
+        "Command 'display clok' was not recognized. Did you mean:\n"
+        "  1. display clock\n"
+        "Reason: Parsing stopped at column 9; expected 'clock'."
+    ),
+    position=8,
+    expected=(ExpectedElement(description="'clock'", position=8),),
+    suggestions=("display clock",),
+)
+```
+
+`position` использует 0-based индекс Python, но column в английском message
+показывается человеку как 1-based. Оба значения учитывают исходный indent.
+Message перечисляет не более пяти ожиданий; поле `expected` сохраняет их все.
+
+#### `VALIDATION_ERROR`
+
+Для `preference 16` и pattern `preference INTEGER<1-15>`:
+
+```python
+ValidationFailure(
+    type_id="integer",
+    declaration="INTEGER<1-15>",
+    raw="16",
+    span=TextSpan(start=11, end=13),
+    message="value must be at most 15",
+    reason_code="above_maximum",
+    expected="<= 15",
+    actual="16",
+)
+```
+
+Внешний `ParseError.message` называет совпавший pattern или число candidate
+patterns и включает до трёх причин. Полные данные всегда сохраняются в
+`failures`, `candidate_patterns` и `candidate_variations`;
+`suggestions == ()`.
 
 ### `ErrorLine`
 

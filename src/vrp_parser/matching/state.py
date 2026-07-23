@@ -38,6 +38,7 @@ class WalkState:
     parameters: tuple[CapturedParameter, ...] = ()
     rejected: tuple[RejectedParameter, ...] = ()
     dispatch: tuple[int, ...] = ()
+    parameter_led: bool | None = None
     source_order: tuple[int, ...] = ()
     trace: tuple[VariationStep, ...] = ()
 

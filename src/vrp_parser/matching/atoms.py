@@ -54,13 +54,22 @@ class LiteralExpressionMatcher:
         token = command.token(state.position)
         position = command.skip_space(state.position)
         if token is None or ascii_lower(token.raw) != ascii_lower(expression.value):
-            diagnostics.record(position, repr(expression.value))
+            diagnostics.record(
+                position,
+                repr(expression.value),
+                parameter_led=state.parameter_led,
+            )
             return
         yield replace(
             state,
             position=token.end,
             parts=state.parts + (ascii_lower(expression.value),),
             dispatch=state.dispatch + (0,),
+            parameter_led=(
+                False
+                if state.parameter_led is None
+                else state.parameter_led
+            ),
         )
 
 
@@ -98,6 +107,7 @@ class ParameterExpressionMatcher:
             diagnostics.record(
                 command.skip_space(state.position),
                 declaration.source,
+                parameter_led=state.parameter_led,
             )
             return
 
@@ -123,8 +133,18 @@ class ParameterExpressionMatcher:
             parameters=parameters,
             rejected=rejected,
             dispatch=state.dispatch + (rank,),
+            parameter_led=self._parameter_led(state, result.status),
             trace=trace,
         )
+
+    @staticmethod
+    def _parameter_led(
+        state: WalkState,
+        status: ParameterStatus,
+    ) -> bool | None:
+        if state.parameter_led is not None:
+            return state.parameter_led
+        return status is not ParameterStatus.NOT_APPLICABLE
 
     @staticmethod
     def _text_policy_allows(

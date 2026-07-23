@@ -44,15 +44,17 @@ class ValidationErrorFactory:
             )
 
         unique_failures = tuple(dict.fromkeys(failures))
+        unique_patterns = tuple(dict.fromkeys(patterns))
+        unique_variations = tuple(dict.fromkeys(variations))
         return ParseError(
             code=ErrorCode.VALIDATION_ERROR,
-            message="command shape matched, but one or more parameters are invalid",
+            message=self._message(unique_failures, unique_patterns),
             position=(
                 unique_failures[0].span.start if unique_failures else None
             ),
             failures=unique_failures,
-            candidate_patterns=tuple(dict.fromkeys(patterns)),
-            candidate_variations=tuple(dict.fromkeys(variations)),
+            candidate_patterns=unique_patterns,
+            candidate_variations=unique_variations,
         )
 
     @staticmethod
@@ -62,10 +64,18 @@ class ValidationErrorFactory:
         span_offset: int,
     ) -> ValidationFailure:
         issue = rejected.result.issue
+        expected: str | None
+        actual: str | None
         if rejected.result.status is ParameterStatus.NOT_APPLICABLE:
             message = f"value does not match {rejected.declaration.source}"
+            reason_code = "not_applicable"
+            expected = rejected.declaration.source
+            actual = rejected.token.raw
         else:
             message = issue.message if issue else "invalid parameter value"
+            reason_code = issue.code if issue else "invalid_value"
+            expected = issue.expected if issue else None
+            actual = issue.actual if issue else rejected.token.raw
         return ValidationFailure(
             type_id=rejected.declaration.type_id,
             declaration=rejected.declaration.source,
@@ -75,4 +85,43 @@ class ValidationErrorFactory:
                 rejected.token.end + span_offset,
             ),
             message=message,
+            reason_code=reason_code,
+            expected=expected,
+            actual=actual,
+        )
+
+    @staticmethod
+    def _message(
+        failures: tuple[ValidationFailure, ...],
+        patterns: tuple[str, ...],
+    ) -> str:
+        if not failures:
+            return (
+                "The command structure matched a known pattern, but its "
+                "parameters failed validation. Inspect failures for details."
+            )
+
+        visible = failures[:3]
+        details = "; ".join(
+            (
+                f"value {failure.raw!r} is invalid for "
+                f"{failure.declaration}: {failure.message}"
+            )
+            for failure in visible
+        )
+        if len(failures) > len(visible):
+            remaining = len(failures) - len(visible)
+            noun = "failure" if remaining == 1 else "failures"
+            details += f"; and {remaining} more {noun}"
+
+        if len(patterns) == 1:
+            matched = f"pattern {patterns[0]!r}"
+        else:
+            matched = f"{len(patterns)} candidate patterns"
+        value_noun = "value" if len(failures) == 1 else "values"
+        return (
+            f"The command structure matched {matched}, but "
+            f"{len(failures)} parameter {value_noun} failed validation: "
+            f"{details}. Inspect failures, candidate_patterns, and "
+            "candidate_variations for complete details."
         )

@@ -74,6 +74,9 @@ CommandText ──► обход CommandGraph ──► Candidate[]
    ограничению, он может заблокировать менее специфичный валидный маршрут.
 6. Все оставшиеся равноправные совпадения сохраняются. Неоднозначность —
    успешный результат со статусом `ambiguous`, а не ошибка.
+7. Если полного candidate нет, отдельные diagnostic-компоненты формируют
+   подробный английский `ParseError` и при уместном literal-led сценарии
+   добавляют до пяти похожих original patterns.
 
 ## Общие форматы и соглашения
 
@@ -195,6 +198,7 @@ class WalkState:
     parameters: tuple[CapturedParameter, ...] = ()
     rejected: tuple[RejectedParameter, ...] = ()
     dispatch: tuple[int, ...] = ()
+    parameter_led: bool | None = None
     source_order: tuple[int, ...] = ()
     trace: tuple[VariationStep, ...] = ()
 ```
@@ -208,6 +212,9 @@ class WalkState:
 - `parameters` — валидные захваченные параметры;
 - `rejected` — прочитанные, но отклонённые параметры;
 - `dispatch` — последовательность рангов пройденных атомов;
+- `parameter_led` — diagnostic-классификация первого потреблённого atom:
+  `True` для применимого parameter, `False` для literal или
+  `NOT_APPLICABLE` parameter, `None` до первого потребления;
 - `source_order` — решения групп и повторов в порядке внешнего паттерна;
 - `trace` — подробная provenance-информация (`choice`, `optional`, `set`,
   `repeat`, `enum`).
@@ -324,18 +331,35 @@ def at_end(self, position: int) -> bool
 class MatchDiagnostics:
     position: int = 0
     expected: set[str] = field(default_factory=set)
+    non_parameter_path_progress: int = -1
+    parameter_path_progress: int = -1
 ```
 
 Единственный намеренно изменяемый накопитель подсистемы. Он общий для веток
 обхода и сохраняет ожидания только в самой дальней достигнутой позиции.
+Два progress-поля дополнительно показывают, насколько далеко прошли маршруты,
+первым потребившие literal/неприменимый parameter либо применимый parameter.
+Они нужны только для решения о keyword suggestions и не меняют matching.
 
-#### `record(position, description)`
+#### `record(position, description, *, parameter_led=None)`
 
 - если новая позиция дальше текущей, заменяет весь набор ожиданий;
 - если позиция равна текущей, добавляет `description`;
 - если позиция меньше, игнорирует запись.
+- `parameter_led=True` означает, что первый parameter был применим;
+  `False` означает literal либо неприменимый первый parameter;
+  `None` — route ещё ничего не потребил;
+- соответствующее progress-поле запоминает максимальную достигнутую позицию,
+  даже если глобальное `expected` уже относится к другой ветке.
 
 Так ошибка сообщает наиболее полезную точку, а не ранний неудачный маршрут.
+
+#### `allows_keyword_suggestions`
+
+Property возвращает `True`, когда route без применимого первого parameter
+продвинулся не меньше parameter-first route. Если применимый parameter-first
+route объясняет строку лучше, literal keyword recommendations подавляются,
+чтобы не показывать команды из другого пространства распознавания.
 
 #### `elements(offset=0)`
 
@@ -346,6 +370,13 @@ def elements(self, *, offset: int = 0) -> tuple[ExpectedElement, ...]
 Сортирует текстовые ожидания и возвращает tuple публичных `ExpectedElement`.
 К каждой позиции прибавляется `offset`. Дубликаты отсутствуют благодаря
 `set`.
+
+#### `_record_path_progress(position, parameter_led)`
+
+Private helper обновляет одно из progress-полей по явной классификации route.
+Значение `None` означает, что route ещё ничего не потребил, поэтому такая
+запись не участвует в выборе suggestions. `NOT_APPLICABLE` parameter не может
+самостоятельно скрыть полезную keyword-рекомендацию.
 
 ## `walking.py`: интерфейс рекурсивного обхода
 
@@ -404,6 +435,7 @@ def match(...) -> Iterator[WalkState]
   - `position = token.end`;
   - в `parts` добавляется lower-case literal;
   - в `dispatch` добавляется `0`.
+  - если начало route ещё не классифицировано, `parameter_led=False`.
 
 Параметры, rejected, source order и trace не меняются.
 
@@ -432,7 +464,9 @@ def match(...) -> Iterator[WalkState]
 6. Добавляет семейный ранг в dispatch.
 7. Для `VALID` добавляет `CapturedParameter`; для `INVALID` и
    `NOT_APPLICABLE` — `RejectedParameter`.
-8. В обоих случаях потребляет токен, добавляет исходный текст declaration в
+8. Для первого parameter устанавливает `parameter_led=True`, если status
+   применим (`VALID`/`INVALID`), либо `False` для `NOT_APPLICABLE`.
+9. В обоих случаях потребляет токен, добавляет исходный текст declaration в
    `parts` и выдаёт ровно одно состояние.
 
 Важно: отклонённый параметр не завершает маршрут немедленно. Ветка должна
@@ -476,6 +510,7 @@ selected=(str(normalized),))` только для валидного парам�
 - declaration, raw и `repr(normalized)` каждого captured-параметра;
 - declaration, raw, status и `repr(issue)` каждого rejected-параметра;
 - dispatch;
+- `parameter_led`;
 - source order;
 - trace.
 
@@ -791,7 +826,7 @@ class _Traversal:
 Низкоуровневый recognizer одной команды. Он не обрабатывает отступ,
 `line_number` или пустую строку — это ответственность `CommandLineParser`.
 
-#### `__init__(graph, parameter_types, expression_matcher=None, resolver=None, candidate_set=None)`
+#### `__init__(graph, parameter_types, expression_matcher=None, resolver=None, candidate_set=None, error_factory=None)`
 
 Обязательные зависимости:
 
@@ -800,6 +835,9 @@ class _Traversal:
   компилировался graph.
 
 Опциональные зависимости позволяют тестировать компоненты отдельно.
+По умолчанию matcher создаёт `CommandSuggester` для данного graph/registry и
+передаёт его в `CommandErrorFactory`. Через `error_factory` обе стратегии
+runtime-диагностики можно заменить вместе.
 
 #### `match(text, *, span_offset=0)`
 
@@ -817,7 +855,8 @@ def match(
 
 - Если найден хотя бы один terminal candidate, кандидаты дедуплицируются и
   передаются `MatchResolver.resolve()`.
-- Если полных кандидатов нет, возвращается syntax/unknown `ParseError`.
+- Если полных кандидатов нет, `CommandErrorFactory` возвращает подробный
+  syntax/unknown `ParseError` и, когда это уместно, top-5 suggestions.
 - `span_offset` не влияет на matching; он только сдвигает публичные позиции.
 
 Метод не проверяет тип `text` и знак `span_offset`: корректный внешний контракт
@@ -856,16 +895,268 @@ def match(
 отбрасываются преждевременно. Окончательный выбор делает Pareto resolver после
 проверки полного продолжения.
 
-#### `_syntax_error(diagnostics, *, span_offset)`
+Если candidates после дедупликации отсутствуют, `match()` передаёт
+`command.value`, diagnostics и `span_offset` в `self._errors.create()`.
+Построение сообщения и recommendations вынесено из graph walker в
+`runtime_errors.py`.
 
-Создаёт публичный `ParseError`:
+## `suggestions.py`: похожие literal-led команды
 
-- `UNKNOWN_COMMAND` и сообщение `"unknown command"`, если furthest position
-  равна `0`;
-- иначе `SYNTAX_ERROR` и сообщение
-  `"command does not match any complete pattern"`;
-- `position` и все expected positions сдвигаются на `span_offset`;
-- validation failures и candidate patterns отсутствуют.
+Suggestion subsystem является отдельным диагностическим индексом. Он не
+добавляет graph routes, не создаёт успешные candidates и никак не влияет на
+приоритеты matcher-а. Его единственный результат — до пяти строк
+`original_pattern` для `ParseError.suggestions`.
+
+### `_TemplateAtom`
+
+Один элемент облегчённого поискового шаблона:
+
+- `literal` хранит ASCII-lower keyword;
+- `declaration` хранит `ParameterDeclaration`;
+- одновременно заполнено только одно поле.
+
+`from_node(node)` принимает только `Literal | Parameter`. Для parameter
+проверяется тип declaration; неизвестный объект означает внутреннее нарушение
+инварианта и приводит к `TypeError`.
+
+### `_SuggestionTemplate`
+
+Immutable tuple атомов одной поисковой вариации. Это не runtime route:
+template нужен только для fuzzy comparison и может представлять один из
+характерных вариантов group/repeat.
+
+### `_SuggestionPattern`
+
+Объединяет `pattern_index`, исходную строку и tuple searchable templates
+одного source pattern.
+
+### `SuggestionTemplateFactory`
+
+Создаёт ограниченное множество searchable variations из AST. Конструктор
+принимает `maximum_templates=64` и отклоняет неположительный лимит.
+
+#### `create(pattern)`
+
+Рекурсивно преобразует `pattern.ast`, удаляет дубликаты и оставляет только
+templates, первый atom которых является literal. Поэтому чистый pattern
+`STRING<1-20> activate` не попадает в индекс. Pattern с optional parameter
+может попасть, если существует literal-led variation, например
+`[ STRING<1-20> ] display clock`.
+
+#### `_sequence(sequence)` и `_node(node)`
+
+`_sequence()` строит декартово произведение вариантов последовательных
+AST-узлов. `_node()` маршрутизирует `Literal`, `Parameter`, `Group` и
+`Repeat`; неизвестный node приводит к `TypeError`.
+
+#### `_group(group)` и `_set_order(alternatives)`
+
+- one-choice group добавляет templates всех alternatives;
+- optional-one дополнительно добавляет пустой template;
+- set group добавляет одиночные alternatives, canonical order и reverse
+  order;
+- optional-set также добавляет пустой вариант.
+
+Это намеренно bounded-представление, а не полное перечисление всех
+перестановок set group.
+
+#### `_repeat(repeat)`
+
+Для поиска достаточно характерных количеств: `minimum`, один элемент при
+`minimum == 0`, и ближайшее большее допустимое количество. Каждый вариант
+строится тем же bounded product.
+
+#### `_product(left, right)` и `_unique(templates)`
+
+Helpers стабильно удаляют дубликаты и обрезают результат по
+`maximum_templates`.
+
+### `SuggestionCatalog`
+
+Строит immutable index один раз при создании `CommandMatcher`.
+
+#### `__init__(graph, template_factory=None)`
+
+Проходит source patterns в JSON order, создаёт `_SuggestionPattern` только при
+наличии literal-led template и строит индекс
+`root literal → pattern entries`.
+
+Bare/root `TEXT<min-max>` и другие чистые parameter-first patterns templates
+не имеют и в index отсутствуют.
+
+#### `root_keywords`
+
+Возвращает отсортированный tuple всех индексированных root keywords.
+
+#### `candidates(nearby_roots)`
+
+Собирает candidate set только для точного или похожего root. Совпадение только
+по нерoot keyword недостаточно. Secondary tokens анализирует последующий
+`CommandSimilarity.could_be_relevant()`, поэтому шумовой точный suffix не
+может заранее исключить более близкий fuzzy pattern. Entry order стабилен.
+
+### `TokenDistance`
+
+Сравнивает отдельные tokens без сторонних библиотек.
+
+- `distance(left, right)` вычисляет edit distance; соседняя перестановка
+  символов считается одной операцией;
+- `cost(left, right)` нормализует distance в диапазон `0..1000`;
+- `similarity(left, right)` возвращает `1000 - cost`.
+
+### `_SimilarityScore`
+
+Сортируемый immutable score из четырёх частей:
+
+1. normalized edit cost;
+2. отрицательное число точных prefix literals;
+3. отрицательное число всех точных literal matches;
+4. разница в количестве tokens.
+
+Меньший tuple означает более релевантный template.
+
+### `CommandSimilarity`
+
+Сравнивает concrete CLI tokens с atoms searchable template.
+
+#### `score(query_tokens, template)`
+
+Dynamic programming допускает вставку, удаление, замену и перестановку двух
+соседних literals. Для parameter atom вызывается тот же
+`ParameterTypeRegistry.probe()`, что и в matcher:
+
+- `VALID` parameter имеет низкую стоимость;
+- `INVALID` остаётся похожим, но получает штраф;
+- `NOT_APPLICABLE` получает высокий штраф.
+
+Итог нормализуется по максимальной длине, после чего добавляются exact-prefix,
+exact-match и token-count tie-breakers.
+
+#### `is_relevant(query_tokens, template, score)`
+
+Финально отсекает случайные совпадения по normalized cost. Явная опечатка в
+root допускается даже при сильном расхождении хвоста: root keyword является
+наиболее важным сигналом предполагаемой команды.
+
+#### `could_be_relevant(query_tokens, template)`
+
+Дешёвый pre-filter перед dynamic programming. Template обязан иметь точный или
+похожий literal root. Многотокенная команда дополнительно должна иметь
+точный/похожий secondary literal либо применимый parameter slot. Так общий
+root вроде `display` не превращает случайный хвост в пять произвольных
+рекомендаций.
+
+#### `root_is_near(query, root)`
+
+Быстрый pre-filter root keywords. Допустимое edit distance зависит от длины
+query token, а normalized similarity не должна быть ниже порога.
+
+#### Внутренние helpers
+
+- `_substitution_cost(atom, token)` выбирает literal distance или результат
+  parameter probe;
+- `_missing_cost(atom)` назначает разные штрафы literal и parameter;
+- `_is_transposition(...)` распознаёт перестановку соседних literal tokens;
+- `_exact_literal_matches(...)` считает multiset-пересечение literals;
+- `_exact_literal_prefix(...)` считает непрерывный точный literal prefix.
+
+### `CommandSuggester`
+
+Публичная внутри matching-слоя стратегия top-5 recommendations.
+
+#### `__init__(graph, parameter_types, catalog=None, similarity=None)`
+
+По умолчанию создаёт `SuggestionCatalog` и `CommandSimilarity`. Инъекция обеих
+стратегий позволяет независимо тестировать orchestration.
+
+#### `suggest(command, limit=5)`
+
+Разбивает строку по whitespace, переводит tokens в ASCII-lower и возвращает
+не больше `min(limit, 5)` source patterns. Пустая команда или лимит меньше
+одного дают пустой tuple. Последние 256 нормализованных запросов кешируются;
+кеш не входит в публичный result.
+
+#### `_rank(query_tokens)`
+
+1. выбирает nearby roots;
+2. получает кандидатов из индекса;
+3. через `_searchable()` оставляет templates с релевантным suffix; если таких
+   нет вообще, сильная root-опечатка включает fallback по root;
+4. находит лучший template каждого source pattern;
+5. отбрасывает нерелевантные и exact textual self-suggestions;
+6. сортирует по `_SimilarityScore`, затем по JSON pattern index;
+7. удаляет одинаковые `original_pattern`;
+8. возвращает максимум пять строк.
+
+Группы и placeholders в рекомендациях не разворачиваются: пользователь видит
+ровно исходный pattern из JSON.
+
+## `runtime_errors.py`: английские сообщения matching errors
+
+### `ExpectedElementFormatter`
+
+Преобразует структурированный tuple ожиданий в короткую английскую фразу.
+
+#### `format(expected, maximum=5)`
+
+Берёт `ExpectedElement.description`, показывает не более `maximum` элементов,
+а остаток сворачивает в `"and N more options"`. Пустой tuple превращается в
+`"a valid continuation"`.
+
+#### `_join(items)`
+
+Использует английские `or` и Oxford comma для одного, двух или нескольких
+видимых ожиданий.
+
+### `CommandErrorFactory`
+
+Строит `UNKNOWN_COMMAND` и `SYNTAX_ERROR`. Validation errors остаются
+ответственностью `ValidationErrorFactory`.
+
+#### `__init__(suggester, expected_formatter=None)`
+
+Получает обязательный `CommandSuggester` и опциональную стратегию форматирования
+ожиданий.
+
+#### `create(command, diagnostics, *, span_offset)`
+
+1. выбирает `UNKNOWN_COMMAND`, если furthest position равна `0`, иначе
+   `SYNTAX_ERROR`;
+2. переводит `position` и `ExpectedElement.position` в координаты исходной
+   строки;
+3. вызывает suggester только при
+   `diagnostics.allows_keyword_suggestions`;
+4. создаёт `ParseError` с `expected` и `suggestions`.
+
+`failures`, `candidate_patterns` и `candidate_variations` для этих ошибок
+пусты.
+
+#### `_message(command, code, position, expected, suggestions, suggestions_allowed)`
+
+Все сообщения формируются на английском.
+
+При наличии рекомендаций формат стабилен:
+
+```text
+Command 'dispaly clock' was not recognized. Did you mean:
+  1. display clock
+Reason: No complete command pattern accepted the first token.
+```
+
+Для syntax error строка `Reason` сообщает 1-based column и кратко перечисляет
+ожидания. Структурированные `position` и `expected` остаются полными и
+используют 0-based string offsets.
+
+Если рекомендации отсутствуют, message объясняет причину. Для обычного
+`UNKNOWN_COMMAND` это `"No similar literal command patterns were found."`;
+для syntax error без релевантного кандидата — аналогичное сообщение о
+недостаточном сходстве. Если recommendations были подавлены применимым
+parameter-led route, текст явно сообщает и об этом.
+
+#### `_numbered(suggestions)` и `_no_suggestion_message(code, suggestions_allowed)`
+
+Первый helper форматирует нумерованный top-5 block. Второй добавляет явное
+объяснение пустого результата или подавления keyword suggestions.
 
 ## `resolver.py`: окончательное разрешение совпадений
 
@@ -1076,27 +1367,45 @@ Trace и normalized намеренно не входят. Два пути одн
 ```python
 ParseError(
     code=ErrorCode.VALIDATION_ERROR,
-    message="command shape matched, but one or more parameters are invalid",
+    message=<подробное английское описание>,
     position=<start первого failure или None>,
     failures=(...),
     candidate_patterns=(...),
     candidate_variations=(...),
+    suggestions=(),
 )
 ```
 
-`expected` для validation error остаётся пустым.
+Message называет один matched pattern или количество candidate patterns,
+указывает число невалидных значений и включает до трёх причин. Если failures
+больше, остаток сворачивается в `"and N more failures"`. Полный набор никогда
+не теряется и остаётся в структурированном поле `failures`.
+
+`expected` и `suggestions` для validation error остаются пустыми: command
+structure уже найдена, поэтому предлагать похожие keywords неправильно.
 
 #### `_failure(rejected, *, span_offset)`
 
 Создаёт один `ValidationFailure`.
 
 - Для `NOT_APPLICABLE` message:
-  `"value does not match <declaration>"`.
+  `"value does not match <declaration>"`, `reason_code="not_applicable"`,
+  `expected=<declaration>` и `actual=<raw token>`.
 - Для `INVALID` используется `ParameterIssue.message`; если plugin нарушил
   ожидаемый контракт и issue отсутствует, fallback —
-  `"invalid parameter value"`.
+  `"invalid parameter value"` с `reason_code="invalid_value"`.
+- При наличии `ParameterIssue` его `code`, `expected` и `actual` переносятся
+  в одноимённые machine-readable поля failure.
 - `type_id`, declaration и raw переносятся без изменений.
 - token span сдвигается на `span_offset`.
+
+#### `_message(failures, patterns)`
+
+Формирует human-readable summary, не пытаясь заменить структурированные поля.
+Для одного source pattern использует его полное `repr`; для нескольких
+сообщает число candidates. Каждая видимая причина включает raw value,
+declaration и validator message. Завершающая фраза направляет API-пользователя
+к `failures`, `candidate_patterns` и `candidate_variations`.
 
 ## `__init__.py`: экспорт подсистемы
 
@@ -1161,11 +1470,20 @@ Backtracking сохраняется на трёх уровнях:
 ограничение не относится к remainder-параметру после совпавшего keyword,
 например `description TEXT<1-80>`.
 
+Для literal-led опечатки `suggestions` может содержать до пяти релевантных
+original patterns, а `message` показывает тот же список после английского
+`"Did you mean:"`. Root `TEXT` и parameter-first patterns не становятся
+recommendation targets. Если похожих literals нет, tuple пуст, а message прямо
+объясняет отсутствие похожих команд.
+
 ### Синтаксическая ошибка
 
 `ErrorCode.SYNTAX_ERROR` означает, что совпал некоторый префикс, но ни один
 маршрут не принял строку полностью. `expected` содержит объединённые ожидания
-в самой дальней позиции.
+в самой дальней позиции. Message показывает 1-based column, не более пяти
+ожиданий и при наличии — top-5 suggestions. Если дальше всех продвинулся
+route, начинающийся с применимого parameter, keyword recommendations
+подавляются.
 
 ### Ошибка валидации
 
@@ -1176,6 +1494,9 @@ Backtracking сохраняется на трёх уровнях:
 `INVALID` parameter блокирует менее специфичный валидный fallback. В
 `failures` находятся токены, диапазоны и сообщения validator, а в
 `candidate_patterns`/`candidate_variations` — все релевантные источники.
+`ValidationFailure.reason_code`, `expected` и `actual` предназначены для
+автоматической диагностики. `ParseError.message` даёт подробный английский
+summary, но `suggestions` всегда остаётся пустым.
 
 ## Низкоуровневый пример
 

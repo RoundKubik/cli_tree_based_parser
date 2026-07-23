@@ -6,13 +6,15 @@ from dataclasses import dataclass
 
 from vrp_parser.graph import CommandEdge, CommandGraph, CommandNode
 from vrp_parser.parameters import ParameterTypeRegistry
-from vrp_parser.results import ErrorCode, ParseError
+from vrp_parser.results import ParseError
 
 from .deduplication import CandidateSet
 from .diagnostics import MatchDiagnostics
 from .expressions import ExpressionMatcher
 from .resolver import MatchResolver, ResolvedMatch
+from .runtime_errors import CommandErrorFactory
 from .state import Candidate, WalkState
+from .suggestions import CommandSuggester
 from .text import CommandText, ascii_lower
 
 
@@ -34,6 +36,7 @@ class CommandMatcher:
         expression_matcher: ExpressionMatcher | None = None,
         resolver: MatchResolver | None = None,
         candidate_set: CandidateSet | None = None,
+        error_factory: CommandErrorFactory | None = None,
     ) -> None:
         self._graph = graph
         self._expressions = expression_matcher or ExpressionMatcher(
@@ -41,6 +44,9 @@ class CommandMatcher:
         )
         self._resolver = resolver or MatchResolver()
         self._candidate_set = candidate_set or CandidateSet()
+        self._errors = error_factory or CommandErrorFactory(
+            CommandSuggester(graph, parameter_types)
+        )
 
     def match(
         self,
@@ -64,7 +70,8 @@ class CommandMatcher:
                 self._graph,
                 span_offset=span_offset,
             )
-        return self._syntax_error(
+        return self._errors.create(
+            command.value,
             diagnostics,
             span_offset=span_offset,
         )
@@ -93,13 +100,18 @@ class CommandMatcher:
                 expression = edge.step.expression
                 value = getattr(expression, "value", None)
                 if isinstance(value, str):
-                    diagnostics.record(position, repr(value))
+                    diagnostics.record(
+                        position,
+                        repr(value),
+                        parameter_led=state.parameter_led,
+                    )
             if not node.expression_edges:
                 return
         elif node.accepting_routes:
             diagnostics.record(
                 command.skip_space(state.position),
                 "end of command",
+                parameter_led=state.parameter_led,
             )
 
         edges = self._edges(node, command, state.position)
@@ -109,7 +121,11 @@ class CommandMatcher:
                 expression = edge.step.expression
                 value = getattr(expression, "value", None)
                 if isinstance(value, str):
-                    diagnostics.record(position, repr(value))
+                    diagnostics.record(
+                        position,
+                        repr(value),
+                        parameter_led=state.parameter_led,
+                    )
             return
 
         for edge in edges:
@@ -152,26 +168,3 @@ class CommandMatcher:
         if literal is None:
             return node.expression_edges
         return (literal, *node.expression_edges)
-
-    @staticmethod
-    def _syntax_error(
-        diagnostics: MatchDiagnostics,
-        *,
-        span_offset: int,
-    ) -> ParseError:
-        code = (
-            ErrorCode.UNKNOWN_COMMAND
-            if diagnostics.position == 0
-            else ErrorCode.SYNTAX_ERROR
-        )
-        message = (
-            "unknown command"
-            if code is ErrorCode.UNKNOWN_COMMAND
-            else "command does not match any complete pattern"
-        )
-        return ParseError(
-            code=code,
-            message=message,
-            position=diagnostics.position + span_offset,
-            expected=diagnostics.elements(offset=span_offset),
-        )

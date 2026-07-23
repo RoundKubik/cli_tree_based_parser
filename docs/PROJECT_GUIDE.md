@@ -336,7 +336,7 @@ source-order interpretation помещается в `primary_match`, остал�
   "indent": "",
   "error": {
     "code": "validation_error",
-    "message": "command shape matched, but one or more parameters are invalid",
+    "message": "The command structure matched pattern 'preference INTEGER<1-15>', but 1 parameter value failed validation: value '16' is invalid for INTEGER<1-15>: value must be at most 15. Inspect failures, candidate_patterns, and candidate_variations for complete details.",
     "position": 11,
     "expected": [],
     "failures": [
@@ -345,11 +345,15 @@ source-order interpretation помещается в `primary_match`, остал�
         "declaration": "INTEGER<1-15>",
         "raw": "16",
         "span": {"start": 11, "end": 13},
-        "message": "value must be at most 15"
+        "message": "value must be at most 15",
+        "reason_code": "above_maximum",
+        "expected": "<= 15",
+        "actual": "16"
       }
     ],
     "candidate_patterns": ["preference INTEGER<1-15>"],
-    "candidate_variations": ["preference INTEGER<1-15>"]
+    "candidate_variations": ["preference INTEGER<1-15>"],
+    "suggestions": []
   }
 }
 ```
@@ -360,6 +364,57 @@ Error codes:
 - `syntax_error` — prefix подошёл, но полный route не завершился;
 - `validation_error` — command shape завершился, но parameter validator
   отклонил значение.
+
+Все человекочитаемые runtime-сообщения формируются на английском. Для
+автоматической обработки следует использовать стабильные поля `code`,
+`expected`, `failures` и `suggestions`, а не разбирать `message` как текст.
+
+### Подсказки для неизвестных и незавершённых команд
+
+Если ни один полный pattern не принял literal-led команду, parser может
+вернуть до пяти похожих исходных паттернов:
+
+```json
+{
+  "code": "unknown_command",
+  "message": "Command 'dispaly clock' was not recognized. Did you mean:\n  1. display clock\nReason: No complete command pattern accepted the first token.",
+  "position": 0,
+  "expected": [],
+  "failures": [],
+  "candidate_patterns": [],
+  "candidate_variations": [],
+  "suggestions": ["display clock"]
+}
+```
+
+`suggestions` содержит именно строки из `commands.json`, поэтому в них
+сохраняются groups и parameter declarations. Результаты:
+
+- релевантны исходной строке;
+- уникальны;
+- детерминированы;
+- ограничены пятью элементами;
+- упорядочены сначала по сходству, затем стабильно по source order.
+
+Suggestion index включает только те вариации, которые начинаются с literal.
+Parameter-first pattern не предлагается как похожая команда. Если наиболее
+далеко продвинувшийся неудачный route начинался с применимого параметра,
+keyword recommendations полностью подавляются. `NOT_APPLICABLE` parameter
+сам по себе не скрывает возможную literal-опечатку. Bare/root
+`TEXT<min-max>` также не индексируется и не становится подсказкой. Для
+`validation_error` подсказки не нужны, поскольку форма команды уже
+определена: `suggestions` всегда пуст.
+
+Если подходящего literal pattern нет, `unknown_command` прямо сообщает:
+
+```text
+Command 'totally unknown' was not recognized. No complete command pattern
+accepted the first token. No similar literal command patterns were found.
+```
+
+Для `syntax_error` `message` дополнительно называет 1-based column и до пяти
+ожидаемых продолжений, а полный machine-readable список остаётся в
+`expected`.
 
 ### Пустая строка
 
@@ -530,6 +585,30 @@ generic string. `NOT_APPLICABLE` такой блокировки не созда
 5. создаются `PatternMatch`;
 6. определяется `unique`, `equivalent` или `ambiguous`.
 
+### 7. Runtime diagnostics
+
+Если terminal candidate не найден, `MatchDiagnostics` сохраняет самую дальнюю
+позицию, ожидаемые элементы и максимальный progress literal-first и
+parameter-first маршрутов. `CommandErrorFactory` на основании этих данных:
+
+1. выбирает `unknown_command` для position `0`, иначе `syntax_error`;
+2. переводит position в координаты исходной строки с учётом indent;
+3. строит подробное английское сообщение;
+4. при допустимом literal-first сценарии запрашивает до пяти рекомендаций.
+
+Suggestion subsystem заранее строится вместе с matcher. Для каждого source
+pattern он создаёт ограниченное множество поисковых шаблонов, индексирует
+literal roots, а во время ошибки ранжирует кандидатов по опечаткам,
+перестановкам токенов, совпавшим secondary literals и применимости
+parameter-slots. Это диагностический индекс: он не участвует в признании
+команды валидной и не меняет выбор pattern.
+
+Если полный candidate существует, но параметры отклонены,
+`ValidationErrorFactory` создаёт `validation_error`. Его message включает до
+трёх кратких причин, а все причины без сокращения остаются в `failures`.
+Каждый `ValidationFailure` содержит как английский `message`, так и
+machine-readable `reason_code`, `expected` и `actual`.
+
 ## Структура исходного кода
 
 ```text
@@ -665,10 +744,13 @@ mypy --strict src/vrp_parser
 - `test_command_matching.py` — runtime matching, ambiguity, IP validation и
   приоритет structured IP перед `STRING`;
 - `test_public_parsers.py` — line/configuration API и result formats;
+- `test_error_diagnostics.py` — английские runtime messages, top-5
+  suggestions, suppression для parameter-first/TEXT/validation и
+  machine-readable validation details;
 - `test_compilation.py` — construction-time errors, malformed suffixes
   встроенных declarations и custom registry types;
 - `test_data_file.py` — поставляемый commands catalogue, реальные TEXT/IP
-  routes и их validation;
+  routes, validation и top-5 typo suggestions;
 - `test_cli.py` — CLI JSON и exit codes.
 
 ## Основные ограничения

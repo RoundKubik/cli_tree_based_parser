@@ -134,6 +134,9 @@ class ValidationFailure:
     raw: str
     span: TextSpan
     message: str
+    reason_code: str | None = None
+    expected: str | None = None
+    actual: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +150,7 @@ class ParseError:
     failures: tuple[ValidationFailure, ...] = ()
     candidate_patterns: tuple[str, ...] = ()
     candidate_variations: tuple[str, ...] = ()
+    suggestions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

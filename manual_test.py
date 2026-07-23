@@ -41,11 +41,7 @@ PATTERN_DOCUMENT = {
 
 config = """
 interface Eth-Trunk1
-    description eth-trunk descritpion
-    show down
-peer 192.168.001.001
-peer 2001:0DB8::1
-network 2001:0DB8::1/64
+    description
 """
 
 
