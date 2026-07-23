@@ -24,6 +24,9 @@ PATTERN_DOCUMENT = {
         "TEXT<1-4096>",
         "description TEXT<1-4096>",
         "interface STRING<1-63>",
+        "peer X.X.X.X",
+        "peer X:X::X:X",
+        "network X:X::X:X/M",
         "mode ENUM{fast,safe} [ optional ]",
         "interface { STRING<1-63> | ENUM{Vbdif,Vlanif} STRING<1-63> }",
         "preference INTEGER<1-15>",
@@ -40,6 +43,9 @@ config = """
 interface Eth-Trunk1
     description eth-trunk descritpion
     show down
+peer 192.168.001.001
+peer 2001:0DB8::1
+network 2001:0DB8::1/64
 """
 
 

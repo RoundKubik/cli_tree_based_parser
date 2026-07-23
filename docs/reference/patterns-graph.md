@@ -55,6 +55,9 @@ CommandGraphBuilder ──► CommandGraph
     "TEXT<1-4096>",
     "description TEXT<1-80>",
     "interface STRING<1-63>",
+    "peer X.X.X.X",
+    "peer X:X::X:X",
+    "network X:X::X:X/M",
     "interface { STRING<1-63> | ENUM{Eth-trunk,Vlanif,Vbdif} STRING<1-63> }"
   ]
 }
@@ -205,6 +208,9 @@ YYYY/MM/DD,HH:MM:SS
 HH:MM:SS
 <hh:mm>
 H-H-H
+X.X.X.X
+X:X::X:X
+X:X::X:X/M
 ```
 
 `TEXT<min-max>` является bounded remainder-параметром. Он может находиться
@@ -216,17 +222,11 @@ H-H-H
 поглощать неизвестные команды; frontend при этом разрешает terminal embedded
 `TEXT`.
 
-Следующие placeholders отключены по умолчанию:
-
-```text
-X.X.X.X
-X:X::X:X
-X:X::X:X/M
-```
-
-Их написание можно вернуть отдельным зарегистрированным типом параметра:
-policy считает placeholder допустимым, если его диапазон уже принадлежит
-распознанному `Parameter`.
+Три IP-placeholder’а являются встроенными точными declarations. Registry
+распознаёт `X:X::X:X/M` отдельно от `X:X::X:X` по самому длинному совпадению.
+Runtime policy резервирует все три написания: malformed suffix вроде
+`X.X.X.X/suffix` или `X:X::X:X/M-extra` не превращается в literals, а даёт
+`PatternLanguageError` при компиляции.
 
 ## Пример AST
 
@@ -703,14 +703,14 @@ Return type — `NoReturn`.
 
 Слой проектных ограничений поверх нейтральной грамматики. Parser сам по себе
 не может отличить неизвестный placeholder от обычного literal. Policy
-предотвращает тихое превращение опечатки вроде `STRING<1-x>` или
-отключённого `X.X.X.X` в literal.
+предотвращает тихое превращение опечатки вроде `STRING<1-x>` или malformed
+точного placeholder’а `X.X.X.X/suffix` в literal.
 
 Внутренние списки:
 
 - `_DECLARATION_PREFIXES` — известные начала параметризованных объявлений;
-- `_DISABLED_PLACEHOLDERS` — отключённые IP-placeholder-ы;
-- `_EXACT_PLACEHOLDERS` — встроенные объявления с фиксированным написанием.
+- `_EXACT_PLACEHOLDERS` — встроенные объявления с фиксированным написанием,
+  включая IPv4 address, IPv6 address и IPv6 prefix.
 
 ### `RuntimePatternPolicy.validate(ast, source)`
 
@@ -724,7 +724,7 @@ Return type — `NoReturn`.
 1. рекурсивно собрать все `Parameter`;
 2. найти каждое появление известного declaration prefix в исходной строке;
 3. убедиться, что его диапазон покрыт span реального `Parameter`;
-4. аналогично проверить disabled и exact placeholders;
+4. аналогично проверить exact placeholders;
 5. проверить, что каждый `TEXT` является последним элементом возможного
    route и не находится под repeat.
 
@@ -733,12 +733,13 @@ Return type — `NoReturn`.
 Исключения:
 
 - `PatternLanguageError`, если известное написание осталось literal,
-  malformed или отключено, а также если `TEXT` не завершает route либо
-  повторяется;
+  malformed, а также если `TEXT` не завершает route либо повторяется;
 - `TypeError`, если production AST содержит неизвестный тип declaration.
 
-Важно: disabled placeholder разрешается plugin-ом без изменения policy, если
-зарегистрированный recognizer превратил его в `Parameter`.
+IP-placeholder считается корректным только тогда, когда зарегистрированный
+exact recognizer действительно превратил его диапазон в `Parameter`. Поэтому
+проверка policy также ловит недопустимые суффиксы после зарезервированного
+написания.
 
 ### `RuntimePatternPolicy._claimed(parameters, start, end)`
 
@@ -1552,8 +1553,8 @@ Matcher начинает с допустимых маршрутов root и пр
 - Lexer отвечает за точные spans и структурные токены.
 - Registry отвечает за синтаксис конкретных parameter declarations.
 - Parser отвечает только за grammar и cardinality syntax.
-- Runtime policy запрещает известным malformed/disabled placeholders тихо
-  становиться literals.
+- Runtime policy запрещает известным malformed placeholders тихо становиться
+  literals; это относится и к точным встроенным IP declarations.
 - Compiler собирает все ожидаемые ошибки и не создаёт частичный граф.
 - Route expander раскрывает только безопасное число ordinary choices.
 - Step factory отделяет семантическое равенство от source location.

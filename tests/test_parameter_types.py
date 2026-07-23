@@ -42,6 +42,9 @@ def _declaration(
         ("HH:MM:SS", "time-seconds"),
         ("PASSWORDEX<1-64>", "passwordex"),
         ("H-H-H", "mac"),
+        ("X.X.X.X", "ipv4-address"),
+        ("X:X::X:X", "ipv6-address"),
+        ("X:X::X:X/M", "ipv6-prefix"),
         ("TEXT<1-80>", "text"),
     ],
 )
@@ -72,11 +75,14 @@ def test_declaration_span_is_relative_to_the_complete_pattern() -> None:
     assert (declaration.start, declaration.end) == (11, 21)
 
 
-def test_ipv4_and_ipv6_are_not_registered_in_the_new_registry() -> None:
-    registry = default_parameter_registry()
+def test_ipv6_prefix_declaration_is_not_shortened_to_ipv6_address() -> None:
+    declaration = _declaration(
+        default_parameter_registry(),
+        "X:X::X:X/M",
+    )
 
-    assert registry.recognize("X.X.X.X") is None
-    assert registry.recognize("X:X::X:X") is None
+    assert declaration.type_id == "ipv6-prefix"
+    assert declaration.source == "X:X::X:X/M"
 
 
 @pytest.mark.parametrize(
@@ -86,6 +92,9 @@ def test_ipv4_and_ipv6_are_not_registered_in_the_new_registry() -> None:
         ("date-iso", ParameterFamily.STRUCTURED),
         ("time", ParameterFamily.STRUCTURED),
         ("mac", ParameterFamily.STRUCTURED),
+        ("ipv4-address", ParameterFamily.STRUCTURED),
+        ("ipv6-address", ParameterFamily.STRUCTURED),
+        ("ipv6-prefix", ParameterFamily.STRUCTURED),
         ("integer", ParameterFamily.NUMERIC),
         ("hex", ParameterFamily.NUMERIC),
         ("string", ParameterFamily.GENERIC),
@@ -128,6 +137,14 @@ def test_registry_exposes_type_families(
             'afsd!##24"value"',
         ),
         ("H-H-H", "1-aB-CD09", "0001-00ab-cd09"),
+        ("X.X.X.X", "192.168.001.001", "192.168.1.1"),
+        (
+            "X:X::X:X",
+            "2001:0DB8:0:0:0:0:0:1",
+            "2001:db8::1",
+        ),
+        ("X:X::X:X", "::ffff:192.0.2.1", "::ffff:192.0.2.1"),
+        ("X:X::X:X/M", "2001:0DB8::0001/064", "2001:db8::1/64"),
         ("TEXT<1-80>", "description with spaces", "description with spaces"),
     ],
 )
@@ -152,6 +169,11 @@ def test_valid_values_are_normalized(
         ("YYYY-MM-DD", "abc"),
         ("H-H-H", "abc"),
         ("ENUM{up,down,}", "unknown"),
+        ("X.X.X.X", "router.example.com"),
+        ("X:X::X:X", "hostname"),
+        ("X:X::X:X", "foo:bar"),
+        ("X:X::X:X/M", "hostname"),
+        ("X:X::X:X/M", "GE0/0/0"),
     ],
 )
 def test_lexically_unrelated_values_are_not_applicable(
@@ -179,6 +201,11 @@ def test_lexically_unrelated_values_are_not_applicable(
         ("YYYY/MM/DD,HH:MM:SS", "2024/02/29,24:00:00"),
         ("HH:MM:SS", "23:60:00"),
         ("H-H-H", "00000-0-0"),
+        ("X.X.X.X", "192.0.2.256"),
+        ("X:X::X:X", "2001:db8::1::2"),
+        ("X:X::X:X", "fe80::1%eth0"),
+        ("X:X::X:X/M", "2001:db8::1/129"),
+        ("X:X::X:X/M", "fe80::1%eth0/64"),
         ("STRING<1-3>", "four"),
         ("PASSWORDEX<2-4>", "x"),
         ("TEXT<1-80>", "x" * 81),
@@ -194,6 +221,95 @@ def test_applicable_values_that_violate_constraints_are_invalid(
     assert result.applicable
     assert result.issue is not None
     assert result.message
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "256.0.0.1",
+        "1.2.3",
+        "1.2.3.4.5",
+        "1..2.3",
+        "-1.2.3.4",
+        "+1.2.3.4",
+    ],
+)
+def test_ipv4_address_shaped_invalid_values_are_applicable(raw: str) -> None:
+    result = default_parameter_registry().evaluate("X.X.X.X", raw)
+
+    assert result.status is ParameterStatus.INVALID
+    assert result.issue is not None
+    assert result.issue.code == "invalid_ipv4_address"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "::",
+        "::1",
+        "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+    ],
+)
+def test_ipv6_boundary_forms_are_valid(raw: str) -> None:
+    result = default_parameter_registry().evaluate("X:X::X:X", raw)
+
+    assert result.status is ParameterStatus.VALID
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "2001:db8:0:0:0:0:0:0:1",
+        "2001:db8:00000::1",
+        "2001:db8::gg",
+        "[2001:db8::1]",
+        "2001:db8::1/64",
+    ],
+)
+def test_invalid_ipv6_forms_are_applicable(raw: str) -> None:
+    result = default_parameter_registry().evaluate("X:X::X:X", raw)
+
+    assert result.status is ParameterStatus.INVALID
+    assert result.issue is not None
+    assert result.issue.code == "invalid_ipv6_address"
+
+
+@pytest.mark.parametrize(
+    ("raw", "normalized"),
+    [
+        ("::/0", "::/0"),
+        ("::1/128", "::1/128"),
+        ("2001:DB8::1/64", "2001:db8::1/64"),
+        ("::ffff:192.0.2.1/96", "::ffff:192.0.2.1/96"),
+    ],
+)
+def test_ipv6_prefix_boundaries_and_host_bits_are_valid(
+    raw: str,
+    normalized: str,
+) -> None:
+    result = default_parameter_registry().evaluate("X:X::X:X/M", raw)
+
+    assert result.status is ParameterStatus.VALID
+    assert result.normalized == normalized
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "/64",
+        "2001:db8::1",
+        "2001:db8::1/",
+        "2001:db8::1/129",
+        "2001:db8::1/-1",
+        "2001:db8::1/64/128",
+    ],
+)
+def test_invalid_ipv6_prefix_forms_are_applicable(raw: str) -> None:
+    result = default_parameter_registry().evaluate("X:X::X:X/M", raw)
+
+    assert result.status is ParameterStatus.INVALID
+    assert result.issue is not None
+    assert result.issue.code == "invalid_ipv6_prefix"
 
 
 def test_malformed_and_unknown_declarations_use_tri_state() -> None:

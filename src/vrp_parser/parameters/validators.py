@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from ipaddress import IPv6Address
 
 from .models import ParameterDeclaration, ParameterResult
 
@@ -54,6 +55,10 @@ def _ascii_lower(value: str) -> str:
     upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     lower = "abcdefghijklmnopqrstuvwxyz"
     return value.translate(str.maketrans(upper, lower))
+
+
+def _looks_like_ipv6(value: str) -> bool:
+    return value.count(":") >= 2
 
 
 class IntegerValidator:
@@ -162,3 +167,107 @@ class MacValidator:
             group.lower().zfill(4) for group in match.groups()
         )
         return ParameterResult.success(normalized)
+
+
+class IPv4AddressValidator:
+    """Validate dotted-decimal IPv4 syntax without command-specific rules."""
+
+    def probe(
+        self, raw: str, declaration: ParameterDeclaration
+    ) -> ParameterResult:
+        del declaration
+        if not self._looks_like_address(raw):
+            return ParameterResult.not_applicable()
+
+        octets = raw.split(".")
+        if (
+            len(octets) != 4
+            or any(
+                re.fullmatch(r"[0-9]{1,3}", octet) is None
+                for octet in octets
+            )
+        ):
+            return self._failure(raw)
+
+        values = tuple(int(octet, 10) for octet in octets)
+        if any(value > 255 for value in values):
+            return self._failure(raw)
+        return ParameterResult.success(".".join(str(value) for value in values))
+
+    @staticmethod
+    def _looks_like_address(raw: str) -> bool:
+        return "." in raw and re.fullmatch(r"[0-9.+-]+", raw) is not None
+
+    @staticmethod
+    def _failure(raw: str) -> ParameterResult:
+        return ParameterResult.failure(
+            "invalid_ipv4_address",
+            "value must be a valid IPv4 address",
+            expected="four decimal octets from 0 to 255",
+            actual=raw,
+        )
+
+
+class IPv6AddressValidator:
+    """Validate IPv6 syntax and return a canonical compressed address."""
+
+    def probe(
+        self, raw: str, declaration: ParameterDeclaration
+    ) -> ParameterResult:
+        del declaration
+        if not _looks_like_ipv6(raw):
+            return ParameterResult.not_applicable()
+        if "%" in raw:
+            return self._failure(raw)
+        try:
+            address = IPv6Address(raw)
+        except ValueError:
+            return self._failure(raw)
+        return ParameterResult.success(str(address))
+
+    @staticmethod
+    def _failure(raw: str) -> ParameterResult:
+        return ParameterResult.failure(
+            "invalid_ipv6_address",
+            "value must be a valid IPv6 address",
+            expected="IPv6 colon-hexadecimal notation",
+            actual=raw,
+        )
+
+
+class IPv6PrefixValidator:
+    """Validate an IPv6 address followed by a decimal prefix length."""
+
+    def probe(
+        self, raw: str, declaration: ParameterDeclaration
+    ) -> ParameterResult:
+        del declaration
+        if not _looks_like_ipv6(raw) and not raw.startswith("/"):
+            return ParameterResult.not_applicable()
+
+        parts = raw.split("/")
+        if (
+            len(parts) != 2
+            or "%" in parts[0]
+            or re.fullmatch(r"[0-9]+", parts[1]) is None
+            or len(parts[1]) > 3
+        ):
+            return self._failure(raw)
+
+        try:
+            address = IPv6Address(parts[0])
+        except ValueError:
+            return self._failure(raw)
+        prefix_length = int(parts[1], 10)
+        if prefix_length > 128:
+            return self._failure(raw)
+        return ParameterResult.success(f"{address}/{prefix_length}")
+
+    @staticmethod
+    def _failure(raw: str) -> ParameterResult:
+        return ParameterResult.failure(
+            "invalid_ipv6_prefix",
+            "value must be a valid IPv6 prefix",
+            expected="IPv6 address followed by /0 through /128",
+            actual=raw,
+        )

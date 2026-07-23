@@ -111,6 +111,13 @@ CommandText ──► обход CommandGraph ──► Candidate[]
 валидации и не должно незаметно превратиться в `STRING`. Но нечисловой токен
 для `INTEGER` имеет статус `NOT_APPLICABLE` и не блокирует подходящий `STRING`.
 
+Та же логика применяется к IP. `192.0.2.999` имеет форму IPv4, поэтому
+`IPv4AddressValidator` возвращает `INVALID` и structured route блокирует
+generic `STRING`. `router.example.com` лексически не относится к IPv4 и
+возвращает `NOT_APPLICABLE`, поэтому может быть принят `STRING`. Для IPv6
+address-like token определяется как значение как минимум с двумя двоеточиями;
+zone identifiers с `%` считаются применимыми, но невалидными.
+
 ### Вектор dispatch
 
 Каждое успешно пройденное выражение добавляет ранг в
@@ -120,7 +127,7 @@ CommandText ──► обход CommandGraph ──► Candidate[]
 |---|---:|
 | литерал | 0 |
 | `ENUM` | 1 |
-| структурированный тип | 2 |
+| структурированный тип (`X.X.X.X`, `X:X::X:X`, даты, MAC) | 2 |
 | числовой тип | 3 |
 | общий тип, например `STRING` | 4 |
 | параметр-остаток | 5 |
@@ -928,6 +935,10 @@ def resolve(...) -> ResolvedMatch | ParseError
 
 Вход `value abc` даёт `NOT_APPLICABLE` для integer; он не блокирует
 `STRING`.
+
+Аналогично, при паттернах `peer X.X.X.X` и `peer STRING<1-64>` вход
+`peer 192.0.2.999` возвращает `VALIDATION_ERROR` от `ipv4-address`, а
+`peer router.example.com` успешно использует generic string route.
 
 #### `_applicable_frontier(invalid)`
 

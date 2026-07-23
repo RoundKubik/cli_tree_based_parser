@@ -254,6 +254,136 @@ def test_dispatch_prefers_structured_then_numeric_then_generic(
     assert result.parameters[0].type_id == type_id
 
 
+@pytest.mark.parametrize(
+    ("pattern", "line", "type_id", "raw", "normalized"),
+    [
+        (
+            "peer X.X.X.X",
+            "peer 192.168.001.001",
+            "ipv4-address",
+            "192.168.001.001",
+            "192.168.1.1",
+        ),
+        (
+            "peer X:X::X:X",
+            "peer 2001:0DB8:0:0:0:0:0:1",
+            "ipv6-address",
+            "2001:0DB8:0:0:0:0:0:1",
+            "2001:db8::1",
+        ),
+        (
+            "network X:X::X:X/M",
+            "network 2001:0DB8::1/064",
+            "ipv6-prefix",
+            "2001:0DB8::1/064",
+            "2001:db8::1/64",
+        ),
+    ],
+)
+def test_ip_parameters_preserve_raw_and_expose_canonical_values(
+    pattern: str,
+    line: str,
+    type_id: str,
+    raw: str,
+    normalized: str,
+) -> None:
+    result = _parsed(CommandLineParser({"commands": [pattern]}), line)
+
+    assert result.primary_match.original_pattern == pattern
+    assert result.primary_match.variation == pattern
+    assert len(result.parameters) == 1
+    value = result.parameters[0]
+    assert value.type_id == type_id
+    assert value.raw == raw
+    assert value.normalized == normalized
+    assert value.span.start == line.index(raw)
+
+
+@pytest.mark.parametrize(
+    ("pattern", "line", "type_id"),
+    [
+        ("peer X.X.X.X", "peer 192.0.2.999", "ipv4-address"),
+        ("peer X:X::X:X", "peer 2001:db8::gg", "ipv6-address"),
+        (
+            "network X:X::X:X/M",
+            "network 2001:db8::1/129",
+            "ipv6-prefix",
+        ),
+    ],
+)
+def test_invalid_ip_parameters_return_validation_errors(
+    pattern: str,
+    line: str,
+    type_id: str,
+) -> None:
+    result = CommandLineParser({"commands": [pattern]}).parse(line)
+
+    assert isinstance(result, ErrorLine)
+    assert result.error.code is ErrorCode.VALIDATION_ERROR
+    assert result.error.candidate_patterns == (pattern,)
+    assert result.error.failures[0].type_id == type_id
+
+
+def test_ip_types_beat_string_but_unrelated_names_still_use_string() -> None:
+    patterns = [
+        "peer X.X.X.X",
+        "peer X:X::X:X",
+        "peer STRING<1-64>",
+    ]
+    parser = CommandLineParser({"commands": patterns})
+
+    ipv4 = _parsed(parser, "peer 192.0.2.1")
+    ipv6 = _parsed(parser, "peer 2001:db8::1")
+    hostname = _parsed(parser, "peer router.example.com")
+    invalid_ipv4 = parser.parse("peer 192.0.2.999")
+    invalid_ipv6 = parser.parse("peer 2001:db8::gg")
+
+    assert ipv4.primary_match.original_pattern == patterns[0]
+    assert ipv6.primary_match.original_pattern == patterns[1]
+    assert hostname.primary_match.original_pattern == patterns[2]
+    assert isinstance(invalid_ipv4, ErrorLine)
+    assert invalid_ipv4.error.candidate_patterns == (patterns[0],)
+    assert isinstance(invalid_ipv6, ErrorLine)
+    assert invalid_ipv6.error.candidate_patterns == (patterns[1],)
+
+
+def test_interface_like_token_does_not_trigger_ipv6_prefix_validation() -> None:
+    patterns = ["route X:X::X:X/M", "route STRING<1-64>"]
+    result = _parsed(
+        CommandLineParser({"commands": patterns}),
+        "route GE0/0/0",
+    )
+
+    assert result.primary_match.original_pattern == patterns[1]
+
+
+def test_colon_containing_name_does_not_trigger_ipv6_validation() -> None:
+    patterns = ["peer X:X::X:X", "peer STRING<1-64>"]
+    result = _parsed(
+        CommandLineParser({"commands": patterns}),
+        "peer foo:bar",
+    )
+
+    assert result.primary_match.original_pattern == patterns[1]
+
+
+def test_ipv6_address_and_prefix_routes_do_not_block_each_other() -> None:
+    patterns = [
+        "endpoint X:X::X:X",
+        "endpoint X:X::X:X/M",
+        "endpoint STRING<1-64>",
+    ]
+    parser = CommandLineParser({"commands": patterns})
+
+    address = _parsed(parser, "endpoint 2001:db8::1")
+    prefix = _parsed(parser, "endpoint 2001:db8::1/64")
+
+    assert address.primary_match.original_pattern == patterns[0]
+    assert address.parameters[0].type_id == "ipv6-address"
+    assert prefix.primary_match.original_pattern == patterns[1]
+    assert prefix.parameters[0].type_id == "ipv6-prefix"
+
+
 def test_equivalent_match_uses_first_json_pattern_as_primary() -> None:
     first_pattern = "show { up | down }"
     second_pattern = "show up"

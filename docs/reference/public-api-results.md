@@ -36,6 +36,7 @@ CommandLineParser(
     "#",
     "TEXT<1-4096>",
     "description TEXT<1-80>",
+    "peer X.X.X.X",
     "interface STRING<1-63>"
   ]
 }
@@ -259,11 +260,16 @@ ParameterValue(
 
 | Поле | Формат |
 | --- | --- |
-| `type_id` | Стабильный ID типа: например `integer`, `date-iso`, `enum`. |
+| `type_id` | Стабильный ID типа: например `integer`, `date-iso`, `ipv4-address`. |
 | `declaration` | Placeholder из паттерна, например `INTEGER<1-15>`. |
 | `raw` | Реальный фрагмент CLI без преобразования. |
 | `normalized` | Результат validator: `int`, строка, `None` или custom object. |
 | `span` | Позиция `raw` в исходной физической строке. |
+
+Например, для `peer 192.168.001.001` и паттерна `peer X.X.X.X` сохраняются
+`raw="192.168.001.001"` и `normalized="192.168.1.1"`. IPv6-типы аналогично
+сохраняют исходную запись в `raw`, а в `normalized` возвращают каноническую
+lowercase/compressed строку.
 
 ### `VariationStep`
 
@@ -542,7 +548,7 @@ main(argv: list[str] | None = None) -> int
 ```json
 {
   "status": "ok",
-  "commands": 6187
+  "commands": 7269
 }
 ```
 

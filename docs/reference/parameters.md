@@ -30,6 +30,9 @@ from vrp_parser.parameters import (
     ExactDeclarationRecognizer,
     HexValidator,
     IntegerValidator,
+    IPv4AddressValidator,
+    IPv6AddressValidator,
+    IPv6PrefixValidator,
     MacValidator,
     ParameterDeclaration,
     ParameterDeclarationError,
@@ -112,7 +115,7 @@ registry.evaluate("INTEGER<1-15>", "Vlanif").status
 
 ## Форматы встроенных параметров
 
-`builtin_parameter_types()` создаёт 14 типов:
+`builtin_parameter_types()` создаёт 17 типов:
 
 | Placeholder в шаблоне | `type_id` | Family | Входное значение | `normalized` при успехе |
 |---|---|---|---|---|
@@ -122,6 +125,9 @@ registry.evaluate("INTEGER<1-15>", "Vlanif").status
 | `ENUM{a,b,...}` | `enum` | `enum` | Один из явно перечисленных вариантов, без учёта ASCII-регистра | Вариант в том регистре, в котором он записан в шаблоне |
 | `PASSWORDEX<min-max>` | `passwordex` | `generic` | Один непустой token без пробелов | Исходный `str` |
 | `H-H-H` | `mac` | `structured` | Три группы по 1–4 hex-цифры | Три lowercase-группы по 4 цифры |
+| `X.X.X.X` | `ipv4-address` | `structured` | Четыре decimal-октета `0..255` | Decimal IPv4 без ведущих нулей |
+| `X:X::X:X` | `ipv6-address` | `structured` | Стандартный IPv6, включая compressed и IPv4-mapped | Канонический lowercase/compressed IPv6 |
+| `X:X::X:X/M` | `ipv6-prefix` | `structured` | IPv6 с decimal prefix length `0..128` | Канонический адрес и prefix; host bits сохранены |
 | `TEXT<min-max>` | `text` | `remainder` | Непустой остаток строки с длиной в заданном диапазоне | Исходный `str` |
 | `YYYY/MM/DD` | `date-slash` | `structured` | Календарная дата точной ширины | Исходный `str` |
 | `YYYY-MM-DD` | `date-iso` | `structured` | Календарная дата точной ширины | Исходный `str` |
@@ -152,8 +158,17 @@ registry.evaluate("INTEGER<1-15>", "Vlanif").status
   keyword, этого ограничения не имеет. Правило реализовано вне parameter
   validator. В bare/root-варианте ведущий `!` входит в `raw` и учитывается
   функцией `len()` при проверке bounds.
-- `X.X.X.X`, `X:X::X:X`, их prefix-варианты и
-  `STRING<min-max>/<min-max>` не входят во встроенный реестр.
+- IPv4 разрешает ведущие нули в октетах: `192.168.001.001` нормализуется в
+  `192.168.1.1`.
+- IPv6 использует стандартные правила `ipaddress.IPv6Address`, включая
+  compressed и IPv4-mapped формы. Zone identifiers с `%` запрещены.
+- IPv6 prefix не превращается в network: host bits сохраняются. Например,
+  `2001:0DB8::0001/064` нормализуется в `2001:db8::1/64`, а не
+  `2001:db8::/64`.
+- Все IP-типы относятся к `STRUCTURED`, поэтому при совпадении они
+  предпочтительнее generic `STRING`. Address-like некорректное значение
+  возвращает `INVALID`; лексически посторонний token — `NOT_APPLICABLE`.
+- `STRING<min-max>/<min-max>` не входит во встроенный реестр.
 
 ## `models.py`: модели и интерфейсы
 
@@ -720,6 +735,16 @@ Private helper длины:
 Private ASCII-only приведение `A`–`Z` к `a`–`z`. Используется
 `EnumValidator`. Unicode-регистр не нормализуется.
 
+### `_looks_like_ipv6(value: str) -> bool`
+
+Private эвристика применимости IPv6 validators. Возвращает `True`, если
+значение содержит не менее двух двоеточий. Это не полная проверка IPv6:
+окончательную валидацию выполняет `ipaddress.IPv6Address`.
+
+Эвристика позволяет отличить malformed address-like token
+`2001:db8::gg` (`INVALID`) от постороннего имени `foo:bar`
+(`NOT_APPLICABLE`).
+
 ### `IntegerValidator`
 
 Конструктор без аргументов.
@@ -855,6 +880,99 @@ ParameterResult.failure(
   `NOT_APPLICABLE`.
 
 Пример: `1-aB-CD09` нормализуется в `0001-00ab-cd09`.
+
+### `IPv4AddressValidator`
+
+Проверяет placeholder `X.X.X.X`.
+
+#### `probe(raw: str, declaration: ParameterDeclaration) -> ParameterResult`
+
+`declaration` не используется.
+
+1. `_looks_like_address(raw)` определяет, относится ли token к IPv4-ветке.
+   Если нет, возвращается `NOT_APPLICABLE`.
+2. Значение разделяется по точкам. Требуются ровно четыре непустых компонента,
+   каждый из `1..3` decimal-цифр.
+3. Каждый октет преобразуется в `int` и должен находиться в `0..255`.
+4. При успехе возвращается `VALID`; `normalized` собирается из decimal
+   значений, поэтому ведущие нули удаляются.
+
+Пример: raw `192.168.001.001` сохраняется вызывающим parser-ом, а validator
+возвращает normalized `192.168.1.1`.
+
+#### `_looks_like_address(raw: str) -> bool`
+
+Static private эвристика. Возвращает `True`, когда raw содержит точку и
+полностью состоит из цифр, точек, `+` и `-`. Этого достаточно только для
+определения применимости: строки `1.2.3` и `-1.2.3.4` затем становятся
+`INVALID`, а hostname `router.example.com` — `NOT_APPLICABLE`.
+
+#### `_failure(raw: str) -> ParameterResult`
+
+Static private factory результата `INVALID`:
+
+- code: `invalid_ipv4_address`;
+- message: `value must be a valid IPv4 address`;
+- expected: `four decimal octets from 0 to 255`;
+- actual: исходный raw.
+
+### `IPv6AddressValidator`
+
+Проверяет placeholder `X:X::X:X`. Поддерживает полную стандартную IPv6-форму:
+восемь групп, `::` compression и IPv4-mapped адреса.
+
+#### `probe(raw: str, declaration: ParameterDeclaration) -> ParameterResult`
+
+`declaration` не используется.
+
+1. Если `_looks_like_ipv6(raw)` вернул `False`, результат —
+   `NOT_APPLICABLE`.
+2. Наличие `%` делает address-like token `INVALID`: zone identifier не
+   поддерживается.
+3. `ipaddress.IPv6Address(raw)` выполняет синтаксическую проверку.
+4. При успехе `str(address)` становится normalized: регистр lowercase,
+   допустимое сжатие `::` применяется канонически.
+
+Например, `2001:0DB8:0:0:0:0:0:1` нормализуется в `2001:db8::1`.
+
+#### `_failure(raw: str) -> ParameterResult`
+
+Static private factory результата `INVALID`:
+
+- code: `invalid_ipv6_address`;
+- message: `value must be a valid IPv6 address`;
+- expected: `IPv6 colon-hexadecimal notation`;
+- actual: исходный raw.
+
+### `IPv6PrefixValidator`
+
+Проверяет placeholder `X:X::X:X/M`.
+
+#### `probe(raw: str, declaration: ParameterDeclaration) -> ParameterResult`
+
+`declaration` не используется.
+
+1. Token применим к типу, если `_looks_like_ipv6(raw)` вернул `True` или raw
+   начинается с `/`; иначе результат — `NOT_APPLICABLE`.
+2. Требуется ровно один `/`, непустой IPv6 слева и только decimal-цифры справа.
+   Запись prefix length длиннее трёх символов отклоняется.
+3. Zone identifier `%` в адресной части запрещён.
+4. Адрес проверяется через `IPv6Address`, prefix length — через диапазон
+   `0..128`.
+5. При успехе normalized имеет вид `f"{address}/{prefix_length}"`.
+
+Используется `IPv6Address`, а не `IPv6Network`, поэтому host bits намеренно
+сохраняются. Raw `2001:0DB8::0001/064` даёт normalized
+`2001:db8::1/64`. Формы `::/0`, `::1/128` и IPv4-mapped prefix допустимы.
+
+#### `_failure(raw: str) -> ParameterResult`
+
+Static private factory результата `INVALID`:
+
+- code: `invalid_ipv6_prefix`;
+- message: `value must be a valid IPv6 prefix`;
+- expected: `IPv6 address followed by /0 through /128`;
+- actual: исходный raw.
 
 ## `registry.py`: `ParameterTypeRegistry`
 
@@ -1062,10 +1180,14 @@ Private factory семи date/time-типов. Все созданные тип�
 
 ### `builtin_parameter_types() -> tuple[ParameterType, ...]`
 
-Создаёт свежий tuple всех 14 встроенных определений. Новый
+Создаёт свежий tuple всех 17 встроенных определений. Новый
 `SingleTokenReader` совместно используется token-based типами внутри одного
 вызова; `TEXT` распознаётся через `BoundedDeclarationRecognizer("TEXT")` и
 получает `RemainderReader`.
+
+`ipv4-address`, `ipv6-address` и `ipv6-prefix` используют
+`ExactDeclarationRecognizer`, общий `SingleTokenReader`, family
+`STRUCTURED` и соответствующие специализированные validators.
 
 Порядок tuple:
 
@@ -1075,8 +1197,11 @@ Private factory семи date/time-типов. Все созданные тип�
 4. `enum`;
 5. `passwordex`;
 6. `mac`;
-7. `text`;
-8. семь date/time-типов в порядке `_date_time_types()`.
+7. `ipv4-address`;
+8. `ipv6-address`;
+9. `ipv6-prefix`;
+10. `text`;
+11. семь date/time-типов в порядке `_date_time_types()`.
 
 Функция не возвращает singleton: каждый вызов создаёт свежие immutable
 `ParameterType`-объекты и stateless стратегии.
@@ -1104,6 +1229,9 @@ ParameterTypeRegistry(builtin_parameter_types())
 | `invalid_token` | `TokenStringValidator` | Пустое значение или whitespace внутри | Исходное значение |
 | `invalid_datetime` | `DateTimeValidator` | Форма правильная, календарное значение невозможно | Исходное значение |
 | `invalid_mac` | `MacValidator` | Строка похожа на MAC, но имеет неверные группы | Исходное значение |
+| `invalid_ipv4_address` | `IPv4AddressValidator` | Token похож на IPv4, но не состоит из четырёх октетов `0..255` | Исходное значение |
+| `invalid_ipv6_address` | `IPv6AddressValidator` | Token похож на IPv6, но синтаксис неверен или содержит zone identifier | Исходное значение |
+| `invalid_ipv6_prefix` | `IPv6PrefixValidator` | Address-like token не имеет корректного IPv6 и `/0..128` | Исходное значение |
 
 Custom validator может определять собственные стабильные коды.
 

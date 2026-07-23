@@ -94,6 +94,9 @@ python3 manual_test.py
     "TEXT<1-4096>",
     "description TEXT<1-80>",
     "interface STRING<1-63>",
+    "peer X.X.X.X",
+    "peer X:X::X:X",
+    "network X:X::X:X/M",
     "preference INTEGER<1-15>",
     "features { alpha | beta | gamma } *"
   ]
@@ -111,8 +114,9 @@ python3 manual_test.py
 - порядок элементов задаёт source order;
 - дубликаты допустимы и остаются отдельными источниками.
 
-Поставляемый [commands.json](../data/commands.json) содержит 6 187 уникальных
-runtime-совместимых паттернов. В каталоге нет вспомогательных coverage или
+Поставляемый [commands.json](../data/commands.json) содержит 7 269 уникальных
+runtime-совместимых паттернов. В 1 051 из них присутствует хотя бы один
+встроенный IPv4/IPv6 placeholder. В каталоге нет вспомогательных coverage или
 catalogue файлов.
 
 ## Язык command patterns
@@ -173,6 +177,9 @@ parameter или group. Голый `&`, malformed bounds и repeat после li
 | `STRING<min-max>` | Один non-whitespace token | Исходная строка |
 | `PASSWORDEX<min-max>` | Один non-whitespace token | Исходная строка |
 | `ENUM{x,y,...,}` | Один из явно перечисленных choices | Каноническое choice из declaration |
+| `X.X.X.X` | Четыре decimal-октета `0..255` | IPv4 без ведущих нулей |
+| `X:X::X:X` | Стандартный IPv6, включая compressed и IPv4-mapped формы | Lowercase compressed IPv6 |
+| `X:X::X:X/M` | IPv6 и decimal prefix length `0..128` | Канонический IPv6 и prefix без ведущих нулей |
 | `YYYY/MM/DD` | Валидная календарная дата | Строка |
 | `YYYY-MM-DD` | Валидная календарная дата | Строка |
 | `MM-DD` | Валидные месяц и день | Строка |
@@ -212,18 +219,41 @@ description uplink        -> ParsedCommand по "description TEXT<1-80>"
 unknown command           -> ErrorLine(UNKNOWN_COMMAND)
 ```
 
-### Намеренно неподдерживаемые declarations
+### IP-адреса
 
-По умолчанию отклоняются:
+Три IP-placeholder’а встроены в стандартный registry:
 
 ```text
 X.X.X.X
 X:X::X:X
 X:X::X:X/M
+```
+
+- IPv4 состоит ровно из четырёх decimal-октетов `0..255`. Ведущие нули
+  допустимы: raw `192.168.001.001` сохраняется, а normalized равен
+  `192.168.1.1`.
+- IPv6 поддерживает обычные, compressed и IPv4-mapped формы. Normalized —
+  каноническая lowercase/compressed строка.
+- IPv6 prefix использует длину `/0..128`. Нормализуются адрес и запись длины,
+  но host bits не обнуляются: `2001:0DB8::1/064` превращается в
+  `2001:db8::1/64`.
+- Zone identifier, например `fe80::1%eth0`, не поддерживается ни для адреса,
+  ни для prefix.
+
+Все три типа имеют family `STRUCTURED`, поэтому валидный IP-route
+предпочитается `STRING`. Значение, похожее на IP, но нарушающее его формат,
+даёт `VALIDATION_ERROR` и блокирует generic fallback. Лексически посторонний
+token получает `NOT_APPLICABLE`, поэтому hostname или имя интерфейса может
+быть принято альтернативным `STRING`.
+
+### Намеренно неподдерживаемые declarations
+
+По умолчанию отклоняются:
+
+```text
 STRING<1-64>/<0-128>
 ```
 
-IP declarations можно осознанно добавить как custom `ParameterType`.
 Composite `STRING<...>/<...>` в текущей версии не поддерживается.
 
 `ENUM{a,b,...}` с буквальным abbreviated choice `...` также отклоняется:
@@ -391,9 +421,11 @@ literal и group.
 ### 4. Runtime policy
 
 `RuntimePatternPolicy` запрещает placeholder-подобный текст, который иначе
-мог бы стать literal, проверяет отключённые IP declarations, а также требует,
-чтобы `TEXT` завершал route и не повторялся. Ограничение корневого `TEXT` на
-строки с `!` применяется matcher-слоем во время runtime.
+мог бы стать literal, проверяет точные встроенные declarations, включая три
+IP-placeholder’а, а также требует, чтобы `TEXT` завершал route и не повторялся.
+Например, `X.X.X.X/suffix` не становится набором literals, а отклоняется как
+malformed parameter. Ограничение корневого `TEXT` на строки с `!` применяется
+matcher-слоем во время runtime.
 
 ### 5. Route expansion
 
@@ -627,12 +659,16 @@ mypy --strict src/vrp_parser
 Тесты разделены по ответственности:
 
 - `test_pattern_language.py` — lexer/parser/AST;
-- `test_parameter_types.py` — declarations и tri-state validators;
+- `test_parameter_types.py` — declarations, tri-state validators, IPv4/IPv6
+  boundary forms, canonicalization и zone rejection;
 - `test_command_graph.py` — prefix merge и route ownership;
-- `test_command_matching*.py` — runtime matching и ambiguity;
+- `test_command_matching.py` — runtime matching, ambiguity, IP validation и
+  приоритет structured IP перед `STRING`;
 - `test_public_parsers.py` — line/configuration API и result formats;
-- `test_compilation.py` — construction-time errors и plugins;
-- `test_data_file.py` — поставляемый commands catalogue;
+- `test_compilation.py` — construction-time errors, malformed suffixes
+  встроенных declarations и custom registry types;
+- `test_data_file.py` — поставляемый commands catalogue, реальные TEXT/IP
+  routes и их validation;
 - `test_cli.py` — CLI JSON и exit codes.
 
 ## Основные ограничения
@@ -642,7 +678,7 @@ mypy --strict src/vrp_parser
 - command catalogue загружается целиком;
 - `TEXT<min-max>` читает остаток строки; только bare/root `TEXT`, сопоставляемый
   в позиции `0`, ограничен runtime-строками, начинающимися с `!`;
-- IP placeholders отключены по умолчанию;
+- IPv6 zone identifiers (`%eth0` и подобные) не поддерживаются;
 - composite `STRING<...>/<...>` не поддерживается;
 - set alternatives уникальны внутри одного group match;
 - custom normalized objects сохраняются в `ParsedCommand`, а `to_dict()`

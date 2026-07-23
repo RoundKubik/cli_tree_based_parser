@@ -64,16 +64,17 @@ def test_frontend_collects_all_pattern_errors() -> None:
 @pytest.mark.parametrize(
     "pattern",
     [
-        "peer X.X.X.X",
-        "peer X:X::X:X",
         "pair STRING<1-10>/<1-10>",
+        "peer X.X.X.X/suffix",
+        "peer X:X::X:X/suffix",
+        "peer X:X::X:X/M/suffix",
         "mac H-H-H/suffix",
         "clock <hh:mm>/suffix",
         "date YYYY-MM-DD/suffix",
         "time HH:MM:SS/suffix",
     ],
 )
-def test_disabled_or_unsupported_placeholders_fail_at_construction(
+def test_malformed_or_unsupported_placeholders_fail_at_construction(
     pattern: str,
 ) -> None:
     with pytest.raises(PatternCompilationError):
@@ -86,6 +87,20 @@ def test_standalone_and_terminal_embedded_text_declarations_are_supported() -> N
     )
 
     assert parser.command_count == 2
+
+
+def test_ip_address_and_prefix_declarations_are_supported() -> None:
+    parser = CommandLineParser(
+        {
+            "commands": [
+                "peer X.X.X.X",
+                "peer X:X::X:X",
+                "network X:X::X:X/M",
+            ]
+        }
+    )
+
+    assert parser.command_count == 3
 
 
 @pytest.mark.parametrize(
@@ -104,19 +119,21 @@ def test_text_declaration_must_be_terminal_and_non_repeated(
         CommandLineParser({"commands": [pattern]})
 
 
-def test_disabled_builtin_spelling_can_be_added_as_a_plugin() -> None:
+def test_custom_parameter_type_can_extend_the_builtin_registry() -> None:
     registry = default_parameter_registry()
     registry.register(
         ParameterType(
-            type_id="ipv6-prefix",
+            type_id="custom-ipv6-prefix",
             family=ParameterFamily.STRUCTURED,
-            declaration_recognizer=ExactDeclarationRecognizer("X:X::X:X/M"),
+            declaration_recognizer=ExactDeclarationRecognizer(
+                "IPV6-PREFIX-CUSTOM"
+            ),
             reader=SingleTokenReader(),
             validator=_PrefixValidator(),
         )
     )
     parser = CommandLineParser(
-        {"commands": ["peer X:X::X:X/M"]},
+        {"commands": ["peer IPV6-PREFIX-CUSTOM"]},
         parameter_types=registry,
     )
 
@@ -126,13 +143,15 @@ def test_disabled_builtin_spelling_can_be_added_as_a_plugin() -> None:
     assert result.parameters[0].normalized == "2001:db8::1/64"
 
 
-def test_plugin_does_not_hide_a_later_disabled_placeholder() -> None:
+def test_plugin_does_not_hide_a_later_malformed_builtin_placeholder() -> None:
     registry = default_parameter_registry()
     registry.register(
         ParameterType(
-            type_id="ipv6-prefix",
+            type_id="custom-ipv6-prefix",
             family=ParameterFamily.STRUCTURED,
-            declaration_recognizer=ExactDeclarationRecognizer("X:X::X:X/M"),
+            declaration_recognizer=ExactDeclarationRecognizer(
+                "IPV6-PREFIX-CUSTOM"
+            ),
             reader=SingleTokenReader(),
             validator=_PrefixValidator(),
         )
@@ -140,7 +159,11 @@ def test_plugin_does_not_hide_a_later_disabled_placeholder() -> None:
 
     with pytest.raises(PatternCompilationError):
         CommandLineParser(
-            {"commands": ["peer X:X::X:X/M X:X::X:X"]},
+            {
+                "commands": [
+                    "peer IPV6-PREFIX-CUSTOM X.X.X.X/suffix"
+                ]
+            },
             parameter_types=registry,
         )
 

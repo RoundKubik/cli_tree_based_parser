@@ -22,12 +22,10 @@ class RuntimePatternPolicy:
         "PASSWORDEX<",
         "TEXT<",
     )
-    _DISABLED_PLACEHOLDERS = (
+    _EXACT_PLACEHOLDERS = (
         "X:X::X:X/M",
         "X:X::X:X",
         "X.X.X.X",
-    )
-    _EXACT_PLACEHOLDERS = (
         "YYYY/MM/DD,HH:MM:SS",
         "MM-DD-YYYY",
         "YYYY/MM/DD",
@@ -52,21 +50,6 @@ class RuntimePatternPolicy:
                     )
                 position = source.find(prefix, position + 1)
 
-        for placeholder in self._DISABLED_PLACEHOLDERS:
-            position = source.find(placeholder)
-            while position >= 0:
-                if not self._claimed(
-                    parameters,
-                    position,
-                    position + len(placeholder),
-                ):
-                    self._fail(
-                        f"parameter {placeholder} is not supported",
-                        source,
-                        position,
-                        position + len(placeholder),
-                    )
-                position = source.find(placeholder, position + 1)
         for placeholder in self._EXACT_PLACEHOLDERS:
             position = source.find(placeholder)
             while position >= 0:

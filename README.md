@@ -73,6 +73,8 @@ Patterns are compiled once when `CommandLineParser` is constructed. Invalid
 JSON, malformed reserved parameter declarations, malformed groups, and invalid
 repeat bounds are reported at construction time. An arbitrary unregistered
 word is treated as a literal unless runtime policy reserves its spelling.
+The bundled catalogue contains 7,269 unique patterns; 1,051 of them use a
+built-in IPv4 or IPv6 placeholder.
 
 ## Python API
 
@@ -213,6 +215,9 @@ The default registry recognizes exactly these declarations:
 | `PASSWORDEX<min-max>` | One non-whitespace token with bounded character length |
 | `ENUM{x,y,...,}` | One listed value, compared case-insensitively |
 | `H-H-H` | Three hexadecimal MAC groups, normalized to `hhhh-hhhh-hhhh` |
+| `X.X.X.X` | Four decimal IPv4 octets; leading zeros accepted and removed during normalization |
+| `X:X::X:X` | Standard IPv6 address, including compressed and IPv4-mapped forms; canonical lowercase/compressed string |
+| `X:X::X:X/M` | IPv6 address with `/0` through `/128`; address canonicalized while host bits are retained |
 | `YYYY/MM/DD` | Valid calendar date |
 | `YYYY-MM-DD` | Valid calendar date |
 | `MM-DD` | Valid month and day |
@@ -222,11 +227,15 @@ The default registry recognizes exactly these declarations:
 | `<hh:mm>` | Valid hour and minute |
 | `TEXT<min-max>` | The complete remaining text with bounded character length |
 
-The default runtime deliberately rejects `X.X.X.X`, `X:X::X:X`, and
-`X:X::X:X/M`: IPv4 and IPv6 placeholders are disabled and do not occur in the
-shipped catalogue. They are not generic aliases for `address`. Likewise,
-`address` itself has no special meaning in the runtime language: unless a
-registered declaration recognizer claims it, it is simply a literal keyword.
+All three IP declarations belong to the `structured` family and therefore win
+over a competing `STRING`. Their captured `raw` text is preserved, while
+`normalized` contains the canonical address. An address-shaped but invalid
+value produces `validation_error`; an unrelated hostname is
+`not_applicable` to the IP type and may match `STRING`. IPv6 zone identifiers
+such as `%eth0` are not accepted. The literal word `address` still has no
+special meaning unless a registered declaration recognizer claims it.
+Their exact placeholder spellings are reserved at compile time, so malformed
+forms such as `X.X.X.X/suffix` cannot silently become literals.
 
 Composite declarations such as `STRING<1-64>/<0-128>` are also unsupported.
 The slash and its second range are not automatically combined with the
@@ -243,12 +252,9 @@ A parameter type is an object composed from four focused strategies:
 
 Registering a `ParameterType` is enough to opt into new parameter behavior; the
 pattern lexer, AST, graph compiler, and matcher do not need type-specific
-branches. The following example intentionally enables the otherwise disabled
-`X:X::X:X/M` declaration for one caller-supplied registry:
+branches. This neutral example adds a `BOOLEAN` placeholder:
 
 ```python
-import ipaddress
-
 from vrp_parser import CommandLineParser
 from vrp_parser.parameters import (
     ExactDeclarationRecognizer,
@@ -261,39 +267,43 @@ from vrp_parser.parameters import (
 )
 
 
-class IPv6PrefixValidator:
+class BooleanValidator:
     def probe(
         self,
         raw: str,
         declaration: ParameterDeclaration,
     ) -> ParameterResult:
         del declaration
-        try:
-            normalized = str(ipaddress.IPv6Interface(raw))
-        except ValueError:
-            return ParameterResult.failure(
-                "invalid_ipv6_prefix",
-                "value must be a valid IPv6 address with prefix length",
-                actual=raw,
-            )
-        return ParameterResult.success(normalized)
+        value = raw.lower()
+        if value == "yes":
+            return ParameterResult.success(True)
+        if value == "no":
+            return ParameterResult.success(False)
+        return ParameterResult.failure(
+            "invalid_boolean",
+            "value must be yes or no",
+            expected="yes | no",
+            actual=raw,
+        )
 
 
 registry = default_parameter_registry()
 registry.register(
     ParameterType(
-        type_id="ipv6-prefix",
+        type_id="boolean",
         family=ParameterFamily.STRUCTURED,
-        declaration_recognizer=ExactDeclarationRecognizer("X:X::X:X/M"),
+        declaration_recognizer=ExactDeclarationRecognizer("BOOLEAN"),
         reader=SingleTokenReader(),
-        validator=IPv6PrefixValidator(),
+        validator=BooleanValidator(),
     )
 )
 
 line_parser = CommandLineParser(
-    {"commands": ["peer X:X::X:X/M"]},
+    {"commands": ["feature BOOLEAN"]},
     parameter_types=registry,
 )
+
+result = line_parser.parse("feature yes")
 ```
 
 The parser clones and freezes the supplied registry during construction. Build

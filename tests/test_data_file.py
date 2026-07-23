@@ -17,11 +17,20 @@ def test_data_directory_contains_only_runtime_commands() -> None:
 def test_bundled_commands_are_unique_supported_and_compilable() -> None:
     document = json.loads(DATA.read_text(encoding="utf-8"))
     commands = document["commands"]
+    ip_commands = [
+        item
+        for item in commands
+        if "X.X.X.X" in item or "X:X::X:X" in item
+    ]
 
     assert commands[:2] == ["#", "TEXT<1-4096>"]
+    assert len(commands) == 7_269
     assert len(commands) == len(set(commands))
-    assert all("X.X.X.X" not in item for item in commands)
-    assert all("X:X::X:X" not in item for item in commands)
+    assert len(ip_commands) == 1_051
+    assert sum("X:X::X:X/M" in item for item in commands) == 40
+    assert any("X.X.X.X" in item for item in commands)
+    assert any("X:X::X:X" in item for item in commands)
+    assert any("X:X::X:X/M" in item for item in commands)
     assert all("}*" not in item and "]*" not in item for item in commands)
 
     parser = CommandLineParser(document)
@@ -44,3 +53,21 @@ def test_bundled_text_routes_distinguish_comments_commands_and_unknowns() -> Non
     assert description.parameters[0].raw == "uplink to core"
     assert isinstance(unknown, ErrorLine)
     assert unknown.error.code is ErrorCode.UNKNOWN_COMMAND
+
+
+def test_bundled_ip_routes_parse_and_validate_real_catalogue_commands() -> None:
+    parser = CommandLineParser.from_json_file(DATA)
+
+    ipv4 = parser.parse("acl ip-pool 192.168.001.001")
+    ipv6 = parser.parse("anycast-rp 2001:0DB8::1")
+    prefix = parser.parse("display ip ipv6-prefix 2001:DB8::/64")
+    invalid = parser.parse("acl ip-pool 192.0.2.999")
+
+    assert isinstance(ipv4, ParsedCommand)
+    assert ipv4.parameters[0].normalized == "192.168.1.1"
+    assert isinstance(ipv6, ParsedCommand)
+    assert ipv6.parameters[0].normalized == "2001:db8::1"
+    assert isinstance(prefix, ParsedCommand)
+    assert prefix.parameters[0].normalized == "2001:db8::/64"
+    assert isinstance(invalid, ErrorLine)
+    assert invalid.error.code is ErrorCode.VALIDATION_ERROR
