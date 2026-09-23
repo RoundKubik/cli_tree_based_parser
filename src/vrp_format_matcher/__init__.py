@@ -13,6 +13,7 @@ from .models import (
     MetadataError,
     MetadataReport,
     ParameterBinding,
+    PreparationProgress,
     PreparedPair,
     RuleEvaluation,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "MetadataError",
     "MetadataReport",
     "ParameterBinding",
+    "PreparationProgress",
     "PreparedMetadata",
     "PreparedPair",
     "RuleEvaluation",

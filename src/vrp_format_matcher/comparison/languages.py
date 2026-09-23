@@ -43,8 +43,11 @@ def compare(
     *,
     maximum_states: int,
     structurally_identical: bool = False,
+    document_execution: ProgramExecution | None = None,
 ) -> Comparison:
-    left_language = LanguageStates(ProgramExecution(document, maximum_states))
+    left_language = LanguageStates(
+        document_execution or ProgramExecution(document, maximum_states)
+    )
     right_language = LanguageStates(ProgramExecution(device, maximum_states))
     start = (
         frozenset({left_language.execution.start}),
@@ -60,6 +63,12 @@ def compare(
     prefix: tuple[str, ...] = ()
     while pending:
         (left, right), word = pending.popleft()
+        # Once one side is dead it can never rejoin the shared language. Only
+        # one accepted witness from that side is needed to classify the pair.
+        if not right and document_only is not None:
+            continue
+        if not left and device_only is not None:
+            continue
         accepts_left = left_language.accepts(left)
         accepts_right = right_language.accepts(right)
         if accepts_left and accepts_right and common is None:
@@ -72,6 +81,10 @@ def compare(
             prefix = display(word)
         if common is not None and document_only is not None and device_only is not None:
             break  # All three witnesses prove overlap; no exhaustive traversal needed.
+        if (not right and document_only is not None) or (
+            not left and device_only is not None
+        ):
+            continue
         left_moves, right_moves = left_language.moves(left), right_language.moves(right)
         for label in sorted(left_moves.keys() | right_moves.keys()):
             pair = (

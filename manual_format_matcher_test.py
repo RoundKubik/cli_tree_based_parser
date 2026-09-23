@@ -1,4 +1,4 @@
-"""Editable format-mapping examples. Run: python3.13 manual_metadata_test.py."""
+"""Editable format-mapping examples. Run: python3.13 manual_format_matcher_test.py."""
 
 from __future__ import annotations
 
@@ -11,7 +11,11 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from vrp_format_matcher import FormatMatcher, PreparedMetadata  # noqa: E402
+from vrp_format_matcher import (  # noqa: E402
+    FormatMatcher,
+    PreparationProgress,
+    PreparedMetadata,
+)
 from vrp_parser_automaton import CommandLineParser, ParsedCommand  # noqa: E402
 
 
@@ -214,6 +218,11 @@ def argument_parser() -> argparse.ArgumentParser:
     arguments.add_argument(
         "--json", action="store_true", help="Print full runtime details"
     )
+    arguments.add_argument(
+        "--exhaustive",
+        action="store_true",
+        help="Compare every pair, including unmatched formats (small catalogs only)",
+    )
     return arguments
 
 
@@ -242,6 +251,8 @@ def prepare_session(
             else CommandLineParser({"commands": list(formats.values())})
         )
     else:
+        if args.patterns:
+            print("Parsing device catalog...", file=sys.stderr, flush=True)
         parser = (
             CommandLineParser.from_json_file(args.patterns)
             if args.patterns
@@ -252,8 +263,27 @@ def prepare_session(
             if args.documents
             else case["documents"]
         )
-        prepared = FormatMatcher().compile(parser, documents)
+        if args.patterns:
+            print("Building candidate index...", file=sys.stderr, flush=True)
+        prepared = FormatMatcher().compile(
+            parser,
+            documents,
+            exhaustive=args.exhaustive or not args.patterns,
+            on_progress=show_progress if args.patterns else None,
+        )
     return parser, prepared
+
+
+def show_progress(progress: PreparationProgress) -> None:
+    if progress.documents_done % 100 == 0 or (
+        progress.documents_done == progress.documents_total
+    ):
+        print(
+            f"Documents: {progress.documents_done}/{progress.documents_total}; "
+            f"candidate pairs prepared: {progress.pairs_prepared}",
+            file=sys.stderr,
+            flush=True,
+        )
 
 
 def show_line(

@@ -43,6 +43,7 @@ def prepare(
                 "requires": rules or [],
             }
         ],
+        exhaustive=True,
     )
     return parser, prepared
 
@@ -565,7 +566,7 @@ def test_device_instructions_are_reused_and_each_document_is_compiled_once(
 
     monkeypatch.setattr(AutomatonBuilder, "build", counted)
     result = FormatMatcher().compile(parser, [{"format": "c <x>"}, {"format": "d <y>"}])
-    assert len(result.pairs) == 4
+    assert len(result.pairs) == 2
     assert len(built) == 2
     device_asts = {id(source.ast) for source in parser.automaton.patterns}
     assert all(id(source.ast) not in device_asts for source in built)

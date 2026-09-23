@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Any
@@ -18,13 +18,16 @@ from vrp_format_matcher.models import (
     MappingLimitExceeded,
     MappingLimits,
     PatternProgram,
+    PreparationProgress,
     PreparedPair,
 )
 from vrp_format_matcher.runtime.prepared import PreparedMetadata
+from vrp_format_matcher.runtime.program import ProgramExecution
 from vrp_parser_automaton.api import CommandLineParser
 from vrp_parser_automaton.automata.model import CommandAutomaton, PatternSource
 from vrp_parser_automaton.patterns import Sequence as PatternSequence
 
+from .candidates import CandidateIndex
 from .programs import ProgramCompiler
 
 
@@ -51,6 +54,7 @@ class CompiledPattern:
     document: bool
     automaton: CommandAutomaton | None = None
     start: int = 0
+    comparison_states: int = 20_000
 
     @cached_property
     def build(self) -> ProgramBuild:
@@ -76,6 +80,11 @@ class CompiledPattern:
     @cached_property
     def unambiguous(self) -> bool:
         return PredictiveExpression(self.ast).unambiguous()
+
+    @cached_property
+    def execution(self) -> ProgramExecution:
+        """Reuse the document's frontiers across its candidate comparisons."""
+        return ProgramExecution(self.build.require(), self.comparison_states)
 
 
 @dataclass(frozen=True)
@@ -124,6 +133,7 @@ class PairPreparation:
                     device_machine,
                     maximum_states=self.limits.comparison_states,
                     structurally_identical=same_structure,
+                    document_execution=self.document_pattern.execution,
                 )
             if program is None and comparison.common_example is not None:
                 machine = intersection(
@@ -154,15 +164,23 @@ class FormatMatcher:
     def compare(self, document_format: str, device_format: str) -> Comparison:
         """Compare one documentation format with one built-in device format."""
         parser = CommandLineParser({"commands": [device_format]})
-        return self.compile(parser, [{"format": document_format}]).pairs[0].comparison
+        return (
+            self.compile(parser, [{"format": document_format}], exhaustive=True)
+            .pairs[0]
+            .comparison
+        )
 
     def compile(
         self,
         device_parser: CommandLineParser,
         documents: Sequence[Mapping[str, Any]],
+        *,
+        exhaustive: bool = False,
+        on_progress: Callable[[PreparationProgress], None] | None = None,
     ) -> PreparedMetadata:
-        """Prepare every source pair with independent resource budgets."""
+        """Prepare indexed candidates; exhaustive diagnostics are explicitly opt-in."""
         devices = device_parser.automaton.patterns
+        index = None if exhaustive else CandidateIndex(devices)
         device_patterns = {
             device.pattern_id: CompiledPattern(
                 device.ast,
@@ -174,11 +192,14 @@ class FormatMatcher:
             for device in devices
         }
         pairs: list[PreparedPair] = []
-        for document in Documentation(documents).documents():
+        if on_progress is not None:
+            on_progress(PreparationProgress(0, len(documents), 0))
+        for completed, document in enumerate(Documentation(documents).documents(), 1):
             document_pattern = CompiledPattern(
                 document.ast,
                 self.limits.automaton_states,
                 document=True,
+                comparison_states=self.limits.comparison_states,
             )
             pairs.extend(
                 PairPreparation(
@@ -188,8 +209,12 @@ class FormatMatcher:
                     device_pattern=device_patterns[device.pattern_id],
                     limits=self.limits,
                 ).prepared()
-                for device in devices
+                for device in (
+                    devices if index is None else index.candidates(document.ast)
+                )
             )
+            if on_progress is not None:
+                on_progress(PreparationProgress(completed, len(documents), len(pairs)))
         return PreparedMetadata(tuple(pairs), self.limits)
 
 

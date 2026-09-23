@@ -19,6 +19,13 @@ class MappingLimitExceeded(MetadataError):
 
 
 @dataclass(frozen=True)
+class PreparationProgress:
+    documents_done: int
+    documents_total: int
+    pairs_prepared: int
+
+
+@dataclass(frozen=True)
 class MappingLimits:
     automaton_states: int = 20_000
     comparison_states: int = 20_000
