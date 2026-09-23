@@ -198,14 +198,14 @@ def test_prefix_scope_retains_short_and_long_repeated_beginnings():
     assert {tag.iterations[0][1] for tag in captures} == {0, 1, 2}
 
 
-def test_empty_prefix_is_not_a_match_and_a_keyword_only_prefix_is_explicit():
+def test_empty_and_keyword_only_prefixes_produce_no_parameter_mappings():
     result = FormatMatcher().compile_formats(
         ["other INTEGER<1-10>", "c device"],
         [{"format": "c doc"}],
     )
     first, second = result.devices.values()
     assert first.status == "unmatched" and first.mappings == ()
-    assert second.status == "partial" and second.mappings[0].bindings == ()
+    assert second.status == "unmatched" and second.mappings == ()
 
 
 def test_exhausted_analysis_is_not_misreported_as_unmatched():

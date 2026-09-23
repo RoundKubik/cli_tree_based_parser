@@ -181,7 +181,7 @@ def main() -> None:
     if args.save:
         started = perf_counter()
         args.save.write_text(
-            json.dumps(asdict(prepared), ensure_ascii=False, indent=2), encoding="utf-8"
+            json.dumps(prepared.to_dict(), ensure_ascii=False), encoding="utf-8"
         )
         report["saving_seconds"] = perf_counter() - started
     print(json.dumps(report, ensure_ascii=False, indent=2))

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from vrp_parser_automaton.automata.model import Instruction
 
@@ -146,6 +147,12 @@ class DeviceMatch:
 @dataclass(frozen=True)
 class PreparedMapping:
     devices: dict[str, DeviceMatch]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return ordinary JSON data with shared slot descriptions and scopes."""
+        from .preparation.result import MappingData
+
+        return MappingData(self).to_dict()
 
     @property
     def pairs(self) -> tuple[PreparedPair, ...]:

@@ -142,11 +142,15 @@ class PairPreparation:
             )
         except MappingLimitExceeded:
             return self._result("unknown", (), "unavailable", False, stage="prefix")
-        if not machine.edges[machine.start]:
-            return self._result("disjoint", (), "unavailable", False, stage="prefix")
+        bindings = self._bindings(machine)
+        if not bindings:
+            # The index deliberately over-approximates complex beginnings. A
+            # keyword-only prefix carries no parameter mapping for the result.
+            status = "prefix_only" if machine.edges[machine.start] else "disjoint"
+            return self._result(status, (), "unavailable", False, stage="prefix")
         return self._result(
             "prefix_match",
-            self._bindings(machine),
+            bindings,
             "prefix_dependent",
             False,
             machine,

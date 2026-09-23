@@ -167,7 +167,8 @@ def test_manual_script_saves_plain_offline_mapping(tmp_path):
     saved = json.loads(output.read_text())
     pair = next(iter(saved["devices"].values()))["mappings"][0]
     assert pair["status"] == "equivalent"
-    assert [b["document"]["name"] for b in pair["bindings"]] == [
+    slots = saved["documents"][pair["document_id"]]["slots"]
+    assert [slots[b["document"]]["name"] for b in pair["bindings"]] == [
         "a",
         "b",
         "c",

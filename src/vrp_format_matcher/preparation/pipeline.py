@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from functools import cached_property
@@ -77,7 +78,7 @@ class DocumentationIndex:
 
 
 class PreparationPipeline:
-    """One offline run owns its pending devices, pair cache and progress."""
+    """Four passes share compiled formats, retaining only useful pair results."""
 
     def __init__(
         self,
@@ -91,17 +92,17 @@ class PreparationPipeline:
         self._documents = DocumentationIndex(documents, limits)
         self._limits = limits
         self._progress = on_progress
-        self._patterns = {
-            device.pattern_id: CompiledPattern(
+        self._patterns: dict[str, CompiledPattern] = {}
+        for device in devices:
+            if device.original in self._patterns:
+                continue
+            self._patterns[device.original] = CompiledPattern(
                 device.ast,
                 limits.automaton_states,
                 document=False,
                 automaton=graph,
                 start=graph.starts[device.index] if graph is not None else 0,
             )
-            for device in devices
-        }
-        self._cache: dict[tuple[str, str, str], PreparedPair] = {}
         self._unresolved: dict[str, tuple[PreparedPair, ...]] = {}
         self._results: dict[str, DeviceMatch] = {}
         self._pair_count = 0
@@ -126,15 +127,23 @@ class PreparationPipeline:
     ) -> tuple[PatternSource, ...]:
         remaining = []
         self._report(stage, 0, len(pending))
-        for completed, device in enumerate(pending, 1):
-            pattern = self._patterns[device.pattern_id]
-            pairs = tuple(
-                self._pair(device, source, stage)
-                for source in self._documents.candidates(pattern, stage)
-            )
-            if not self._resolve(device, pairs, stage):
-                remaining.append(device)
-            self._report(stage, completed, len(pending))
+        groups: dict[str, list[PatternSource]] = defaultdict(list)
+        for device in pending:
+            groups[device.original].append(device)
+        completed = 0
+        for devices in groups.values():
+            pairs = self._pairs(devices[0], stage)
+            for device in devices:
+                identified = tuple(
+                    pair
+                    if pair.pattern_id == device.pattern_id
+                    else replace(pair, pattern_id=device.pattern_id)
+                    for pair in pairs
+                )
+                if not self._resolve(device, identified, stage):
+                    remaining.append(device)
+                completed += 1
+                self._report(stage, completed, len(pending))
         return tuple(remaining)
 
     def _resolve(
@@ -159,28 +168,37 @@ class PreparationPipeline:
             self._unresolved[device.pattern_id] = uncertain
         return False
 
-    def _pair(
-        self, device: PatternSource, source: PatternSource, stage: str
-    ) -> PreparedPair:
-        key = (
-            device.original,
-            source.original,
-            "prefix" if stage == "prefix" else "full",
-        )
-        if key not in self._cache:
-            pair = PairPreparation(
-                self._documents.documents[source.index],
-                device,
-                self._documents.patterns[source.original],
-                self._patterns[device.pattern_id],
-                self._limits,
-            )
-            self._cache[key] = pair.prefix() if stage == "prefix" else pair.prepared()
-        return replace(
-            self._cache[key],
-            document_id=source.pattern_id,
-            pattern_id=device.pattern_id,
-        )
+    def _pairs(self, device: PatternSource, stage: str) -> tuple[PreparedPair, ...]:
+        """Compute identical document strings once for this device and pass.
+
+        The local cache expires before the next device format. All source IDs
+        survive, while failed comparisons never accumulate across the corpus.
+        """
+        pattern = self._patterns[device.original]
+        cache: dict[str, PreparedPair] = {}
+        results = []
+        for source in self._documents.candidates(pattern, stage):
+            if source.original not in cache:
+                preparation = PairPreparation(
+                    self._documents.documents[source.index],
+                    device,
+                    self._documents.patterns[source.original],
+                    pattern,
+                    self._limits,
+                )
+                cache[source.original] = (
+                    preparation.prefix()
+                    if stage == "prefix"
+                    else preparation.prepared()
+                )
+            pair = cache[source.original]
+            if pair.binding_mode != "unavailable" or pair.status == "unknown":
+                results.append(
+                    pair
+                    if pair.document_id == source.pattern_id
+                    else replace(pair, document_id=source.pattern_id)
+                )
+        return tuple(results)
 
     def _finish(
         self,
@@ -192,6 +210,7 @@ class PreparationPipeline:
         self._results[device.pattern_id] = DeviceMatch(
             device.original, status, pairs, stage
         )
+        self._unresolved.pop(device.pattern_id, None)
         self._pair_count += len(pairs)
 
     def _report(self, stage: str, done: int, total: int) -> None:

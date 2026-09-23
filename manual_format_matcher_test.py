@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -153,7 +152,7 @@ def main() -> None:
     print("PARAMETER LINKS:", sum(len(p.bindings) for p in result.pairs))
     if args.save:
         args.save.write_text(
-            json.dumps(asdict(result), ensure_ascii=False, indent=2), encoding="utf-8"
+            json.dumps(result.to_dict(), ensure_ascii=False), encoding="utf-8"
         )
         print(f"SAVED: {args.save}")
 

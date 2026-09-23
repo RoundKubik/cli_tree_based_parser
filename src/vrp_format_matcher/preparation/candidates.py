@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from vrp_format_matcher.comparison.structure import Expression
+from vrp_format_matcher.comparison.structure import Expression, sequence_items
 from vrp_parser_automaton.automata.model import PatternSource
 from vrp_parser_automaton.patterns import (
     GroupMode,
@@ -184,25 +184,47 @@ class Symbols:
         return cls(possible, required)
 
 
+class ParameterPrefixCover(PrefixCover):
+    """Cover paths to the first parameter; leave their suffix unconstrained.
+
+    A shared parameter transition is necessary for a prefix binding. Completed
+    keyword-only paths cannot contribute one. Truncated paths remain broad,
+    including when sets, repetitions or the cover's budget hide a parameter.
+    """
+
+    def prefixes(self, expression: Expression) -> tuple[Prefix, ...]:
+        if "P" not in Symbols.of(expression).possible:
+            return ()
+        # Fixed leading keywords cost linear work, regardless of their length.
+        # Do not truncate them just because a command has more than eight words.
+        leading = 0
+        if isinstance(expression, Sequence):
+            for item in sequence_items(expression):
+                if not isinstance(item, Literal):
+                    break
+                leading += 1
+        depth = max(self.depth, leading + 1)
+        return tuple(p for p in self._visit(expression, depth) if not p.complete)
+
+    def _visit(self, node: Expression, depth: int) -> tuple[Prefix, ...]:
+        if depth and isinstance(node, Parameter):
+            return (Prefix(("P",)),)
+        return super()._visit(node, depth)
+
+
 class PrefixCandidateIndex:
-    """Index common nonempty beginnings, even when later keywords diverge."""
+    """Find possible prefix bindings, rejecting divergent leading keywords."""
 
     def __init__(self, sources: tuple[PatternSource, ...]) -> None:
         self._sources = sources
-        self._cover = PrefixCover(depth=1)
-        self._by_first: dict[str, set[int]] = {}
-        self._broad: set[int] = set()
+        self._cover = ParameterPrefixCover()
+        self._root = PrefixNode()
         for index, source in enumerate(sources):
             for prefix in self._cover.prefixes(source.ast):
-                if prefix.symbols:
-                    self._by_first.setdefault(prefix.symbols[0], set()).add(index)
-                else:
-                    self._broad.add(index)
+                self._root.insert(prefix.symbols, index)
 
     def candidates(self, expression: Expression) -> tuple[PatternSource, ...]:
-        indices = set(self._broad)
+        indices: set[int] = set()
         for prefix in self._cover.prefixes(expression):
-            if not prefix.symbols:
-                return self._sources
-            indices.update(self._by_first.get(prefix.symbols[0], ()))
+            indices.update(self._root.compatible(prefix.symbols))
         return tuple(self._sources[index] for index in sorted(indices))
