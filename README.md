@@ -23,6 +23,9 @@ The detailed documentation is split into a short navigation tree:
 - [parameter subsystem](docs/reference/parameters.md);
 - [pattern compiler and command graph](docs/reference/patterns-graph.md);
 - [runtime matcher](docs/reference/matching.md).
+- [offline documentation/device format mapping](docs/reference/metadata-mapping.md)
+  — structural language comparison, parameter bindings, prepared metadata,
+  and `python3.13 manual_metadata_test.py` examples.
 
 Together, the reference documents describe every production class, function,
 property, and private helper.
