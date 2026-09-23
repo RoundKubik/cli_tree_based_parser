@@ -421,7 +421,7 @@ def test_symbolic_fallback_keeps_source_order_for_ambiguous_variations() -> None
     assert result.primary_match.trace[1].selected == (0,)
 
 
-def test_symbolic_fallback_deduplicates_to_first_identical_derivation() -> None:
+def test_symbolic_fallback_preserves_distinct_parameter_origins() -> None:
     optionals = " ".join(
         f"[ option-{index}-a | option-{index}-b ]" for index in range(6)
     )
@@ -434,7 +434,12 @@ def test_symbolic_fallback_deduplicates_to_first_identical_derivation() -> None:
     result = _parsed(parser, "cmd a b")
 
     assert len(parser.automaton.starts) == 1
-    assert result.status is MatchStatus.UNIQUE
+    assert result.status is MatchStatus.AMBIGUOUS
+    assert len(result.matches) == 2
+    assert (
+        result.matches[0].parameters[0].slot_id
+        != result.matches[1].parameters[0].slot_id
+    )
     assert result.primary_match.trace[0].selected == (0,)
     assert result.primary_match.trace[1].selected == (0,)
 
@@ -455,7 +460,12 @@ def test_symbolic_fallback_orders_nested_choices_parent_first() -> None:
     ]
 
     assert len(parser.automaton.starts) == 1
-    assert result.status is MatchStatus.UNIQUE
+    assert result.status is MatchStatus.AMBIGUOUS
+    assert len(result.matches) == 2
+    assert (
+        result.matches[0].parameters[0].slot_id
+        != result.matches[1].parameters[0].slot_id
+    )
     # Trace is stored child-first, but source ordering must choose outer branch
     # zero before considering that branch's nested selection.
     assert choices[:2] == [(1,), (0,)]

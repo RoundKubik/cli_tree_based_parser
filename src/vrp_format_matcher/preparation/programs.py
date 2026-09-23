@@ -5,7 +5,12 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from dataclasses import dataclass, replace
 
-from vrp_format_matcher.comparison.structure import Expression, canonical_key
+from vrp_format_matcher.comparison.structure import (
+    Expression,
+    canonical_key,
+    sequence_items,
+    unwrapped,
+)
 from vrp_format_matcher.documents.parameters import NamedParameter
 from vrp_format_matcher.models import (
     CaptureTag,
@@ -24,6 +29,7 @@ from vrp_parser_automaton.patterns import Group, Literal, Parameter, Repeat, Seq
 @dataclass(frozen=True)
 class ParameterSource:
     node: Parameter
+    repeat_ids: tuple[str, ...] = ()
 
     def tag(self) -> CaptureTag:
         declaration = self.node.declaration
@@ -34,6 +40,7 @@ class ParameterSource:
             declaration.type_id
             if isinstance(declaration, ParameterDeclaration)
             else None,
+            repeat_ids=self.repeat_ids,
         )
 
 
@@ -125,6 +132,7 @@ class SourceAlignment:
 
     document: Sequence
     device: Sequence
+    ordered: bool = False
 
     def bindings(self) -> tuple[ParameterCorrespondence, ...]:
         parameters: list[ParameterCorrespondence] = []
@@ -138,29 +146,55 @@ class SourceAlignment:
         document: Expression,
         device: Expression,
         parameters: list[ParameterCorrespondence],
+        document_repeats: tuple[str, ...] = (),
+        device_repeats: tuple[str, ...] = (),
     ) -> None:
+        document, device = unwrapped(document), unwrapped(device)
         if isinstance(device, Parameter):
             assert isinstance(document, Parameter)
             parameters.append(
                 ParameterCorrespondence(
-                    ParameterSource(document).tag(), ParameterSource(device).tag()
+                    ParameterSource(document, document_repeats).tag(),
+                    ParameterSource(device, device_repeats).tag(),
                 )
             )
         elif isinstance(device, Sequence):
             assert isinstance(document, Sequence)
-            for left, right in zip(document.items, device.items, strict=True):
-                self._align(left, right, parameters)
+            for left, right in zip(
+                sequence_items(document), sequence_items(device), strict=True
+            ):
+                self._align(left, right, parameters, document_repeats, device_repeats)
         elif isinstance(device, Repeat):
             assert isinstance(document, Repeat)
-            self._align(document.atom, device.atom, parameters)
+            self._align(
+                document.atom,
+                device.atom,
+                parameters,
+                (*document_repeats, f"r:{document.span.start}"),
+                (*device_repeats, f"r:{device.span.start}"),
+            )
         elif isinstance(device, Group):
             assert isinstance(document, Group)
-            by_shape: dict[tuple[object, ...], deque[Sequence]] = defaultdict(deque)
-            for branch in document.alternatives:
-                by_shape[canonical_key(branch)].append(branch)
-            for branch in device.alternatives:
+            for document_branch, device_branch in self._branches(document, device):
                 self._align(
-                    by_shape[canonical_key(branch)].popleft(), branch, parameters
+                    document_branch,
+                    device_branch,
+                    parameters,
+                    document_repeats,
+                    device_repeats,
                 )
         else:
             assert isinstance(document, Literal)
+
+    def _branches(
+        self, document: Group, device: Group
+    ) -> tuple[tuple[Sequence, Sequence], ...]:
+        if self.ordered:
+            return tuple(zip(document.alternatives, device.alternatives, strict=True))
+        by_shape: dict[tuple[object, ...], deque[Sequence]] = defaultdict(deque)
+        for branch in document.alternatives:
+            by_shape[canonical_key(branch)].append(branch)
+        return tuple(
+            (by_shape[canonical_key(branch)].popleft(), branch)
+            for branch in device.alternatives
+        )

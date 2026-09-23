@@ -18,6 +18,8 @@ class CapturedParameter:
     declaration: ParameterDeclaration
     token: ParameterToken
     normalized: object | None
+    slot_id: str = ""
+    iterations: tuple[tuple[str, int], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

@@ -52,6 +52,8 @@ class ParameterValue:
     raw: str
     normalized: Any
     span: TextSpan
+    slot_id: str = ""
+    iterations: tuple[tuple[str, int], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

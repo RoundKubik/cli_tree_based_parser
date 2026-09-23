@@ -36,6 +36,8 @@ def value_key(state: WalkState) -> tuple[object, ...]:
                 item.token.end,
                 item.token.raw,
                 repr(item.normalized),
+                item.slot_id,
+                item.iterations,
             )
             for item in state.parameters
         ),

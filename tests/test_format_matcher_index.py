@@ -7,15 +7,15 @@ import pytest
 from vrp_format_matcher import FormatMatcher, MappingLimits
 from vrp_format_matcher.documents.catalog import Documentation
 from vrp_format_matcher.preparation.candidates import CandidateIndex, PrefixCover
-from vrp_format_matcher.preparation.compiler import PairPreparation
+from vrp_format_matcher.preparation.pairs import PairPreparation
 from vrp_parser_automaton import CommandLineParser
 
 
 def test_large_catalog_compares_candidates_instead_of_cartesian_product(monkeypatch):
     parser = CommandLineParser(
-        {"commands": [f"display feature{i} INTEGER<1-100>" for i in range(1100)]}
+        {"commands": [f"feature{i} INTEGER<1-100>" for i in range(1100)]}
     )
-    documents = [{"format": f"display feature{i} <id>"} for i in range(900)]
+    documents = [{"format": f"feature{i} <id>"} for i in range(900)]
     visited = []
     original = PairPreparation.prepared
 
@@ -28,8 +28,8 @@ def test_large_catalog_compares_candidates_instead_of_cartesian_product(monkeypa
     prepared = FormatMatcher().compile(parser, documents, on_progress=progress.append)
     assert len(visited) == len(prepared.pairs) == 900
     assert all(pair.comparison.relation == "equivalent" for pair in prepared.pairs)
-    assert progress[0].documents_done == progress[0].pairs_prepared == 0
-    assert progress[-1].documents_done == progress[-1].documents_total == 900
+    assert progress[0].devices_done == progress[0].pairs_prepared == 0
+    assert progress[-1].devices_done == progress[-1].devices_total == 200
     assert progress[-1].pairs_prepared == 900
 
 
@@ -59,12 +59,18 @@ def test_filter_preserves_all_intersections_found_by_exhaustive_comparison():
     parser = CommandLineParser({"commands": patterns})
     documents = [{"format": p.replace("INTEGER<1-100>", "<id>")} for p in patterns]
     matcher = FormatMatcher()
-    exhaustive = matcher.compile(parser, documents, exhaustive=True)
-    indexed = matcher.compile(parser, documents, mode="all")
-    retained = {(p.document_id, p.pattern_id): p for p in indexed.pairs}
-    for pair in exhaustive.pairs:
-        if pair.comparison.common_example is not None:
-            assert retained[(pair.document_id, pair.pattern_id)] == pair
+    index = CandidateIndex(parser.automaton.patterns)
+    for document in Documentation(documents).documents():
+        retained = {p.original for p in index.candidates(document.ast)}
+        for pattern in patterns:
+            relation = matcher.compare(document.format, pattern).relation
+            if relation in {
+                "equivalent",
+                "document_subset",
+                "device_subset",
+                "overlap",
+            }:
+                assert pattern in retained
 
 
 @pytest.mark.parametrize("size", [64, 65, 100])
@@ -107,7 +113,7 @@ def test_index_depth_is_a_conservative_cutoff():
     parser = CommandLineParser({"commands": [prefix + "left", prefix + "right"]})
     document = next(Documentation([{"format": prefix + "right"}]).documents())
     assert CandidateIndex(parser.automaton.patterns).candidates(document.ast) == (
-        parser.automaton.patterns
+        parser.automaton.patterns[1],
     )
 
 
@@ -115,7 +121,7 @@ def test_excluded_formats_create_no_artifact_or_runtime_entries():
     parser = CommandLineParser({"commands": ["a INTEGER<1-100>", "b INTEGER<1-100>"]})
     prepared = FormatMatcher().compile(parser, [{"format": "c <id>"}])
     assert prepared.pairs == ()
-    assert prepared.documents[0].status == "unmatched"
+    assert all(device.status == "unmatched" for device in prepared.devices.values())
     assert FormatMatcher().compare("c <id>", "a INTEGER<1-100>").relation == "disjoint"
 
 
@@ -126,6 +132,3 @@ def test_diverged_languages_stop_after_difference_witnesses(prefix):
         prefix + "documentation " + wide, prefix + "device " + wide
     )
     assert comparison.relation == ("prefix_only" if prefix else "disjoint")
-    assert comparison.common_example is None
-    assert comparison.document_only_example is not None
-    assert comparison.device_only_example is not None

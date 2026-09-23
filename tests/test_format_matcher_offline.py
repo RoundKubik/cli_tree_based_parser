@@ -33,15 +33,17 @@ def test_offline_mapping_does_not_read_or_serialize_predicates():
     assert binding.device.declaration == "INTEGER<1-4096>"
     saved = asdict(prepared)
     assert "version" not in saved
-    assert saved["pairs"][0]["bindings"][0]["document"]["name"] == "vlan-id"
-    assert "creates" not in saved["pairs"][0]
-    assert "requires" not in saved["pairs"][0]
+    pair_json = saved["devices"][pair.pattern_id]["mappings"][0]
+    assert pair_json["bindings"][0]["document"]["name"] == "vlan-id"
+    assert "creates" not in pair_json
+    assert "requires" not in pair_json
     assert not hasattr(prepared, "evaluate")
     assert not hasattr(prepared, "from_json")
 
 
 def test_same_ambiguous_structures_never_execute_language_product(monkeypatch):
     from vrp_parser_automaton.automata.building import AutomatonBuilder
+
     def forbidden(*args, **kwargs):
         raise AssertionError("identical source structures must not enumerate languages")
 
@@ -54,7 +56,9 @@ def test_same_ambiguous_structures_never_execute_language_product(monkeypatch):
         "rule [ <id> ] { permit | deny } [ source <src> | target <dst> ] *",
     ]
     prepared = FormatMatcher(MappingLimits(analysis_steps=1)).compile_formats(
-        documents, [{"format": f} for f in documents], target_syntax="document"
+        documents,
+        [{"format": f} for f in documents],
+        target_syntax="document",
     )
     assert len(prepared.pairs) == len(documents)
     assert all(p.status == "equivalent" for p in prepared.pairs)
@@ -66,14 +70,8 @@ def test_same_ambiguous_structures_never_execute_language_product(monkeypatch):
 def test_full_shape_index_handles_a_catalog_with_identical_eight_token_prefixes(
     monkeypatch,
 ):
-    from vrp_format_matcher.preparation.candidates import CandidateIndex
-
-    def forbidden(*args, **kwargs):
-        raise AssertionError("shape matches must bypass broad prefix candidates")
-
-    monkeypatch.setattr(CandidateIndex, "candidates", forbidden)
     prefix = "one two three four five six seven eight "
-    devices = [prefix + f"feature{i} [ INTEGER<1-10> ]" for i in range(1100)]
+    devices = [prefix + f"feature{i} [ INTEGER<1-10> ]" for i in range(900)]
     documents = [{"format": prefix + f"feature{i} [ <id> ]"} for i in range(900)]
     prepared = FormatMatcher().compile_formats(devices, documents)
     assert len(prepared.pairs) == 900
@@ -82,15 +80,17 @@ def test_full_shape_index_handles_a_catalog_with_identical_eight_token_prefixes(
     )
 
 
-def test_best_and_all_modes_have_explicit_different_scopes():
-    parser = CommandLineParser({"commands": ["c all", "c { all | other }"]})
+def test_each_device_keeps_only_its_first_successful_stage():
+    devices = ["c all", "c { all | other }"]
+    documents = [{"format": "c all"}, {"format": "c { other | all }"}]
     matcher = FormatMatcher()
-    best = matcher.compile(parser, [{"format": "c all"}])
-    all_pairs = matcher.compile(parser, [{"format": "c all"}], mode="all")
-    assert [p.status for p in best.pairs] == ["equivalent"]
-    assert [p.status for p in all_pairs.pairs] == ["equivalent", "document_subset"]
-    fallback = matcher.compile_formats(["c { all | other }"], [{"format": "c all"}])
-    assert fallback.pairs[0].status == "document_subset"
+    result = matcher.compile_formats(devices, documents)
+    assert [p.stage for p in result.pairs] == ["exact", "reordered"]
+    assert [p.status for p in result.pairs] == ["equivalent", "equivalent"]
+    # An exact match for another device must never steal this device's document.
+    fallback = matcher.compile_formats(devices, [{"format": "c all"}])
+    assert [p.status for p in fallback.pairs] == ["equivalent", "document_subset"]
+    assert [p.stage for p in fallback.pairs] == ["exact", "intersection"]
 
 
 def test_duplicate_canonical_targets_are_all_preserved():
@@ -100,7 +100,7 @@ def test_duplicate_canonical_targets_are_all_preserved():
         target_syntax="document",
     )
     assert len(prepared.pairs) == 3
-    assert len(set(prepared.documents[0].pattern_ids)) == 3
+    assert len(prepared.devices) == 3
     assert [p.bindings[0].device.name for p in prepared.pairs] == ["x", "y", "x"]
 
 
@@ -139,14 +139,13 @@ def test_document_target_does_not_reinterpret_date_keywords_as_device_parameters
     assert pair.status == "equivalent" and pair.bindings == ()
 
 
-def test_unmatched_and_unknown_documents_have_explicit_statuses():
+def test_unmatched_and_unknown_devices_have_explicit_statuses():
     result = FormatMatcher(MappingLimits(analysis_steps=1)).compile_formats(
-        ["c { INTEGER<1-100> | all }"],
-        [{"format": "c <id>"}, {"format": "unrelated <id>"}],
+        ["c { INTEGER<1-100> | all }", "unrelated INTEGER<1-100>"],
+        [{"format": "c <id>"}],
     )
-    assert [d.status for d in result.documents] == ["unknown", "unmatched"]
+    assert [d.status for d in result.devices.values()] == ["unknown", "unmatched"]
     assert result.pairs[0].status == "unknown"
-    assert "operation limit" in result.pairs[0].comparison.reason
     assert result.pairs[0].bindings == ()
 
 
@@ -176,5 +175,5 @@ def test_corpus_reader_reports_invalid_formats_and_benchmark_checks_all_slots(tm
     )
     report = json.loads(completed.stdout)
     assert report["verified_documents"] == 4
-    assert report["document_statuses"] == {"matched": 4}
+    assert report["device_statuses"] == {"matched": 4}
     assert "INVALID page:5" in completed.stderr

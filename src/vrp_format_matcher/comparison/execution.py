@@ -27,13 +27,20 @@ class StructuralConfiguration:
         frames = tuple(self._frame(frame) for frame in self.current.frames)
         return Configuration(
             self.current.instruction,
-            WalkState(position=self.current.state.position),
+            WalkState(),
             frames,
         )
 
     def _frame(self, frame: Frame) -> Frame:
         selection = tuple(sorted(frame.selected)) if frame.kind == "set" else (0,)
-        return replace(frame, selected=selection, order_start=0)
+        return replace(
+            frame,
+            selected=selection,
+            order_start=0,
+            start_position=0
+            if frame.start_position == self.current.state.position
+            else -1,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,7 +91,7 @@ class ProgramExecution:
             if node.kind == "accept":
                 accepts = True
             elif node.kind == "atom":
-                steps[self._step(current)] = None
+                steps[self._step(current, budget)] = None
             else:
                 for successor in self._flow.follow(node, current):
                     if budget is not None:
@@ -100,7 +107,9 @@ class ProgramExecution:
                     pending.append(following)
         return Frontier(accepts, tuple(steps))
 
-    def _step(self, current: Configuration) -> ProgramStep:
+    def _step(
+        self, current: Configuration, budget: AnalysisBudget | None
+    ) -> ProgramStep:
         node = self.program.instructions[current.instruction]
         label = (
             "K:" + ascii_lower(node.atom.value)
@@ -109,13 +118,41 @@ class ProgramExecution:
         )
         slot = self.program.slots[current.instruction]
         state = WalkState(position=current.state.position + 1)
-        target = StructuralConfiguration(current.at(node.target, state)).normalized()
+        target = self._settled(current.at(node.target, state), budget)
         return ProgramStep(
             target,
             label,
             self._tag(slot.document, current, document=True),
             self._tag(slot.device, current, document=False),
         )
+
+    def _settled(
+        self,
+        current: Configuration,
+        budget: AnalysisBudget | None,
+    ) -> Configuration:
+        """Close finished constructs before using a configuration as a graph key.
+
+        A consumed alternative's local choice frame cannot affect its suffix.
+        Keeping it until the next frontier duplicates equivalent product states.
+        """
+        current = StructuralConfiguration(current).normalized()
+        while self.program.instructions[current.instruction].kind in {
+            "choice_close",
+            "set_commit",
+            "repeat_commit",
+            "set_enter",
+            "repeat_enter",
+        }:
+            if budget is not None:
+                budget.spend()
+            successors = self._flow.follow(
+                self.program.instructions[current.instruction], current
+            )
+            if not successors:
+                break
+            current = StructuralConfiguration(successors[0]).normalized()
+        return current
 
     def _tag(
         self, tag: CaptureTag | None, current: Configuration, *, document: bool
@@ -129,4 +166,8 @@ class ProgramExecution:
                 repeat_id = binding.document if document else binding.device
                 if repeat_id is not None:
                     iterations.append((repeat_id, frame.count))
-        return replace(tag, iterations=tag.iterations + tuple(iterations))
+        return replace(
+            tag,
+            iterations=tag.iterations + tuple(iterations),
+            repeat_ids=tuple(repeat_id for repeat_id, _ in iterations),
+        )

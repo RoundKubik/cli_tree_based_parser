@@ -3,7 +3,7 @@
 from .models import (
     CaptureTag,
     Comparison,
-    DocumentMatch,
+    DeviceMatch,
     FormatError,
     MappingLimitExceeded,
     MappingLimits,
@@ -21,7 +21,7 @@ __all__ = [
     "MappingLimits",
     "CaptureTag",
     "Comparison",
-    "DocumentMatch",
+    "DeviceMatch",
     "ParameterCorrespondence",
     "PreparationProgress",
     "PreparedMapping",

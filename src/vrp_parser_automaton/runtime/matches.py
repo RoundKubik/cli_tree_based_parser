@@ -35,6 +35,8 @@ class PatternMatchFactory:
                 declaration=item.declaration.source,
                 raw=item.token.raw,
                 normalized=item.normalized,
+                slot_id=item.slot_id,
+                iterations=item.iterations,
                 span=TextSpan(
                     item.token.start + span_offset,
                     item.token.end + span_offset,
@@ -98,7 +100,15 @@ class PatternMatchSet:
         return tuple(unique.values())
 
     def equivalent(self, matches: tuple[PatternMatch, ...]) -> bool:
-        return len({self._signature(item) for item in matches}) == 1
+        origins: dict[str, set[tuple[object, ...]]] = {}
+        for match in matches:
+            origins.setdefault(match.pattern_id, set()).add(
+                tuple((value.slot_id, value.iterations) for value in match.parameters)
+            )
+        return (
+            all(len(values) == 1 for values in origins.values())
+            and len({self._signature(item) for item in matches}) == 1
+        )
 
     @staticmethod
     def _identity(match: PatternMatch) -> tuple[object, ...]:
@@ -106,7 +116,13 @@ class PatternMatchSet:
             match.pattern_id,
             ascii_lower(match.variation),
             tuple(
-                (value.type_id, value.declaration, value.raw)
+                (
+                    value.type_id,
+                    value.declaration,
+                    value.raw,
+                    value.slot_id,
+                    value.iterations,
+                )
                 for value in match.parameters
             ),
         )

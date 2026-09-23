@@ -123,12 +123,13 @@ class PrefixNode:
 
 
 class CandidateIndex:
-    """Build once for the device catalog; query without scanning the catalog."""
+    """Index documentation prefixes and symbols; query with a device AST."""
 
     def __init__(self, sources: tuple[PatternSource, ...]) -> None:
         self._sources = sources
         self._cover = PrefixCover()
         self._root = PrefixNode()
+        self._symbols = tuple(Symbols.of(source.ast) for source in sources)
         for index, source in enumerate(sources):
             for prefix in self._cover.prefixes(source.ast):
                 self._root.insert(prefix.symbols, index)
@@ -137,4 +138,71 @@ class CandidateIndex:
         indices: set[int] = set()
         for prefix in self._cover.prefixes(expression):
             indices.update(self._root.compatible(prefix.symbols))
+        symbols = Symbols.of(expression)
+        return tuple(
+            self._sources[index]
+            for index in sorted(indices)
+            if symbols.compatible(self._symbols[index])
+        )
+
+
+@dataclass(frozen=True)
+class Symbols:
+    """Necessary conditions for an intersection, including keywords past the prefix."""
+
+    possible: frozenset[str]
+    required: frozenset[str]
+
+    def compatible(self, other: Symbols) -> bool:
+        return self.required <= other.possible and other.required <= self.possible
+
+    @classmethod
+    def of(cls, node: Expression) -> Symbols:
+        if isinstance(node, (Literal, Parameter)):
+            value = "K:" + ascii_lower(node.value) if isinstance(node, Literal) else "P"
+            return cls(frozenset({value}), frozenset({value}))
+        if isinstance(node, Repeat):
+            if node.maximum == 0:
+                return cls(frozenset(), frozenset())
+            child = cls.of(node.atom)
+            return cls(child.possible, child.required if node.minimum else frozenset())
+        children = tuple(
+            cls.of(child)
+            for child in (
+                node.items if isinstance(node, Sequence) else node.alternatives
+            )
+        )
+        possible = frozenset().union(*(child.possible for child in children))
+        if isinstance(node, Sequence):
+            required = frozenset().union(*(child.required for child in children))
+        elif node.mode in {GroupMode.OPTIONAL_ONE, GroupMode.OPTIONAL_SET}:
+            required = frozenset()
+        else:
+            required = children[0].required.intersection(
+                *(c.required for c in children[1:])
+            )
+        return cls(possible, required)
+
+
+class PrefixCandidateIndex:
+    """Index common nonempty beginnings, even when later keywords diverge."""
+
+    def __init__(self, sources: tuple[PatternSource, ...]) -> None:
+        self._sources = sources
+        self._cover = PrefixCover(depth=1)
+        self._by_first: dict[str, set[int]] = {}
+        self._broad: set[int] = set()
+        for index, source in enumerate(sources):
+            for prefix in self._cover.prefixes(source.ast):
+                if prefix.symbols:
+                    self._by_first.setdefault(prefix.symbols[0], set()).add(index)
+                else:
+                    self._broad.add(index)
+
+    def candidates(self, expression: Expression) -> tuple[PatternSource, ...]:
+        indices = set(self._broad)
+        for prefix in self._cover.prefixes(expression):
+            if not prefix.symbols:
+                return self._sources
+            indices.update(self._by_first.get(prefix.symbols[0], ()))
         return tuple(self._sources[index] for index in sorted(indices))

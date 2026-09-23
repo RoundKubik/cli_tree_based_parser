@@ -13,9 +13,7 @@ from vrp_parser_automaton import CommandLineParser
 
 def prepare(doc, device, limits=None):
     parser = CommandLineParser({"commands": [device]})
-    return parser, FormatMatcher(limits).compile(
-        parser, [{"format": doc}], exhaustive=True
-    )
+    return parser, FormatMatcher(limits).compile(parser, [{"format": doc}])
 
 
 @pytest.mark.parametrize(
@@ -40,41 +38,37 @@ def prepare(doc, device, limits=None):
 def test_language_relations(
     doc: str, device: str, relation: str, identical: bool
 ) -> None:
-    _, prepared = prepare(doc, device)
-    result = prepared.pairs[0].comparison
+    result = FormatMatcher().compare(doc, device)
     assert result.relation == relation
     assert result.structurally_identical is identical
 
 
-def test_language_difference_witnesses() -> None:
+def test_comparison_contains_no_diagnostic_examples() -> None:
+    from dataclasses import asdict
+
     _, prepared = prepare("c { a | b }", "c { b | d }")
-    comparison = prepared.pairs[0].comparison
-    assert comparison.common_example == ("c", "b")
-    assert comparison.document_only_example == ("c", "a")
-    assert comparison.device_only_example == ("c", "d")
+    assert asdict(prepared.pairs[0].comparison) == {
+        "relation": "overlap",
+        "structurally_identical": False,
+    }
 
 
 def test_empty_language_is_a_subset_even_without_a_common_word() -> None:
     # A required set cannot count a zero-width repetition as a selected item.
-    _, prepared = prepare("c { <id> &<0-0> } *", "c a")
-    comparison = prepared.pairs[0].comparison
+    comparison = FormatMatcher().compare("c { <id> &<0-0> } *", "c a")
     assert comparison.relation == "document_subset"
-    assert comparison.common_example is None
-    assert comparison.document_only_example is None
-    assert comparison.device_only_example == ("c", "a")
 
 
-def test_lazy_intersection_avoids_epsilon_cartesian_product() -> None:
-    # Different ASTs prevent the structural shortcut. Eight alternatives exceeded
-    # the previous 20,000-state budget even without parameters.
+def test_redundant_group_avoids_language_expansion() -> None:
+    # A redundant wrapper must not cause exponential set traversal.
     alternatives = " | ".join(f"k{i}" for i in range(8))
     parser, prepared = prepare(
         f"c {{ {alternatives} }} *", f"c {{ {{ {alternatives} }} * }}"
     )
     pair = prepared.pairs[0]
     assert pair.comparison.relation == "equivalent"
-    assert pair.strategy == "intersection"
-    assert pair.automaton is not None and len(pair.automaton.edges) < 3_000
+    assert pair.binding_mode == "structural"
+    assert pair.automaton is None
     assert pair.bindings == ()
 
 
@@ -90,13 +84,16 @@ def test_public_format_matcher_compares_without_metadata() -> None:
     "limits",
     [
         MappingLimits(automaton_states=3),
-        MappingLimits(comparison_states=1),
         MappingLimits(product_states=1),
         MappingLimits(analysis_steps=1),
     ],
 )
 def test_fallback_limits_return_unknown_without_partial_correspondences(limits):
-    _, result = prepare("c { <id> }", "c INTEGER<1-100>", limits)
+    _, result = prepare(
+        "c { <id> | <first> to <last> }",
+        "c INTEGER<1-100> [ to INTEGER<1-100> ]",
+        limits,
+    )
     assert result.pairs[0].status == "unknown"
     assert result.pairs[0].bindings == ()
 
@@ -112,12 +109,13 @@ def test_partial_mapping_only_contains_parameters_on_complete_common_paths():
     assert [b.document.name for b in pair.bindings] == ["id"]
 
 
-def test_prefix_only_has_no_parameter_mapping():
+def test_prefix_fallback_maps_only_parameters_before_divergence():
     _, result = prepare("c <id> doc", "c INTEGER<1-100> device")
     pair = result.pairs[0]
-    assert pair.status == "prefix_only"
-    assert pair.comparison.common_prefix == ("c", "<PARAM>")
-    assert pair.bindings == () and pair.automaton is None
+    assert pair.status == "prefix_match"
+    assert [b.document.name for b in pair.bindings] == ["id"]
+    assert pair.binding_mode == "prefix_dependent"
+    assert pair.automaton is not None
 
 
 def test_different_shapes_keep_conditional_slot_correspondences():
@@ -140,7 +138,7 @@ def test_reordered_sets_and_nested_repeats_map_without_expanding():
         MappingLimits(analysis_steps=1),
     )
     pair = result.pairs[0]
-    assert pair.status == "equivalent" and pair.strategy == "structural"
+    assert pair.status == "equivalent" and pair.binding_mode == "structural"
     assert pair.automaton is None
     assert [b.document.name for b in pair.bindings] == ["x", "y"]
     assert int(pair.bindings[0].device.slot_id[2:]) > int(
@@ -167,8 +165,9 @@ def test_manual_script_saves_plain_offline_mapping(tmp_path):
     assert "RELATION: equivalent" in result.stdout
     assert "PARAMETER MAPPING:" in result.stdout
     saved = json.loads(output.read_text())
-    assert saved["pairs"][0]["comparison"]["relation"] == "equivalent"
-    assert [b["document"]["name"] for b in saved["pairs"][0]["bindings"]] == [
+    pair = next(iter(saved["devices"].values()))["mappings"][0]
+    assert pair["status"] == "equivalent"
+    assert [b["document"]["name"] for b in pair["bindings"]] == [
         "a",
         "b",
         "c",

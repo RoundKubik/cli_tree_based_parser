@@ -81,7 +81,9 @@ class _CompilationWorkspace:
             minimum=node.minimum,
             maximum=node.maximum,
         )
-        return self.add(Instruction("repeat_enter", path, loop))
+        return self.add(
+            Instruction("repeat_enter", path, loop, source_id=f"r:{node.span.start}")
+        )
 
     def group(self, node: Group, target: int, path: str) -> int:
         is_set = node.mode in {GroupMode.REQUIRED_SET, GroupMode.OPTIONAL_SET}

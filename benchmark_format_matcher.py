@@ -127,9 +127,9 @@ def main() -> None:
         expected[document.document_id] = (pattern, len(slots))
 
     def progress(event: PreparationProgress) -> None:
-        if event.documents_done % 1000 == 0:
+        if event.devices_done % 1000 == 0 or event.devices_done == event.devices_total:
             print(
-                f"Documents {event.documents_done}/{event.documents_total}; "
+                f"{event.stage}: devices {event.devices_done}/{event.devices_total}; "
                 f"pairs {event.pairs_prepared}",
                 file=sys.stderr,
                 flush=True,
@@ -174,7 +174,8 @@ def main() -> None:
         "pairs": len(prepared.pairs),
         "parameter_links": links,
         "verified_documents": len(verified),
-        "document_statuses": dict(Counter(d.status for d in prepared.documents)),
+        "device_statuses": dict(Counter(d.status for d in prepared.devices.values())),
+        "stages": dict(Counter(d.stage for d in prepared.devices.values())),
         "pair_statuses": dict(Counter(p.status for p in prepared.pairs)),
     }
     if args.save:

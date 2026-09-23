@@ -20,6 +20,7 @@ class Frame:
     selected: tuple[int, ...] = ()
     used: int = 0
     count: int = 0
+    source_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +37,14 @@ class Configuration:
             (frame.path, frame.count) for frame in self.frames if frame.kind == "repeat"
         )
         return origin + "".join(f"@{path}:{index}" for path, index in repeats)
+
+    @property
+    def iterations(self) -> tuple[tuple[str, int], ...]:
+        return tuple(
+            (frame.source_id, frame.count)
+            for frame in self.frames
+            if frame.kind == "repeat"
+        )
 
     def opened(self, target: int, frame: Frame) -> Configuration:
         return Configuration(target, self.state, self.frames + (frame,))
@@ -141,7 +150,12 @@ class RepeatTransition:
     current: Configuration
 
     def enter(self) -> tuple[Configuration, ...]:
-        frame = Frame("repeat", self.node.path, len(self.current.state.source_order))
+        frame = Frame(
+            "repeat",
+            self.node.path,
+            len(self.current.state.source_order),
+            source_id=self.node.source_id,
+        )
         return (self.current.opened(self.node.target, frame),)
 
     def advance(self) -> tuple[Configuration, ...]:

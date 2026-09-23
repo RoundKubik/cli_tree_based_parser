@@ -80,5 +80,6 @@ class CommandRecognition:
                 self.command,
                 self.diagnostics,
                 path=current.path(node.path),
+                iterations=current.iterations,
             )
         return tuple(current.at(node.target, result) for result in results)

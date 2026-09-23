@@ -33,6 +33,7 @@ class Instruction:
     minimum: int = 0
     maximum: int = 0
     pattern_index: int = -1
+    source_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)

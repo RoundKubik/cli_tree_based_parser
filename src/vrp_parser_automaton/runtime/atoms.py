@@ -90,6 +90,7 @@ class ParameterTransition:
         diagnostics: MatchDiagnostics,
         *,
         path: str,
+        iterations: tuple[tuple[str, int], ...] = (),
     ) -> Iterator[WalkState]:
         declaration = expression.declaration
         if not isinstance(declaration, ParameterDeclaration):
@@ -115,7 +116,13 @@ class ParameterTransition:
 
         if result.status is ParameterStatus.VALID:
             parameters = state.parameters + (
-                CapturedParameter(declaration, token, result.normalized),
+                CapturedParameter(
+                    declaration,
+                    token,
+                    result.normalized,
+                    f"p:{expression.span.start}",
+                    iterations,
+                ),
             )
             rejected = state.rejected
         else:
@@ -160,6 +167,7 @@ class ParameterTransition:
         normalized: object | None,
         state: WalkState,
         path: str,
+        iterations: tuple[tuple[str, int], ...] = (),
     ) -> tuple[VariationStep, ...]:
         if (
             self._parameter_types.family_of(declaration.type_id)

@@ -8,7 +8,7 @@ from vrp_parser_automaton.automata.model import Instruction
 
 
 class FormatError(ValueError):
-    """Invalid source formats or incompatible mapping artifacts."""
+    """Invalid source formats or analysis settings."""
 
 
 class MappingLimitExceeded(FormatError):
@@ -17,17 +17,10 @@ class MappingLimitExceeded(FormatError):
 
 @dataclass(frozen=True)
 class PreparationProgress:
-    documents_done: int
-    documents_total: int
+    devices_done: int
+    devices_total: int
     pairs_prepared: int
-
-
-@dataclass(frozen=True)
-class DocumentMatch:
-    document_id: str
-    document_format: str
-    status: str  # matched, unmatched, unknown
-    pattern_ids: tuple[str, ...] = ()
+    stage: str = "exact"
 
 
 @dataclass(frozen=True)
@@ -71,6 +64,7 @@ class CaptureTag:
     declaration: str
     type_id: str | None
     iterations: tuple[tuple[str, int], ...] = ()
+    repeat_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -115,11 +109,6 @@ class PatternProgram:
 class Comparison:
     relation: str
     structurally_identical: bool = False
-    common_example: tuple[str, ...] | None = None
-    document_only_example: tuple[str, ...] | None = None
-    device_only_example: tuple[str, ...] | None = None
-    common_prefix: tuple[str, ...] = ()
-    reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -134,23 +123,32 @@ class PreparedPair:
     document_format: str
     pattern_id: str
     device_format: str
-    comparison: Comparison
+    status: str
     bindings: tuple[ParameterCorrespondence, ...]
-    strategy: str
+    binding_mode: str
+    structurally_identical: bool = False
     automaton: Automaton | None = None
+    stage: str = "intersection"
 
     @property
-    def status(self) -> str:
-        return self.comparison.relation
+    def comparison(self) -> Comparison:
+        return Comparison(self.status, self.structurally_identical)
 
-    @property
-    def binding_mode(self) -> str:
-        if self.strategy == "structural":
-            return "structural"
-        return "path_dependent" if self.automaton is not None else "unavailable"
+
+@dataclass(frozen=True)
+class DeviceMatch:
+    device_format: str
+    status: str  # matched, partial, unmatched, unknown
+    mappings: tuple[PreparedPair, ...] = ()
+    stage: str | None = None
 
 
 @dataclass(frozen=True)
 class PreparedMapping:
-    pairs: tuple[PreparedPair, ...]
-    documents: tuple[DocumentMatch, ...]
+    devices: dict[str, DeviceMatch]
+
+    @property
+    def pairs(self) -> tuple[PreparedPair, ...]:
+        return tuple(
+            pair for device in self.devices.values() for pair in device.mappings
+        )

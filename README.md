@@ -27,7 +27,7 @@ The detailed documentation is split into a short navigation tree:
   `vrp_parser_automaton` package with the same parsing facade and compact AST compilation;
   try `python3.13 manual_automaton_test.py`.
 - [format matcher for the automaton parser](docs/reference/automaton-format-matcher.md)
-  — offline parameter correspondences and matching statuses, with a full-shape index;
+  — automatic four-pass device → documentation matching, grouped JSON and parameter slot IDs;
   try `python3.13 manual_format_matcher_test.py` or benchmark a real CLIs corpus
   using `python3.13 benchmark_format_matcher.py --corpus /path/to/cmd_corpus`.
 - [offline documentation/device format mapping](docs/reference/metadata-mapping.md)

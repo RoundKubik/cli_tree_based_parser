@@ -17,10 +17,6 @@ from vrp_format_matcher.models import (
 from vrp_parser_automaton.runtime.execution import Configuration
 
 
-def display(word: tuple[str, ...]) -> tuple[str, ...]:
-    return tuple("<PARAM>" if label == "P" else label[2:] for label in word)
-
-
 @dataclass(frozen=True)
 class LanguageStates:
     execution: ProgramExecution
@@ -48,49 +44,29 @@ def compare(
     device: PatternProgram,
     *,
     maximum_states: int,
-    structurally_identical: bool = False,
-    document_execution: ProgramExecution | None = None,
     budget: AnalysisBudget | None = None,
 ) -> Comparison:
-    left_language = LanguageStates(
-        document_execution or ProgramExecution(document, maximum_states), budget
-    )
+    left_language = LanguageStates(ProgramExecution(document, maximum_states), budget)
     right_language = LanguageStates(ProgramExecution(device, maximum_states), budget)
     start = (
         frozenset({left_language.execution.start}),
         frozenset({right_language.execution.start}),
     )
-    pending: deque[
-        tuple[
-            tuple[frozenset[Configuration], frozenset[Configuration]], tuple[str, ...]
-        ]
-    ] = deque([(start, ())])
+    pending = deque([start])
     visited = {start}
-    common = document_only = device_only = None
-    prefix: tuple[str, ...] = ()
+    common = document_only = device_only = prefix = False
     while pending:
-        (left, right), word = pending.popleft()
-        # Once one side is dead it can never rejoin the shared language. Only
-        # one accepted witness from that side is needed to classify the pair.
-        if not right and document_only is not None:
-            continue
-        if not left and device_only is not None:
+        left, right = pending.popleft()
+        if (not right and document_only) or (not left and device_only):
             continue
         accepts_left = left_language.accepts(left)
         accepts_right = right_language.accepts(right)
-        if accepts_left and accepts_right and common is None:
-            common = display(word)
-        elif accepts_left and not accepts_right and document_only is None:
-            document_only = display(word)
-        elif accepts_right and not accepts_left and device_only is None:
-            device_only = display(word)
-        if left and right and len(word) > len(prefix):
-            prefix = display(word)
-        if common is not None and document_only is not None and device_only is not None:
-            break  # All three witnesses prove overlap; no exhaustive traversal needed.
-        if (not right and document_only is not None) or (
-            not left and device_only is not None
-        ):
+        common |= accepts_left and accepts_right
+        document_only |= accepts_left and not accepts_right
+        device_only |= accepts_right and not accepts_left
+        if common and document_only and device_only:
+            break
+        if (not right and document_only) or (not left and device_only):
             continue
         left_moves, right_moves = left_language.moves(left), right_language.moves(right)
         for label in sorted(left_moves.keys() | right_moves.keys()):
@@ -98,25 +74,24 @@ def compare(
                 left_moves.get(label, frozenset()),
                 right_moves.get(label, frozenset()),
             )
+            prefix |= bool(pair[0] and pair[1])
             if pair in visited:
                 continue
             if len(visited) >= maximum_states:
                 raise MappingLimitExceeded("language comparison state limit exceeded")
             visited.add(pair)
-            pending.append((pair, (*word, label)))
-    if document_only is None and device_only is None:
+            pending.append(pair)
+    if not document_only and not device_only:
         relation = "equivalent"
-    elif document_only is None:
+    elif not document_only:
         relation = "document_subset"
-    elif device_only is None:
+    elif not device_only:
         relation = "device_subset"
-    elif common is None:
+    elif not common:
         relation = "prefix_only" if prefix else "disjoint"
     else:
         relation = "overlap"
-    return Comparison(
-        relation, structurally_identical, common, document_only, device_only, prefix
-    )
+    return Comparison(relation)
 
 
 def intersection(
@@ -125,6 +100,7 @@ def intersection(
     *,
     maximum_states: int,
     budget: AnalysisBudget | None = None,
+    prefixes: bool = False,
 ) -> Automaton:
     """Pair consuming transitions directly, avoiding epsilon Cartesian products."""
     left_execution = ProgramExecution(document, maximum_states)
@@ -149,7 +125,7 @@ def intersection(
         arcs = edges[ids[(left, right)]]
         left_frontier = left_execution.frontier(left, budget)
         right_frontier = right_execution.frontier(right, budget)
-        if left_frontier.accepts and right_frontier.accepts:
+        if not prefixes and left_frontier.accepts and right_frontier.accepts:
             arcs.append(Arc(1))
         right_labels: dict[str, list[ProgramStep]] = {}
         for step in right_frontier.steps:
@@ -166,6 +142,11 @@ def intersection(
                         second.device,
                     )
                 )
+        # Every nonempty synchronized beginning is a valid unfinished trace.
+        # A shorter command may diverge here even if another command can keep
+        # following shared transitions (for example, a bounded repetition).
+        if prefixes and (left, right) != start:
+            arcs.append(Arc(1))
     return trim(Automaton(0, 1, tuple(tuple(dict.fromkeys(arcs)) for arcs in edges)))
 
 
