@@ -1,40 +1,29 @@
-"""Offline structural format matching and execution of prepared metadata."""
-
-from vrp_format_matcher.preparation.compiler import FormatMatcher, MetadataCompiler
-from vrp_format_matcher.runtime.prepared import PreparedMetadata
+"""Offline format and parameter matching."""
 
 from .models import (
-    BindingAlternative,
+    CaptureTag,
     Comparison,
+    DocumentMatch,
+    FormatError,
     MappingLimitExceeded,
     MappingLimits,
-    MetadataApplication,
-    MetadataEffect,
-    MetadataError,
-    MetadataReport,
-    ParameterBinding,
+    ParameterCorrespondence,
     PreparationProgress,
+    PreparedMapping,
     PreparedPair,
-    RuleEvaluation,
 )
+from .preparation.compiler import FormatMatcher
 
 __all__ = [
     "FormatMatcher",
-    "PreparedMapping",
-    "BindingAlternative",
-    "Comparison",
+    "FormatError",
     "MappingLimitExceeded",
     "MappingLimits",
-    "MetadataApplication",
-    "MetadataCompiler",
-    "MetadataEffect",
-    "MetadataError",
-    "MetadataReport",
-    "ParameterBinding",
+    "CaptureTag",
+    "Comparison",
+    "DocumentMatch",
+    "ParameterCorrespondence",
     "PreparationProgress",
-    "PreparedMetadata",
+    "PreparedMapping",
     "PreparedPair",
-    "RuleEvaluation",
 ]
-
-PreparedMapping = PreparedMetadata

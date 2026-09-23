@@ -1,4 +1,4 @@
-"""Canonical shape and source correspondence for unambiguous equivalent ASTs."""
+"""Canonical AST shape, independent of parameter names and alternative order."""
 
 from __future__ import annotations
 

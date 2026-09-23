@@ -3,32 +3,34 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cached_property
-from typing import Any
+from typing import Any, Literal
 
-from vrp_format_matcher.comparison.determinism import PredictiveExpression
-from vrp_format_matcher.comparison.languages import compare, display, intersection
+from vrp_format_matcher.comparison.execution import ProgramExecution
+from vrp_format_matcher.comparison.languages import compare, intersection
 from vrp_format_matcher.comparison.structure import canonical_key
-from vrp_format_matcher.comparison.witnesses import ProgramWords
-from vrp_format_matcher.documents.catalog import Documentation, MetadataDocument
+from vrp_format_matcher.documents.catalog import Documentation, DocumentFormat
 from vrp_format_matcher.documents.parameters import structural_key
 from vrp_format_matcher.models import (
+    AnalysisBudget,
     Comparison,
+    DocumentMatch,
     MappingLimitExceeded,
     MappingLimits,
+    ParameterCorrespondence,
     PatternProgram,
     PreparationProgress,
+    PreparedMapping,
     PreparedPair,
 )
-from vrp_format_matcher.runtime.prepared import PreparedMetadata
-from vrp_format_matcher.runtime.program import ProgramExecution
 from vrp_parser_automaton.api import CommandLineParser
 from vrp_parser_automaton.automata.model import CommandAutomaton, PatternSource
 from vrp_parser_automaton.patterns import Sequence as PatternSequence
 
 from .candidates import CandidateIndex
-from .programs import ProgramCompiler
+from .programs import ProgramCompiler, SourceAlignment
+from .sources import TargetFormats
 
 
 @dataclass(frozen=True)
@@ -78,10 +80,6 @@ class CompiledPattern:
         return canonical_key(self.ast)
 
     @cached_property
-    def unambiguous(self) -> bool:
-        return PredictiveExpression(self.ast).unambiguous()
-
-    @cached_property
     def execution(self) -> ProgramExecution:
         """Reuse the document's frontiers across its candidate comparisons."""
         return ProgramExecution(self.build.require(), self.comparison_states)
@@ -89,7 +87,7 @@ class CompiledPattern:
 
 @dataclass(frozen=True)
 class PairPreparation:
-    document: MetadataDocument
+    document: DocumentFormat
     device: PatternSource
     document_pattern: CompiledPattern
     device_pattern: CompiledPattern
@@ -97,11 +95,10 @@ class PairPreparation:
 
     def prepared(self) -> PreparedPair:
         machine = None
-        program = None
+        bindings: tuple[ParameterCorrespondence, ...] = ()
         strategy = "intersection"
+        budget = AnalysisBudget(self.limits.analysis_steps)
         try:
-            document_machine = self.document_pattern.build.require()
-            device_machine = self.device_pattern.build.require()
             same_structure = (
                 self.document_pattern.structure == self.device_pattern.structure
             )
@@ -109,37 +106,52 @@ class PairPreparation:
                 self.document_pattern.canonical == self.device_pattern.canonical
             )
             if same_canonical:
-                witness = ProgramWords(
-                    self.document_pattern.ast, self.limits.automaton_states
-                ).shortest()
+                # Slot identity is defined by source structure. Ambiguity of a
+                # future CLI line must not force an offline language expansion.
+                bindings = SourceAlignment(
+                    self.document_pattern.ast,
+                    self.device_pattern.ast,
+                ).bindings()
+                strategy = "structural"
                 comparison = Comparison(
                     "equivalent",
                     structurally_identical=same_structure,
-                    common_example=display(witness) if witness is not None else None,
                 )
-                if (
-                    self.document_pattern.unambiguous
-                    and self.device_pattern.unambiguous
-                ):
-                    program = ProgramCompiler(self.limits.product_states).paired(
-                        self.document_pattern.ast,
-                        self.device_pattern.ast,
-                        device_machine,
-                    )
-                    strategy = "structural"
             else:
+                document_machine = self.document_pattern.build.require()
+                device_machine = self.device_pattern.build.require()
                 comparison = compare(
                     document_machine,
                     device_machine,
                     maximum_states=self.limits.comparison_states,
                     structurally_identical=same_structure,
                     document_execution=self.document_pattern.execution,
+                    budget=budget,
                 )
-            if program is None and comparison.common_example is not None:
+            if strategy != "structural" and comparison.common_example is not None:
                 machine = intersection(
                     document_machine,
                     device_machine,
                     maximum_states=self.limits.product_states,
+                    budget=budget,
+                )
+                links = {
+                    ParameterCorrespondence(
+                        replace(arc.document, iterations=()),
+                        replace(arc.device, iterations=()),
+                    )
+                    for edges in machine.edges
+                    for arc in edges
+                    if arc.document is not None and arc.device is not None
+                }
+                bindings = tuple(
+                    sorted(
+                        links,
+                        key=lambda link: (
+                            int(link.document.slot_id[2:]),
+                            int(link.device.slot_id[2:]),
+                        ),
+                    )
                 )
         except MappingLimitExceeded as error:
             comparison = Comparison("unknown", reason=str(error))
@@ -149,10 +161,8 @@ class PairPreparation:
             pattern_id=self.device.pattern_id,
             device_format=self.device.original,
             comparison=comparison,
-            creates=self.document.creates,
-            requires=self.document.requires,
             automaton=machine,
-            program=program,
+            bindings=bindings,
             strategy=strategy,
         )
 
@@ -176,22 +186,69 @@ class FormatMatcher:
         documents: Sequence[Mapping[str, Any]],
         *,
         exhaustive: bool = False,
+        mode: Literal["best", "all"] = "best",
         on_progress: Callable[[PreparationProgress], None] | None = None,
-    ) -> PreparedMetadata:
-        """Prepare indexed candidates; exhaustive diagnostics are explicitly opt-in."""
-        devices = device_parser.automaton.patterns
-        index = None if exhaustive else CandidateIndex(devices)
+    ) -> PreparedMapping:
+        """Prefer all canonical-equal targets; fall back to indexed intersections.
+
+        ``mode='all'`` also investigates partial matches when exact matches exist.
+        ``exhaustive=True`` bypasses both indexes for small diagnostic comparisons.
+        """
+        return self._compile(
+            device_parser.automaton, documents, exhaustive, mode, on_progress
+        )
+
+    def compile_formats(
+        self,
+        device_formats: Sequence[str],
+        documents: Sequence[Mapping[str, Any]],
+        *,
+        exhaustive: bool = False,
+        mode: Literal["best", "all"] = "best",
+        target_syntax: Literal["device", "document"] = "device",
+        on_progress: Callable[[PreparationProgress], None] | None = None,
+    ) -> PreparedMapping:
+        """Offline matching also accepts named placeholders on the target side."""
+        return self._compile(
+            TargetFormats(device_formats, target_syntax).patterns(),
+            documents,
+            exhaustive,
+            mode,
+            on_progress,
+        )
+
+    def _compile(
+        self,
+        automaton: CommandAutomaton | tuple[PatternSource, ...],
+        documents: Sequence[Mapping[str, Any]],
+        exhaustive: bool,
+        mode: Literal["best", "all"],
+        on_progress: Callable[[PreparationProgress], None] | None,
+    ) -> PreparedMapping:
+        if mode not in {"best", "all"}:
+            raise ValueError("matching mode must be 'best' or 'all'")
+        graph = automaton if isinstance(automaton, CommandAutomaton) else None
+        devices = (
+            automaton.patterns if isinstance(automaton, CommandAutomaton) else automaton
+        )
+        index = None
         device_patterns = {
             device.pattern_id: CompiledPattern(
                 device.ast,
                 self.limits.automaton_states,
                 document=False,
-                automaton=device_parser.automaton,
-                start=device_parser.automaton.starts[device.index],
+                automaton=graph,
+                start=graph.starts[device.index] if graph is not None else 0,
             )
             for device in devices
         }
+        by_shape: dict[tuple[object, ...], list[PatternSource]] = {}
+        if mode == "best" and not exhaustive:
+            for device in devices:
+                shape = device_patterns[device.pattern_id].canonical
+                by_shape.setdefault(shape, []).append(device)
         pairs: list[PreparedPair] = []
+        summaries: list[DocumentMatch] = []
         if on_progress is not None:
             on_progress(PreparationProgress(0, len(documents), 0))
         for completed, document in enumerate(Documentation(documents).documents(), 1):
@@ -201,7 +258,15 @@ class FormatMatcher:
                 document=True,
                 comparison_states=self.limits.comparison_states,
             )
-            pairs.extend(
+            if exhaustive:
+                candidates = devices
+            elif mode == "best" and document_pattern.canonical in by_shape:
+                candidates = tuple(by_shape[document_pattern.canonical])
+            else:
+                if index is None:
+                    index = CandidateIndex(devices)
+                candidates = index.candidates(document.ast)
+            prepared = tuple(
                 PairPreparation(
                     document=document,
                     device=device,
@@ -209,13 +274,27 @@ class FormatMatcher:
                     device_pattern=device_patterns[device.pattern_id],
                     limits=self.limits,
                 ).prepared()
-                for device in (
-                    devices if index is None else index.candidates(document.ast)
+                for device in candidates
+            )
+            pairs.extend(prepared)
+            matched_ids = tuple(
+                pair.pattern_id
+                for pair in prepared
+                if pair.status == "equivalent"
+                or pair.comparison.common_example is not None
+            )
+            status = (
+                "matched"
+                if matched_ids
+                else "unknown"
+                if any(pair.status == "unknown" for pair in prepared)
+                else "unmatched"
+            )
+            summaries.append(
+                DocumentMatch(
+                    document.document_id, document.format, status, matched_ids
                 )
             )
             if on_progress is not None:
                 on_progress(PreparationProgress(completed, len(documents), len(pairs)))
-        return PreparedMetadata(tuple(pairs), self.limits)
-
-
-MetadataCompiler = FormatMatcher
+        return PreparedMapping(tuple(pairs), tuple(summaries))

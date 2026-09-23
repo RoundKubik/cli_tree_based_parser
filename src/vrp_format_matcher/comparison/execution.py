@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from vrp_format_matcher.models import (
+    AnalysisBudget,
     CaptureTag,
     MappingLimitExceeded,
     PatternProgram,
@@ -58,20 +59,26 @@ class ProgramExecution:
         self._repeats = {item.path: item for item in program.repetitions}
         self._flow = ControlFlow()
 
-    def frontier(self, state: Configuration) -> Frontier:
+    def frontier(
+        self, state: Configuration, budget: AnalysisBudget | None = None
+    ) -> Frontier:
+        if budget is not None:
+            budget.spend()
         if state in self._cache:
             return self._cache[state]
-        result = self._visit(state)
+        result = self._visit(state, budget)
         if len(self._cache) < self.maximum:
             self._cache[state] = result
         return result
 
-    def _visit(self, state: Configuration) -> Frontier:
+    def _visit(self, state: Configuration, budget: AnalysisBudget | None) -> Frontier:
         pending = [state]
         visited = {state}
         steps: dict[ProgramStep, None] = {}
         accepts = False
         while pending:
+            if budget is not None:
+                budget.spend()
             current = pending.pop()
             node = self.program.instructions[current.instruction]
             if node.kind == "accept":
@@ -80,6 +87,8 @@ class ProgramExecution:
                 steps[self._step(current)] = None
             else:
                 for successor in self._flow.follow(node, current):
+                    if budget is not None:
+                        budget.spend()
                     following = StructuralConfiguration(successor).normalized()
                     if following in visited:
                         continue

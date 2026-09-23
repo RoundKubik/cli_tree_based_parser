@@ -1,20 +1,17 @@
-"""Values shared by preparation and runtime metadata evaluation."""
+"""Format relationships, source-slot correspondences and analysis budgets."""
 
 from __future__ import annotations
 
-import json
-from dataclasses import asdict, dataclass
-from typing import Any
+from dataclasses import dataclass
 
 from vrp_parser_automaton.automata.model import Instruction
-from vrp_parser_automaton.results import ParameterValue
 
 
-class MetadataError(ValueError):
-    """Invalid metadata, incompatible artifacts, or invalid predicates."""
+class FormatError(ValueError):
+    """Invalid source formats or incompatible mapping artifacts."""
 
 
-class MappingLimitExceeded(MetadataError):
+class MappingLimitExceeded(FormatError):
     """A bounded analysis could not finish; this never means disjoint."""
 
 
@@ -26,11 +23,19 @@ class PreparationProgress:
 
 
 @dataclass(frozen=True)
+class DocumentMatch:
+    document_id: str
+    document_format: str
+    status: str  # matched, unmatched, unknown
+    pattern_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class MappingLimits:
     automaton_states: int = 20_000
     comparison_states: int = 20_000
     product_states: int = 20_000
-    runtime_configurations: int = 20_000
+    analysis_steps: int = 200_000
 
     def __post_init__(self) -> None:
         if any(
@@ -39,10 +44,22 @@ class MappingLimits:
                 self.automaton_states,
                 self.comparison_states,
                 self.product_states,
-                self.runtime_configurations,
+                self.analysis_steps,
             )
         ):
-            raise MetadataError("mapping limits must be positive integers")
+            raise FormatError("mapping limits must be positive integers")
+
+
+class AnalysisBudget:
+    """Bound actual fallback work, not only the number of stored DFA subsets."""
+
+    def __init__(self, maximum: int) -> None:
+        self._remaining = maximum
+
+    def spend(self, amount: int = 1) -> None:
+        self._remaining -= amount
+        if self._remaining < 0:
+            raise MappingLimitExceeded("language analysis operation limit exceeded")
 
 
 @dataclass(frozen=True)
@@ -106,74 +123,34 @@ class Comparison:
 
 
 @dataclass(frozen=True)
+class ParameterCorrespondence:
+    document: CaptureTag
+    device: CaptureTag
+
+
+@dataclass(frozen=True)
 class PreparedPair:
     document_id: str
     document_format: str
     pattern_id: str
     device_format: str
     comparison: Comparison
-    # Rules are owned JSON copies; callers should treat artifacts as read-only.
-    creates: tuple[dict[str, Any], ...]
-    requires: tuple[dict[str, Any], ...]
-    automaton: Automaton | None
-    program: PatternProgram | None = None
-    strategy: str = "automaton"
+    bindings: tuple[ParameterCorrespondence, ...]
+    strategy: str
+    automaton: Automaton | None = None
 
     @property
-    def recognizer(self) -> Automaton | PatternProgram | None:
-        return self.program if self.program is not None else self.automaton
+    def status(self) -> str:
+        return self.comparison.relation
+
+    @property
+    def binding_mode(self) -> str:
+        if self.strategy == "structural":
+            return "structural"
+        return "path_dependent" if self.automaton is not None else "unavailable"
 
 
 @dataclass(frozen=True)
-class ParameterBinding:
-    document: CaptureTag
-    device: CaptureTag
-    value: ParameterValue
-
-
-@dataclass(frozen=True)
-class MetadataEffect:
-    rule_id: str
-    kind: str
-    metadata: dict[str, Any]
-    target: ParameterValue | None = None
-
-    def identity(self) -> str:
-        """Compare observable effects, including arbitrary normalized values."""
-        return json.dumps(
-            asdict(self), sort_keys=True, ensure_ascii=False, default=repr
-        )
-
-
-@dataclass(frozen=True)
-class BindingAlternative:
-    bindings: tuple[ParameterBinding, ...]
-    effects: tuple[MetadataEffect, ...]
-
-
-@dataclass(frozen=True)
-class RuleEvaluation:
-    rule_id: str
-    status: str  # active, inactive, ambiguous
-    # Nonempty only when every interpretation agrees on the complete effect set.
-    effects: tuple[MetadataEffect, ...]
-
-
-@dataclass(frozen=True)
-class MetadataApplication:
-    document_id: str
-    pattern_id: str
-    variation_id: str
-    status: str  # applied, inactive, ambiguous, not_applicable, unknown
-    binding_status: str = "unavailable"  # unique, ambiguous, unavailable
-    alternatives: tuple[BindingAlternative, ...] = ()
-    rules: tuple[RuleEvaluation, ...] = ()
-    reason: str | None = None
-
-
-@dataclass(frozen=True)
-class MetadataReport:
-    applications: tuple[MetadataApplication, ...]
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+class PreparedMapping:
+    pairs: tuple[PreparedPair, ...]
+    documents: tuple[DocumentMatch, ...]

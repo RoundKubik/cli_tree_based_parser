@@ -14,153 +14,157 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 from vrp_format_matcher import (  # noqa: E402
     FormatMatcher,
     PreparationProgress,
-    PreparedMetadata,
+    PreparedMapping,
 )
-from vrp_parser_automaton import CommandLineParser, ParsedCommand  # noqa: E402
 
-
-def parameter_rule(name: str) -> dict[str, Any]:
-    return {
-        "when": "always",
-        "condition": "parameter_name",
-        "parameter_name": name,
-        "entity_type": "vlan",
-    }
-
-
-# Edit these documents, patterns and lines to explore your own examples.
+# Editable format-only examples.
 CASES: dict[str, dict[str, Any]] = {
     "vlan": {
         "commands": [
-            "port trunk allow-pass vlan { "
-            "{ INTEGER<1-4095> [ to INTEGER<1-4095> ] } &<1-10> | all }",
+            "port trunk allow-pass vlan { { INTEGER<1-4095> [ "
+            "to INTEGER<1-4095> ] } &<1-10> | all }"
         ],
         "documents": [
             {
                 "id": "vlan-full",
-                "format": "port trunk allow-pass vlan "
-                "{ all | { <vlan-id1> [ to <vlan-id2> ] }&<1-10> }",
-                "creates": [],
-                "requires": [
-                    parameter_rule("vlan-id1"),
-                    parameter_rule("vlan-id2"),
-                    {
-                        "when": "always",
-                        "condition": "command",
-                        "context": "current",
-                        "command": "port link-type trunk",
-                    },
-                ],
+                "format": "port trunk allow-pass vlan { all | { "
+                "<vlan-id1> [ to <vlan-id2> ] }&<1-10> "
+                "}",
             },
             {
                 "id": "vlan-list-only",
-                "format": "port trunk allow-pass vlan "
-                "{ <vlan-id1> [ to <vlan-id2> ] } &<1-10>",
-                "requires": [parameter_rule("vlan-id1"), parameter_rule("vlan-id2")],
+                "format": "port trunk allow-pass vlan { "
+                "<vlan-id1> [ to <vlan-id2> ] } "
+                "&<1-10>",
             },
-        ],
-        "lines": [
-            "port trunk allow-pass vlan 10 to 20 30",
-            "port trunk allow-pass vlan all",
-            "port trunk allow-pass vlan 4096",
         ],
     },
     "conditional": {
         "commands": ["command INTEGER<1-100> [ to INTEGER<1-100> ]"],
-        "documents": [
-            {
-                "format": "command { <a> | <b> to <c> }",
-                "requires": [parameter_rule(name) for name in ("a", "b", "c")],
-            }
-        ],
-        "lines": ["command 10", "command 10 to 20"],
+        "documents": [{"format": "command { <a> | <b> to <c> }"}],
     },
     "ambiguous": {
         "commands": ["command [ INTEGER<1-100> ] [ INTEGER<1-100> ]"],
-        "documents": [
-            {
-                "format": "command [ <a> ] [ <b> ]",
-                "requires": [parameter_rule("a")],
-            }
-        ],
-        "lines": ["command 10", "command 10 20"],
+        "documents": [{"format": "command [ <a> ] [ <b> ]"}],
     },
     "overlap": {
         "commands": ["command { left INTEGER<1-100> | shared INTEGER<1-100> }"],
-        "documents": [
-            {
-                "format": "command { shared <id> | right <id> }",
-                "requires": [parameter_rule("id")],
-            }
-        ],
-        "lines": ["command shared 10", "command left 10"],
+        "documents": [{"format": "command { shared <id> | right <id> }"}],
     },
     "prefix": {
         "commands": ["command INTEGER<1-100> device"],
-        "documents": [
-            {
-                "format": "command <id> documentation",
-                "requires": [parameter_rule("id")],
-            }
-        ],
-        "lines": ["command 10 device"],
+        "documents": [{"format": "command <id> documentation"}],
     },
     "set": {
         "commands": ["command { alpha INTEGER<1-100> | beta INTEGER<1-100> } *"],
+        "documents": [{"format": "command { beta <b> | alpha <a> } *"}],
+    },
+    "wide-set": {
+        "commands": [
+            "command { option0 INTEGER<1-100> | option1 "
+            "INTEGER<1-100> | option2 INTEGER<1-100> | "
+            "option3 INTEGER<1-100> | option4 "
+            "INTEGER<1-100> | option5 INTEGER<1-100> | "
+            "option6 INTEGER<1-100> | option7 "
+            "INTEGER<1-100> | option8 INTEGER<1-100> | "
+            "option9 INTEGER<1-100> | option10 "
+            "INTEGER<1-100> | option11 INTEGER<1-100> | "
+            "option12 INTEGER<1-100> | option13 "
+            "INTEGER<1-100> | option14 INTEGER<1-100> | "
+            "option15 INTEGER<1-100> | option16 "
+            "INTEGER<1-100> | option17 INTEGER<1-100> | "
+            "option18 INTEGER<1-100> | option19 "
+            "INTEGER<1-100> | option20 INTEGER<1-100> | "
+            "option21 INTEGER<1-100> | option22 "
+            "INTEGER<1-100> | option23 INTEGER<1-100> } *"
+        ],
         "documents": [
             {
-                "format": "command { beta <b> | alpha <a> } *",
-                "requires": [parameter_rule("a"), parameter_rule("b")],
+                "format": "command { option23 <value23> | "
+                "option22 <value22> | option21 "
+                "<value21> | option20 <value20> | "
+                "option19 <value19> | option18 "
+                "<value18> | option17 <value17> | "
+                "option16 <value16> | option15 "
+                "<value15> | option14 <value14> | "
+                "option13 <value13> | option12 "
+                "<value12> | option11 <value11> | "
+                "option10 <value10> | option9 "
+                "<value9> | option8 <value8> | "
+                "option7 <value7> | option6 "
+                "<value6> | option5 <value5> | "
+                "option4 <value4> | option3 "
+                "<value3> | option2 <value2> | "
+                "option1 <value1> | option0 "
+                "<value0> } *"
             }
         ],
-        "lines": ["command beta 20 alpha 10", "command alpha 10 alpha 20"],
+    },
+    "wide-optional-set": {
+        "commands": [
+            "command [ option0 INTEGER<1-100> | "
+            "option1 INTEGER<1-100> | option2 "
+            "INTEGER<1-100> | option3 "
+            "INTEGER<1-100> | option4 "
+            "INTEGER<1-100> | option5 "
+            "INTEGER<1-100> | option6 "
+            "INTEGER<1-100> | option7 "
+            "INTEGER<1-100> | option8 "
+            "INTEGER<1-100> | option9 "
+            "INTEGER<1-100> | option10 "
+            "INTEGER<1-100> | option11 "
+            "INTEGER<1-100> | option12 "
+            "INTEGER<1-100> | option13 "
+            "INTEGER<1-100> | option14 "
+            "INTEGER<1-100> | option15 "
+            "INTEGER<1-100> | option16 "
+            "INTEGER<1-100> | option17 "
+            "INTEGER<1-100> | option18 "
+            "INTEGER<1-100> | option19 "
+            "INTEGER<1-100> | option20 "
+            "INTEGER<1-100> | option21 "
+            "INTEGER<1-100> | option22 "
+            "INTEGER<1-100> | option23 "
+            "INTEGER<1-100> ] *"
+        ],
+        "documents": [
+            {
+                "format": "command [ option23 "
+                "<value23> | option22 "
+                "<value22> | option21 "
+                "<value21> | option20 "
+                "<value20> | option19 "
+                "<value19> | option18 "
+                "<value18> | option17 "
+                "<value17> | option16 "
+                "<value16> | option15 "
+                "<value15> | option14 "
+                "<value14> | option13 "
+                "<value13> | option12 "
+                "<value12> | option11 "
+                "<value11> | option10 "
+                "<value10> | option9 "
+                "<value9> | option8 "
+                "<value8> | option7 "
+                "<value7> | option6 "
+                "<value6> | option5 "
+                "<value5> | option4 "
+                "<value4> | option3 "
+                "<value3> | option2 "
+                "<value2> | option1 "
+                "<value1> | option0 "
+                "<value0> ] *"
+            }
+        ],
+    },
+    "large-repeat": {
+        "commands": ["command INTEGER<1-100> &<1-100000>"],
+        "documents": [{"format": "command <value> &<1-100000>"}],
     },
 }
 
 
-for case_name, opening, closing in (
-    ("wide-set", "{", "}"),
-    ("wide-optional-set", "[", "]"),
-):
-    CASES[case_name] = {
-        "commands": [
-            "command "
-            + opening
-            + " "
-            + " | ".join(f"option{i} INTEGER<1-100>" for i in range(24))
-            + " "
-            + closing
-            + " *"
-        ],
-        "documents": [
-            {
-                "format": "command "
-                + opening
-                + " "
-                + " | ".join(f"option{i} <value{i}>" for i in reversed(range(24)))
-                + " "
-                + closing
-                + " *",
-                "requires": [parameter_rule(f"value{i}") for i in range(24)],
-            }
-        ],
-        "lines": [
-            "command option23 24 option0 1 option12 13",
-            "command",
-            "command option0 1 option0 2",
-        ],
-    }
-
-CASES["large-repeat"] = {
-    "commands": ["command INTEGER<1-100> &<1-100000>"],
-    "documents": [
-        {"format": "command <value> &<1-100000>", "requires": [parameter_rule("value")]}
-    ],
-    "lines": ["command 1 2 3"],
-}
-
-
-def describe(prepared: PreparedMetadata) -> None:
+def describe(prepared: PreparedMapping) -> None:
     for pair in prepared.pairs:
         comparison = pair.comparison
         print(f"\nDOCUMENT [{pair.document_id}]: {pair.document_format}")
@@ -179,164 +183,80 @@ def describe(prepared: PreparedMetadata) -> None:
         if comparison.reason:
             print(f"REASON: {comparison.reason}")
         print(f"STRATEGY: {pair.strategy}")
-        nodes = []
-        if pair.program is not None:
-            print(f"PREPARED INSTRUCTIONS: {len(pair.program.instructions)}")
-            nodes.extend(pair.program.slots)
-        if pair.automaton is not None:
-            print(f"PREPARED STATES: {len(pair.automaton.edges)}")
-            nodes.extend(arc for arcs in pair.automaton.edges for arc in arcs)
-        links = sorted(
-            {
-                (node.document.name or "", node.document.slot_id, node.device.slot_id)
-                for node in nodes
-                if node.document is not None and node.device is not None
-            }
-        )
-        if links:
-            print("POSSIBLE BINDINGS (guarded by complete paths):")
-            for name, document_slot, device_slot in links:
-                print(f"  {name} [{document_slot}] -> {device_slot}")
-
-
-def argument_parser() -> argparse.ArgumentParser:
-    arguments = argparse.ArgumentParser(description=__doc__)
-    arguments.add_argument("--case", choices=CASES, default="vlan")
-    arguments.add_argument(
-        "--patterns", type=Path, help="Device JSON with commands array"
-    )
-    arguments.add_argument(
-        "--documents", type=Path, help="JSON array of document metadata"
-    )
-    arguments.add_argument(
-        "--line", action="append", help="Repeat for multiple input lines"
-    )
-    arguments.add_argument("--save", type=Path, help="Save prepared JSON artifact")
-    arguments.add_argument(
-        "--load", type=Path, help="Run a saved artifact without preparation"
-    )
-    arguments.add_argument(
-        "--json", action="store_true", help="Print full runtime details"
-    )
-    arguments.add_argument(
-        "--exhaustive",
-        action="store_true",
-        help="Compare every pair, including unmatched formats (small catalogs only)",
-    )
-    return arguments
-
-
-def read_arguments(arguments: argparse.ArgumentParser) -> argparse.Namespace:
-    args = arguments.parse_args()
-    if args.load and args.documents:
-        arguments.error("--documents cannot be combined with --load")
-    if not args.load and bool(args.patterns) != bool(args.documents):
-        arguments.error("supply both --patterns and --documents")
-    return args
-
-
-def prepare_session(
-    args: argparse.Namespace,
-    arguments: argparse.ArgumentParser,
-) -> tuple[CommandLineParser, PreparedMetadata]:
-    case = CASES[args.case]
-    if args.load:
-        prepared = PreparedMetadata.from_json(args.load.read_text(encoding="utf-8"))
-        formats = {pair.pattern_id: pair.device_format for pair in prepared.pairs}
-        if not formats:
-            arguments.error("loaded artifact contains no device formats")
-        parser = (
-            CommandLineParser.from_json_file(args.patterns)
-            if args.patterns
-            else CommandLineParser({"commands": list(formats.values())})
-        )
-    else:
-        if args.patterns:
-            print("Parsing device catalog...", file=sys.stderr, flush=True)
-        parser = (
-            CommandLineParser.from_json_file(args.patterns)
-            if args.patterns
-            else CommandLineParser({"commands": case["commands"]})
-        )
-        documents = (
-            json.loads(args.documents.read_text(encoding="utf-8"))
-            if args.documents
-            else case["documents"]
-        )
-        if args.patterns:
-            print("Building candidate index...", file=sys.stderr, flush=True)
-        prepared = FormatMatcher().compile(
-            parser,
-            documents,
-            exhaustive=args.exhaustive or not args.patterns,
-            on_progress=show_progress if args.patterns else None,
-        )
-    return parser, prepared
-
-
-def show_progress(progress: PreparationProgress) -> None:
-    if progress.documents_done % 100 == 0 or (
-        progress.documents_done == progress.documents_total
-    ):
-        print(
-            f"Documents: {progress.documents_done}/{progress.documents_total}; "
-            f"candidate pairs prepared: {progress.pairs_prepared}",
-            file=sys.stderr,
-            flush=True,
-        )
-
-
-def show_line(
-    parser: CommandLineParser,
-    prepared: PreparedMetadata,
-    raw: str,
-    *,
-    detailed: bool,
-) -> None:
-    print(f"\nINPUT: {raw}")
-    line = parser.parse(raw)
-    if not isinstance(line, ParsedCommand):
-        print(json.dumps(asdict(line), ensure_ascii=False, default=str))
-        return
-    print(f"DEVICE PARSE: {line.status}")
-    report = prepared.evaluate(line)
-    if detailed:
-        print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2, default=str))
-        return
-    for application in report.applications:
-        print(f"  [{application.document_id}] {application.status}")
-        print(f"    BINDINGS: {application.binding_status}")
-        if application.reason:
-            print(f"    {application.reason}")
-        for index, alternative in enumerate(application.alternatives):
-            print(f"    BINDING ALTERNATIVE {index + 1}:")
-            for binding in alternative.bindings:
+        print(f"BINDING MODE: {pair.binding_mode}")
+        if pair.bindings:
+            print("PARAMETER MAPPING:")
+            for binding in pair.bindings:
+                doc, device = binding.document, binding.device
                 print(
-                    f"      {binding.document.name} {binding.document.iterations}"
-                    f" -> {binding.device.slot_id} {binding.device.iterations}"
-                    f" = {binding.value.normalized!r}"
+                    f"  {doc.name} [{doc.slot_id}] -> "
+                    f"{device.declaration} [{device.slot_id}]"
                 )
-        for rule in application.rules:
-            print(f"    RULE {rule.rule_id}: {rule.status}")
 
 
 def main() -> None:
-    arguments = argument_parser()
-    args = read_arguments(arguments)
-    parser, prepared = prepare_session(args, arguments)
-    describe(prepared)
-    if args.save:
-        args.save.write_text(prepared.to_json(), encoding="utf-8")
-        print(f"\nSAVED: {args.save}")
+    from collections import Counter
 
-    if args.line is not None:
-        lines = args.line
-    elif args.load or args.patterns:
-        lines = []
-    else:
-        lines = CASES[args.case]["lines"]
-    for raw in lines:
-        show_line(parser, prepared, raw, detailed=args.json)
+    arguments = argparse.ArgumentParser(description=__doc__)
+    arguments.add_argument("--case", choices=CASES, default="vlan")
+    arguments.add_argument("--patterns", type=Path, help="JSON with commands array")
+    arguments.add_argument(
+        "--documents", type=Path, help="JSON array of id/format objects"
+    )
+    arguments.add_argument(
+        "--target-syntax", choices=("device", "document"), default="device"
+    )
+    arguments.add_argument("--mode", choices=("best", "all"), default="best")
+    arguments.add_argument(
+        "--exhaustive", action="store_true", help="All pairs; small diagnostics only"
+    )
+    arguments.add_argument("--summary", action="store_true")
+    arguments.add_argument("--save", type=Path, help="Write plain result JSON")
+    args = arguments.parse_args()
+    if bool(args.patterns) != bool(args.documents):
+        arguments.error("supply both --patterns and --documents")
+    case = CASES[args.case]
+    targets = (
+        json.loads(args.patterns.read_text(encoding="utf-8"))["commands"]
+        if args.patterns
+        else case["commands"]
+    )
+    documents = (
+        json.loads(args.documents.read_text(encoding="utf-8"))
+        if args.documents
+        else case["documents"]
+    )
+    result = FormatMatcher().compile_formats(
+        targets,
+        documents,
+        target_syntax=args.target_syntax,
+        mode=args.mode,
+        exhaustive=args.exhaustive or not args.patterns,
+        on_progress=show_progress if args.patterns else None,
+    )
+    if not args.summary:
+        describe(result)
+    print("DOCUMENTS:", dict(Counter(d.status for d in result.documents)))
+    print("PAIRS:", dict(Counter(p.status for p in result.pairs)))
+    print("PARAMETER LINKS:", sum(len(p.bindings) for p in result.pairs))
+    if args.save:
+        args.save.write_text(
+            json.dumps(asdict(result), ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        print(f"SAVED: {args.save}")
+
+
+def show_progress(progress: PreparationProgress) -> None:
+    if (
+        progress.documents_done % 100 == 0
+        or progress.documents_done == progress.documents_total
+    ):
+        print(
+            f"Documents: {progress.documents_done}/{progress.documents_total}; "
+            f"pairs: {progress.pairs_prepared}",
+            file=sys.stderr,
+            flush=True,
+        )
 
 
 if __name__ == "__main__":

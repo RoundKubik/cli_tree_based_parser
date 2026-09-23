@@ -5,14 +5,15 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 
+from vrp_format_matcher.comparison.execution import ProgramExecution, ProgramStep
 from vrp_format_matcher.models import (
+    AnalysisBudget,
     Arc,
     Automaton,
     Comparison,
     MappingLimitExceeded,
     PatternProgram,
 )
-from vrp_format_matcher.runtime.program import ProgramExecution, ProgramStep
 from vrp_parser_automaton.runtime.execution import Configuration
 
 
@@ -23,16 +24,21 @@ def display(word: tuple[str, ...]) -> tuple[str, ...]:
 @dataclass(frozen=True)
 class LanguageStates:
     execution: ProgramExecution
+    budget: AnalysisBudget | None = None
 
     def accepts(self, states: frozenset[Configuration]) -> bool:
-        return any(self.execution.frontier(state).accepts for state in states)
+        return any(
+            self.execution.frontier(state, self.budget).accepts for state in states
+        )
 
     def moves(
         self, states: frozenset[Configuration]
     ) -> dict[str, frozenset[Configuration]]:
         targets: dict[str, set[Configuration]] = {}
         for state in states:
-            for step in self.execution.frontier(state).steps:
+            for step in self.execution.frontier(state, self.budget).steps:
+                if self.budget is not None:
+                    self.budget.spend()
                 targets.setdefault(step.label, set()).add(step.target)
         return {label: frozenset(group) for label, group in targets.items()}
 
@@ -44,11 +50,12 @@ def compare(
     maximum_states: int,
     structurally_identical: bool = False,
     document_execution: ProgramExecution | None = None,
+    budget: AnalysisBudget | None = None,
 ) -> Comparison:
     left_language = LanguageStates(
-        document_execution or ProgramExecution(document, maximum_states)
+        document_execution or ProgramExecution(document, maximum_states), budget
     )
-    right_language = LanguageStates(ProgramExecution(device, maximum_states))
+    right_language = LanguageStates(ProgramExecution(device, maximum_states), budget)
     start = (
         frozenset({left_language.execution.start}),
         frozenset({right_language.execution.start}),
@@ -117,6 +124,7 @@ def intersection(
     device: PatternProgram,
     *,
     maximum_states: int,
+    budget: AnalysisBudget | None = None,
 ) -> Automaton:
     """Pair consuming transitions directly, avoiding epsilon Cartesian products."""
     left_execution = ProgramExecution(document, maximum_states)
@@ -139,8 +147,8 @@ def intersection(
         raise MappingLimitExceeded("intersection state limit exceeded")
     for left, right in pending:
         arcs = edges[ids[(left, right)]]
-        left_frontier = left_execution.frontier(left)
-        right_frontier = right_execution.frontier(right)
+        left_frontier = left_execution.frontier(left, budget)
+        right_frontier = right_execution.frontier(right, budget)
         if left_frontier.accepts and right_frontier.accepts:
             arcs.append(Arc(1))
         right_labels: dict[str, list[ProgramStep]] = {}
@@ -148,6 +156,8 @@ def intersection(
             right_labels.setdefault(step.label, []).append(step)
         for first in left_frontier.steps:
             for second in right_labels.get(first.label, ()):
+                if budget is not None:
+                    budget.spend()
                 arcs.append(
                     Arc(
                         add((first.target, second.target)),

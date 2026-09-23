@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from vrp_format_matcher import FormatMatcher, MappingLimits, PreparedMapping
+from vrp_format_matcher import FormatMatcher, MappingLimits
 from vrp_format_matcher.documents.catalog import Documentation
 from vrp_format_matcher.preparation.candidates import CandidateIndex, PrefixCover
 from vrp_format_matcher.preparation.compiler import PairPreparation
-from vrp_parser_automaton import CommandLineParser, ParsedCommand
+from vrp_parser_automaton import CommandLineParser
 
 
 def test_large_catalog_compares_candidates_instead_of_cartesian_product(monkeypatch):
@@ -60,7 +60,7 @@ def test_filter_preserves_all_intersections_found_by_exhaustive_comparison():
     documents = [{"format": p.replace("INTEGER<1-100>", "<id>")} for p in patterns]
     matcher = FormatMatcher()
     exhaustive = matcher.compile(parser, documents, exhaustive=True)
-    indexed = matcher.compile(parser, documents)
+    indexed = matcher.compile(parser, documents, mode="all")
     retained = {(p.document_id, p.pattern_id): p for p in indexed.pairs}
     for pair in exhaustive.pairs:
         if pair.comparison.common_example is not None:
@@ -115,11 +115,7 @@ def test_excluded_formats_create_no_artifact_or_runtime_entries():
     parser = CommandLineParser({"commands": ["a INTEGER<1-100>", "b INTEGER<1-100>"]})
     prepared = FormatMatcher().compile(parser, [{"format": "c <id>"}])
     assert prepared.pairs == ()
-    line = parser.parse("a 10")
-    assert isinstance(line, ParsedCommand)
-    assert (
-        PreparedMapping.from_json(prepared.to_json()).evaluate(line).applications == ()
-    )
+    assert prepared.documents[0].status == "unmatched"
     assert FormatMatcher().compare("c <id>", "a INTEGER<1-100>").relation == "disjoint"
 
 

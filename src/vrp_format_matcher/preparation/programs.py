@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict, deque
 from dataclasses import dataclass, replace
 
 from vrp_format_matcher.comparison.structure import Expression, canonical_key
@@ -9,6 +10,7 @@ from vrp_format_matcher.documents.parameters import NamedParameter
 from vrp_format_matcher.models import (
     CaptureTag,
     MappingLimitExceeded,
+    ParameterCorrespondence,
     PatternProgram,
     RepeatBinding,
     SlotBinding,
@@ -112,74 +114,53 @@ class ProgramCompiler:
         )
         return PatternProgram(0, tuple(instructions), tuple(slots), repeats)
 
-    def paired(
-        self, document: Sequence, device: Sequence, program: PatternProgram
-    ) -> PatternProgram:
-        if len(program.instructions) > self.maximum_instructions:
-            raise MappingLimitExceeded("paired program instruction limit exceeded")
-        alignment = SourceAlignment(document, device)
-        parameters, repetitions = alignment.bindings()
-        slots = tuple(
-            SlotBinding(parameters[slot.device.slot_id], slot.device)
-            if slot.device
-            else slot
-            for slot in program.slots
-        )
-        repeats = tuple(
-            RepeatBinding(item.path, repetitions[item.path], item.device)
-            for item in program.repetitions
-        )
-        return replace(program, slots=slots, repetitions=repeats)
-
 
 @dataclass(frozen=True)
 class SourceAlignment:
-    """Used only after shape equality and unambiguous parsing have been proved."""
+    """Align source occurrences in canonical-equal ASTs, without language expansion.
+
+    Equal-shaped alternatives are paired by occurrence order within their shape.
+    This is a structural correspondence, not every possible cross-parse binding.
+    """
 
     document: Sequence
     device: Sequence
 
-    def bindings(self) -> tuple[dict[str, CaptureTag], dict[str, str]]:
-        parameters: dict[str, CaptureTag] = {}
-        repetitions: dict[str, str] = {}
-        self._align(self.document, self.device, "root", parameters, repetitions)
-        return parameters, repetitions
+    def bindings(self) -> tuple[ParameterCorrespondence, ...]:
+        parameters: list[ParameterCorrespondence] = []
+        self._align(self.document, self.device, parameters)
+        return tuple(
+            sorted(parameters, key=lambda item: int(item.document.slot_id[2:]))
+        )
 
     def _align(
         self,
         document: Expression,
         device: Expression,
-        path: str,
-        parameters: dict[str, CaptureTag],
-        repetitions: dict[str, str],
+        parameters: list[ParameterCorrespondence],
     ) -> None:
         if isinstance(device, Parameter):
             assert isinstance(document, Parameter)
-            parameters[f"p:{device.span.start}"] = ParameterSource(document).tag()
+            parameters.append(
+                ParameterCorrespondence(
+                    ParameterSource(document).tag(), ParameterSource(device).tag()
+                )
+            )
         elif isinstance(device, Sequence):
             assert isinstance(document, Sequence)
-            for index, (left, right) in enumerate(
-                zip(document.items, device.items, strict=True)
-            ):
-                self._align(left, right, f"{path}.{index}", parameters, repetitions)
+            for left, right in zip(document.items, device.items, strict=True):
+                self._align(left, right, parameters)
         elif isinstance(device, Repeat):
             assert isinstance(document, Repeat)
-            repetitions[path] = f"r:{document.span.start}"
-            self._align(
-                document.atom, device.atom, f"{path}.body", parameters, repetitions
-            )
+            self._align(document.atom, device.atom, parameters)
         elif isinstance(device, Group):
             assert isinstance(document, Group)
-            by_shape = {
-                canonical_key(branch): branch for branch in document.alternatives
-            }
-            for index, branch in enumerate(device.alternatives):
+            by_shape: dict[tuple[object, ...], deque[Sequence]] = defaultdict(deque)
+            for branch in document.alternatives:
+                by_shape[canonical_key(branch)].append(branch)
+            for branch in device.alternatives:
                 self._align(
-                    by_shape[canonical_key(branch)],
-                    branch,
-                    f"{path}.{index}",
-                    parameters,
-                    repetitions,
+                    by_shape[canonical_key(branch)].popleft(), branch, parameters
                 )
         else:
             assert isinstance(document, Literal)
