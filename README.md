@@ -23,6 +23,12 @@ The detailed documentation is split into a short navigation tree:
 - [parameter subsystem](docs/reference/parameters.md);
 - [pattern compiler and command graph](docs/reference/patterns-graph.md);
 - [runtime matcher](docs/reference/matching.md).
+- [standalone automaton parser](docs/reference/automaton-parser.md) — independent
+  `vrp_parser_automaton` package with the same parsing facade and compact AST compilation;
+  try `python3.13 manual_automaton_test.py`.
+- [format matcher for the automaton parser](docs/reference/automaton-format-matcher.md)
+  — separate `vrp_format_matcher` package sharing the parser instructions;
+  try `python3.13 manual_format_matcher_test.py`.
 - [offline documentation/device format mapping](docs/reference/metadata-mapping.md)
   — structural language comparison, parameter bindings, prepared metadata,
   and `python3.13 manual_metadata_test.py` examples.

@@ -41,6 +41,7 @@ target-version = "py313"
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.mypy]
+mypy_path = "src"
 python_version = "3.13"
 strict = true
-packages = ["vrp_parser"]
+packages = ["vrp_parser", "vrp_parser_automaton", "vrp_format_matcher"]
