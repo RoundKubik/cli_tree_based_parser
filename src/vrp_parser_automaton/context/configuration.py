@@ -17,30 +17,14 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
-class ConfigurationLayout:
-    separators: tuple[str, ...] = ("#",)
-    tab_width: int = 8
-
-    def __post_init__(self) -> None:
-        if type(self.tab_width) is not int or self.tab_width < 1:
-            raise ValueError("tab_width must be a positive integer")
-        if any(
-            not isinstance(s, str) or not s or s.strip() != s or "\n" in s or "\r" in s
-            for s in self.separators
-        ):
-            raise ValueError("separators must be nonempty single-line tokens")
-
-
-@dataclass(frozen=True)
 class ContextFrame:
     parent_indent: int
     view: str | None
 
 
 class ContextSession:
-    def __init__(self, parser: CommandLineParser, layout: ConfigurationLayout) -> None:
+    def __init__(self, parser: CommandLineParser) -> None:
         self._parser = parser
-        self._layout = layout
 
     def parse(self, lines: tuple[str, ...]) -> tuple[LineResult, ...]:
         frames = [ContextFrame(-1, self._parser.entry_view)]
@@ -48,13 +32,13 @@ class ContextSession:
         results: list[LineResult] = []
         for number, raw in enumerate(lines, 1):
             indent = raw[: len(raw) - len(raw.lstrip())]
-            depth = len(indent.expandtabs(self._layout.tab_width))
+            depth = len(indent)
             if not raw.strip():
                 results.append(BlankLine(number, raw, indent))
                 continue
             while len(frames) > 1 and depth <= frames[-1].parent_indent:
                 frames.pop()
-            if raw.strip() in self._layout.separators:
+            if raw.strip() == "#":
                 results.append(SeparatorLine(number, raw, indent))
                 previous = None
                 continue

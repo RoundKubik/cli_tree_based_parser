@@ -12,10 +12,7 @@ from typing import Any
 from vrp_parser_automaton.automata.compiler import PatternCompiler
 from vrp_parser_automaton.automata.model import CommandAutomaton
 from vrp_parser_automaton.catalogs.source import PatternCatalog
-from vrp_parser_automaton.context.configuration import (
-    ConfigurationLayout,
-    ContextSession,
-)
+from vrp_parser_automaton.context.configuration import ContextSession
 from vrp_parser_automaton.context.views import ViewMatchers
 from vrp_parser_automaton.runtime.resolution import ResolvedMatch
 
@@ -196,7 +193,6 @@ class ConfigurationParser:
         report_factory: ParseReportFactory | None = None,
         *,
         contextual: bool | None = None,
-        layout: ConfigurationLayout | None = None,
     ) -> None:
         self._line_parser = line_parser
         self._report_factory = report_factory or ParseReportFactory()
@@ -205,7 +201,6 @@ class ConfigurationParser:
         )
         if self._contextual and line_parser.entry_view is None:
             raise ValueError("contextual parsing requires a grouped catalog")
-        self._layout = layout or ConfigurationLayout()
 
     @property
     def line_parser(self) -> CommandLineParser:
@@ -217,7 +212,7 @@ class ConfigurationParser:
         physical = self._physical_lines(content)
         if self._contextual:
             return self._report_factory.create(
-                ContextSession(self._line_parser, self._layout).parse(physical)
+                ContextSession(self._line_parser).parse(physical)
             )
         lines = tuple(
             self._line_parser.parse_flat(raw, line_number)

@@ -11,7 +11,6 @@ from vrp_format_matcher import FormatMatcher
 from vrp_parser_automaton import (
     BlankLine,
     CommandLineParser,
-    ConfigurationLayout,
     ConfigurationParser,
     ErrorLine,
     MatchStatus,
@@ -148,12 +147,9 @@ def test_error_in_a_known_view_does_not_silently_retry_other_views():
     assert report.lines[3].view == "child"
 
 
-def test_null_transition_keeps_context_and_custom_layout_handles_tabs():
-    parser = ConfigurationParser(
-        CommandLineParser(hierarchy()),
-        layout=ConfigurationLayout(separators=("!",), tab_width=4),
-    )
-    report = parser.parse("keep\n\tenter\n        child-only\n!\nroot-only")
+def test_null_transition_keeps_context_with_one_space_per_nested_level():
+    parser = ConfigurationParser(CommandLineParser(hierarchy()))
+    report = parser.parse("keep\n enter\n  child-only\n#\nroot-only")
     assert not report.has_errors
     assert [r.view for r in report.lines if isinstance(r, ParsedCommand)] == [
         "root",
@@ -161,6 +157,7 @@ def test_null_transition_keeps_context_and_custom_layout_handles_tabs():
         "child",
         "root",
     ]
+    assert [r.indent for r in report.lines] == ["", " ", "  ", "", ""]
     assert report.lines[2].primary_match.parameters == ()
 
 

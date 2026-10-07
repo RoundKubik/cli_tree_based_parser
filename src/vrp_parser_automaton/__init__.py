@@ -3,7 +3,6 @@
 from vrp_parser_automaton.automata.model import CommandAutomaton, Instruction
 
 from .api import CommandLineParser, ConfigurationParser
-from .context.configuration import ConfigurationLayout
 from .errors import (
     PatternCompilationError,
     PatternDocumentError,
@@ -44,7 +43,6 @@ __all__ = [
     "BlankLine",
     "CommandLineParser",
     "ConfigurationParser",
-    "ConfigurationLayout",
     "SeparatorLine",
     "ErrorCode",
     "ErrorLine",
