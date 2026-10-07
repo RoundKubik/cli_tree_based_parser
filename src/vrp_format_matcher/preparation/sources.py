@@ -102,6 +102,7 @@ class CommandCatalog:
                     if (
                         view is None
                         or target is not None
+                        and target != {"status": "unresolved"}
                         and (not isinstance(target, str) or target not in groups)
                     ):
                         raise FormatError(

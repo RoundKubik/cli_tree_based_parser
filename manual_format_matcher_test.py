@@ -143,6 +143,11 @@ def main() -> None:
     )
     arguments.add_argument("--summary", action="store_true")
     arguments.add_argument("--save", type=Path, help="Write plain result JSON")
+    arguments.add_argument(
+        "--save-catalog",
+        type=Path,
+        help="Recover hierarchy and write a separate runtime catalog (v1 inputs)",
+    )
     args = arguments.parse_args()
     if bool(args.patterns) != bool(args.documents):
         arguments.error("supply both --patterns and --documents")
@@ -164,8 +169,22 @@ def main() -> None:
             arguments.error(
                 "v1 catalogs select syntax from source; omit --target-syntax"
             )
-        result = matcher.compile_catalogs(targets, documents, on_progress=progress)
+        if args.save_catalog:
+            prepared = matcher.prepare_catalogs(
+                targets, documents, on_progress=progress
+            )
+            result = prepared.mapping
+            args.save_catalog.write_text(
+                json.dumps(prepared.catalog, ensure_ascii=False), encoding="utf-8"
+            )
+            print(f"RUNTIME CATALOG: {prepared.catalog['type']}")
+            print(f"UNRESOLVED COMMANDS: {len(prepared.unresolved)}")
+            print(f"SAVED CATALOG: {args.save_catalog}")
+        else:
+            result = matcher.compile_catalogs(targets, documents, on_progress=progress)
     else:
+        if args.save_catalog:
+            arguments.error("--save-catalog requires two v1 catalogs")
         if "type" in targets:
             arguments.error(
                 "supply both inputs as v1 catalogs, or both as legacy inputs"

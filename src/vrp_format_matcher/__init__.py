@@ -14,10 +14,12 @@ from .models import (
     PreparedMapping,
     PreparedPair,
 )
+from .preparation.catalog import PreparedCatalog
 from .preparation.compiler import FormatMatcher
 
 __all__ = [
     "FormatMatcher",
+    "PreparedCatalog",
     "FormatError",
     "MappingLimitExceeded",
     "MappingLimits",

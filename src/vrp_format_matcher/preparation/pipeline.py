@@ -7,6 +7,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from typing import Any
 
+from vrp_format_matcher.hierarchy.languages import FormatCoverage
 from vrp_format_matcher.models import (
     DeviceMatch,
     MappingLimits,
@@ -18,7 +19,7 @@ from vrp_parser_automaton.automata.model import CommandAutomaton, PatternSource
 
 from .indexes import DocumentationIndex, PatternKey, pattern_key
 from .pairs import CompiledPattern, PairPreparation
-from .views import EntryViewScope
+from .views import ViewScope
 
 
 class PreparationPipeline:
@@ -32,13 +33,13 @@ class PreparationPipeline:
         on_progress: Callable[[PreparationProgress], None] | None = None,
         graph: CommandAutomaton | None = None,
         *,
-        entry_scope: EntryViewScope | None = None,
+        view_scope: ViewScope | None = None,
     ) -> None:
         self._devices = devices
         self._documents = DocumentationIndex(documents, limits)
         self._limits = limits
         self._progress = on_progress
-        self._entry_scope = entry_scope or EntryViewScope()
+        self._view_scope = view_scope or ViewScope()
         self._keys = {device.pattern_id: pattern_key(device) for device in devices}
         self._patterns: dict[PatternKey, CompiledPattern] = {}
         for device in devices:
@@ -56,6 +57,24 @@ class PreparationPipeline:
         self._results: dict[str, DeviceMatch] = {}
         self._pair_count = 0
 
+    def coverage(self) -> FormatCoverage:
+        """Share the ASTs and programs already used for pair matching."""
+        return FormatCoverage(
+            {
+                **{
+                    source.pattern_id: self._patterns[self._keys[source.pattern_id]]
+                    for source in self._devices
+                },
+                **{
+                    source.pattern_id: self._documents.patterns[
+                        self._documents.keys[source.pattern_id]
+                    ]
+                    for source in self._documents.sources
+                },
+            },
+            self._limits,
+        )
+
     def prepare(self) -> PreparedMapping:
         pending = self._devices
         stages = ("matching", "prefix")
@@ -71,6 +90,41 @@ class PreparationPipeline:
             }
         )
 
+    def refine(self, mapping: PreparedMapping, scope: ViewScope) -> PreparedMapping:
+        """Reuse full pairs after recovery; retry prefixes only where necessary.
+
+        The first pass retained all full matches. Narrowing its context needs
+        no new full-language comparisons or binding graphs.
+        """
+        self._view_scope = scope
+        self._results.clear()
+        self._unresolved.clear()
+        self._pair_count = 0
+        pending = []
+        positions = {
+            source.pattern_id: source.index for source in self._documents.sources
+        }
+        for device in self._devices:
+            allowed = scope.documents_for(device.index)
+            match = mapping.devices[device.pattern_id]
+            pairs = tuple(
+                pair
+                for pair in match.mappings
+                if allowed is None or positions[pair.document_id] in allowed
+            )
+            if match.status == "partial":
+                # No full match existed anywhere; retained prefixes are complete.
+                self._resolve(device, pairs, "prefix")
+            elif not self._resolve(device, pairs, "matching"):
+                pending.append(device)
+        if pending:
+            self._pass(tuple(pending), "prefix")
+        return replace(
+            mapping,
+            devices={d.pattern_id: self._results[d.pattern_id] for d in self._devices},
+            hierarchy=None,
+        )
+
     def _pass(
         self, pending: tuple[PatternSource, ...], stage: str
     ) -> tuple[PatternSource, ...]:
@@ -80,7 +134,7 @@ class PreparationPipeline:
             defaultdict(list)
         )
         for device in pending:
-            scope = self._entry_scope.documents_for(device.index)
+            scope = self._view_scope.documents_for(device.index)
             groups[self._keys[device.pattern_id], scope].append(device)
         completed = 0
         for devices in groups.values():
@@ -128,7 +182,7 @@ class PreparationPipeline:
         The local cache expires before the next device format. All source IDs
         survive, while failed comparisons never accumulate across the corpus.
         """
-        allowed = self._entry_scope.documents_for(device.index)
+        allowed = self._view_scope.documents_for(device.index)
         if allowed is not None and not allowed:
             return ()
         pattern = self._patterns[self._keys[device.pattern_id]]

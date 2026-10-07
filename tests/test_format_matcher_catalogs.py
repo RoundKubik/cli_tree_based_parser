@@ -197,6 +197,36 @@ def test_invalid_grouped_containers_are_rejected(change):
         )
 
 
+@pytest.mark.parametrize("source", ["device", "documentation"])
+def test_explicit_unknown_transition_is_not_an_authoritative_declared_edge(source):
+    record = command("c") if source == "device" else document("c")
+    record["switch_to_view"] = {"status": "unresolved"}
+    data = catalog(source, views={"Root": [record]})
+    docs = catalog(
+        "documentation",
+        views={
+            "Reference": [{**document("c"), "switch_to_view": {"status": "unresolved"}}]
+        },
+    )
+    result = FormatMatcher().compile_catalogs(data, docs)
+    assert not result.hierarchy.declared_transitions
+    assert result.hierarchy.evidence.command_links[0].transition.kind == "unknown"
+
+
+@pytest.mark.parametrize("source", ["device", "documentation"])
+@pytest.mark.parametrize(
+    "transition", [{}, {"status": "resolved"}, {"status": "unresolved", "target": "x"}]
+)
+def test_malformed_transition_markers_are_rejected(source, transition):
+    record = command("c") if source == "device" else document("c")
+    record["switch_to_view"] = transition
+    with pytest.raises(FormatError, match="switch_to_view"):
+        FormatMatcher().compile_catalogs(
+            catalog(source, views={"root": [record]}),
+            catalog("documentation", [document("c")]),
+        )
+
+
 def test_device_catalog_cannot_be_used_as_documentation():
     source = catalog("device", [command("c")])
     with pytest.raises(FormatError, match="documentation catalog source"):

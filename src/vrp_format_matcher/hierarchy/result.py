@@ -66,4 +66,6 @@ class HierarchyData:
         }
         if self._hierarchy.declared_transitions:
             result["declared_transitions"] = dict(self._hierarchy.declared_transitions)
+        if self._hierarchy.resolved_views:
+            result["resolved_views"] = dict(self._hierarchy.resolved_views)
         return result

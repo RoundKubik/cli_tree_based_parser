@@ -17,11 +17,15 @@ class DocumentTransition:
     target_view: str | None = None
 
     @classmethod
-    def from_command(cls, command: Mapping[str, Any]) -> DocumentTransition:
+    def from_command(
+        cls, command: Mapping[str, Any], *, complete: bool = False
+    ) -> DocumentTransition:
         # Catalog validation has already checked all switch_to_view references.
         if "switch_to_view" not in command:
-            return cls("unknown")
+            return cls("stay" if complete else "unknown")
         target = command["switch_to_view"]
+        if target == {"status": "unresolved"}:
+            return cls("unknown")
         return cls("stay") if target is None else cls("switch", target)
 
 
@@ -81,3 +85,4 @@ class PreparedHierarchy:
     # Explicit input switches already use the target catalog's own view keys.
     # A missing entry is unknown; None means an explicitly declared stay.
     declared_transitions: dict[str, str | None] = field(default_factory=dict)
+    resolved_views: dict[str, str] = field(default_factory=dict)

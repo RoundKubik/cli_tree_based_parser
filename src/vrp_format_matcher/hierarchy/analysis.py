@@ -25,6 +25,7 @@ class HierarchyAnalysis:
     device_catalog: Mapping[str, Any]
     documentation_catalog: Mapping[str, Any]
     mapping: PreparedMapping
+    complete_documentation: bool = False
 
     def resolve(self) -> PreparedHierarchy:
         evidence = self.collect()
@@ -38,8 +39,9 @@ class HierarchyAnalysis:
         declared = {}
         for identifier, location in self.mapping.device_catalog.entries.items():
             record = self.device_catalog["views"][location.view][location.index]
-            if "switch_to_view" in record:
-                declared[identifier] = record["switch_to_view"]
+            transition = DocumentTransition.from_command(record)
+            if transition.kind != "unknown":
+                declared[identifier] = transition.target_view
         return replace(hierarchy, declared_transitions=declared)
 
     def collect(self) -> HierarchyEvidence:
@@ -66,9 +68,10 @@ class HierarchyAnalysis:
                 left = device.sources.entries[pattern_id]
                 right = documentation.sources.entries[pair.document_id]
                 assert left.view is not None and right.view is not None
-                link = CommandLink(
-                    pair, left, right, DocumentTransition.from_command(record)
+                transition = DocumentTransition.from_command(
+                    record, complete=self.complete_documentation
                 )
+                link = CommandLink(pair, left, right, transition)
                 commands.append(link)
                 views[left.view, right.view].append(link)
         return HierarchyEvidence(

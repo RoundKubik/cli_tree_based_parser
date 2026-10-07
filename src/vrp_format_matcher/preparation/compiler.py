@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
+from copy import deepcopy
 from dataclasses import replace
 from typing import Any, Literal
 
 from vrp_format_matcher.documents.catalog import DocumentSource
 from vrp_format_matcher.hierarchy import HierarchyAnalysis
+from vrp_format_matcher.hierarchy.catalogs import MatchedCatalog
+from vrp_format_matcher.hierarchy.models import ViewTarget
+from vrp_format_matcher.hierarchy.recovery import HierarchyRecovery
 from vrp_format_matcher.models import (
     CatalogSources,
     Comparison,
@@ -18,10 +23,11 @@ from vrp_format_matcher.models import (
 )
 from vrp_parser_automaton.api import CommandLineParser
 
+from .catalog import PreparedCatalog
 from .pairs import CompiledPattern, PairPreparation
 from .pipeline import PreparationPipeline
 from .sources import CommandCatalog, TargetFormats
-from .views import EntryViewScope
+from .views import ViewScope
 
 
 class FormatMatcher:
@@ -88,6 +94,66 @@ class FormatMatcher:
         on_progress: Callable[[PreparationProgress], None] | None = None,
     ) -> PreparedMapping:
         """Match v1 catalogs; grouped inputs also prepare scoped hierarchy options."""
+        prepared, _, _, _ = self._catalogs(
+            device_catalog, documentation_catalog, on_progress
+        )
+        return prepared
+
+    def prepare_catalogs(
+        self,
+        device_catalog: Mapping[str, Any],
+        documentation_catalog: Mapping[str, Any],
+        *,
+        on_progress: Callable[[PreparationProgress], None] | None = None,
+    ) -> PreparedCatalog:
+        """Recover against a complete reference hierarchy and produce runtime input.
+
+        Unknown transitions are marked in place; established views remain usable.
+        The mapping keeps source locations in the original catalogs.
+        """
+        prepared, pipeline, device, documentation = self._catalogs(
+            device_catalog, documentation_catalog, on_progress
+        )
+        if prepared.hierarchy is None:
+            if device.info["type"] == "grouped":
+                raise FormatError("hierarchy recovery requires grouped documentation")
+            return PreparedCatalog(deepcopy(dict(device_catalog)), prepared)
+        recovery = HierarchyRecovery(
+            MatchedCatalog.bind(device_catalog, prepared.device_catalog),
+            MatchedCatalog.bind(documentation_catalog, prepared.documentation_catalog),
+            prepared,
+            pipeline.coverage(),
+        ).recover()
+        final = pipeline.refine(
+            prepared, ViewScope.recovered(device, documentation, recovery.views)
+        )
+        hierarchy = HierarchyAnalysis(
+            device_catalog, documentation_catalog, final, complete_documentation=True
+        ).resolve()
+        targets = dict(hierarchy.targets)
+        by_document: dict[str, list[str]] = defaultdict(list)
+        for view, reference in recovery.views.items():
+            by_document[reference].append(view)
+        for reference, target in targets.items():
+            candidates = by_document[reference]
+            if len(candidates) == 1:
+                targets[reference] = ViewTarget(
+                    "resolved", target.candidates, candidates[0]
+                )
+        final = replace(
+            final,
+            hierarchy=replace(
+                hierarchy, targets=targets, resolved_views=recovery.views
+            ),
+        )
+        return PreparedCatalog.recovered(device_catalog, final, recovery)
+
+    def _catalogs(
+        self,
+        device_catalog: Mapping[str, Any],
+        documentation_catalog: Mapping[str, Any],
+        on_progress: Callable[[PreparationProgress], None] | None,
+    ) -> tuple[PreparedMapping, PreparationPipeline, CommandCatalog, CommandCatalog]:
         device = CommandCatalog.read(device_catalog)
         documentation = CommandCatalog.read(documentation_catalog)
         if documentation.info["source"] != "documentation":
@@ -105,7 +171,7 @@ class FormatMatcher:
             documentation.commands,
             self.limits,
             on_progress,
-            entry_scope=EntryViewScope.between(device, documentation),
+            view_scope=ViewScope.between(device, documentation),
         )
         prepared = pipeline.prepare()
         located = replace(
@@ -123,10 +189,10 @@ class FormatMatcher:
             ),
         )
         if device.info["type"] == documentation.info["type"] == "grouped":
-            return replace(
+            located = replace(
                 located,
                 hierarchy=HierarchyAnalysis(
                     device_catalog, documentation_catalog, located
                 ).resolve(),
             )
-        return located
+        return located, pipeline, device, documentation

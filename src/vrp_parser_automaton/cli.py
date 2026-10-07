@@ -33,7 +33,6 @@ def _parser() -> argparse.ArgumentParser:
     parse = subcommands.add_parser("parse")
     parse.add_argument("--patterns", type=Path, required=True)
     parse.add_argument("--config", type=Path, required=True)
-    parse.add_argument("--mapping", type=Path, help="Offline matcher JSON")
     parse.add_argument("--flat", action="store_true", help="Disable context tracking")
     return parser
 
@@ -42,12 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     output = JsonOutput()
     try:
-        mapping = None
-        if arguments.action == "parse" and arguments.mapping:
-            mapping = json.loads(arguments.mapping.read_text(encoding="utf-8"))
-        line_parser = CommandLineParser.from_json_file(
-            arguments.patterns, mapping=mapping
-        )
+        line_parser = CommandLineParser.from_json_file(arguments.patterns)
         if arguments.action == "check-patterns":
             output.write(
                 {
@@ -66,7 +60,6 @@ def main(argv: list[str] | None = None) -> int:
         OSError,
         PatternCompilationError,
         PatternDocumentError,
-        json.JSONDecodeError,
     ) as error:
         output.write({"status": "error", "message": str(error)})
         return 2

@@ -11,13 +11,11 @@ from typing import Any
 
 from vrp_parser_automaton.automata.compiler import PatternCompiler
 from vrp_parser_automaton.automata.model import CommandAutomaton
-from vrp_parser_automaton.catalogs.documentation import documentation_parameter
 from vrp_parser_automaton.catalogs.source import PatternCatalog
 from vrp_parser_automaton.context.configuration import (
     ConfigurationLayout,
     ContextSession,
 )
-from vrp_parser_automaton.context.transitions import TransitionRules
 from vrp_parser_automaton.context.views import ViewMatchers
 from vrp_parser_automaton.runtime.resolution import ResolvedMatch
 
@@ -46,24 +44,17 @@ class CommandLineParser:
         pattern_document: Mapping[str, Any],
         *,
         parameter_types: ParameterTypeRegistry | None = None,
-        mapping: Mapping[str, Any] | None = None,
     ) -> None:
         catalog = PatternCatalog.read(pattern_document)
         commands = tuple(command.format for command in catalog.commands)
         source_registry = parameter_types or default_parameter_registry()
-        registry = source_registry.clone()
-        if catalog.documentation:
-            registry.register(documentation_parameter())
-        self._parameter_types = registry.freeze()
-        self._graph = PatternCompiler(self._parameter_types).compile(
-            commands, documentation=catalog.documentation
-        )
-        catalog.validate_parameters(self._graph)
+        self._parameter_types = source_registry.clone().freeze()
+        self._graph = PatternCompiler(self._parameter_types).compile(commands)
         self._entry_view = catalog.entry_view
         self._views = catalog.views
         self._pattern_views = tuple(command.view for command in catalog.commands)
+        self._child_views = tuple(command.child_view for command in catalog.commands)
         self._matchers = ViewMatchers(self._graph, catalog, self._parameter_types)
-        self._transitions = TransitionRules(catalog, self._graph, mapping)
 
     @property
     def entry_view(self) -> str | None:
@@ -103,8 +94,11 @@ class CommandLineParser:
         return self._parse_at(line, line_number, None)
 
     def child_view(self, command: ParsedCommand) -> str | None:
-        """Known context for a nested block, or None when it needs flat parsing."""
-        return self._transitions.for_command(command)
+        """Use the input hierarchy; conflicting parses leave the context unknown."""
+        if command.view is None:
+            return None
+        targets = {self._child_views[match.pattern_index] for match in command.matches}
+        return targets.pop() if len(targets) == 1 else None
 
     def _parse_at(self, line: str, line_number: int, view: str | None) -> LineResult:
         self._validate_input(line, line_number)
@@ -171,7 +165,6 @@ class CommandLineParser:
         source: str,
         *,
         parameter_types: ParameterTypeRegistry | None = None,
-        mapping: Mapping[str, Any] | None = None,
     ) -> CommandLineParser:
         try:
             document = json.loads(source)
@@ -179,7 +172,7 @@ class CommandLineParser:
             raise PatternDocumentError(f"invalid pattern JSON: {error}") from error
         if not isinstance(document, Mapping):
             raise PatternDocumentError("pattern JSON root must be an object")
-        return cls(document, parameter_types=parameter_types, mapping=mapping)
+        return cls(document, parameter_types=parameter_types)
 
     @classmethod
     def from_json_file(
@@ -187,12 +180,10 @@ class CommandLineParser:
         path: str | Path,
         *,
         parameter_types: ParameterTypeRegistry | None = None,
-        mapping: Mapping[str, Any] | None = None,
     ) -> CommandLineParser:
         return cls.from_json(
             Path(path).read_text(encoding="utf-8"),
             parameter_types=parameter_types,
-            mapping=mapping,
         )
 
 

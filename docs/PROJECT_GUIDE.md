@@ -2,7 +2,7 @@
 
 This guide describes the original `vrp_parser` package and its flat command
 graph. For the current automaton implementation, grouped catalogues, view
-transitions, unresolved contexts and offline mapping integration, see
+transitions supplied in one input document, see
 [the automaton parser usage guide](reference/automaton-parser.md).
 
 ## Project Purpose

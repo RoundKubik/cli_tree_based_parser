@@ -51,7 +51,9 @@ def main() -> None:
     arguments = argparse.ArgumentParser(description=__doc__)
     arguments.add_argument("--case", choices=EXAMPLES, default="route-static")
     arguments.add_argument(
-        "--patterns", type=Path, help="Legacy patterns or a v1 flat/grouped catalog"
+        "--patterns",
+        type=Path,
+        help="Flat patterns or a grouped catalog with prepared transitions",
     )
     input_lines = arguments.add_mutually_exclusive_group()
     input_lines.add_argument(
@@ -61,20 +63,12 @@ def main() -> None:
         "--config", type=Path, help="Configuration file with indentation"
     )
     arguments.add_argument(
-        "--mapping", type=Path, help="Offline matcher JSON for this catalog"
-    )
-    arguments.add_argument(
         "--flat", action="store_true", help="Search all views without a context stack"
     )
     args = arguments.parse_args()
-    if args.mapping and not args.patterns:
-        arguments.error("--mapping requires --patterns")
     pattern, examples = EXAMPLES[args.case]
-    mapping = (
-        json.loads(args.mapping.read_text(encoding="utf-8")) if args.mapping else None
-    )
     if args.patterns:
-        parser = CommandLineParser.from_json_file(args.patterns, mapping=mapping)
+        parser = CommandLineParser.from_json_file(args.patterns)
     else:
         parser = CommandLineParser({"commands": [pattern]})
     content = (

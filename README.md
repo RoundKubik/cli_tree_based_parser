@@ -24,19 +24,18 @@ The detailed documentation is split into a short navigation tree:
 - [pattern compiler and command graph](docs/reference/patterns-graph.md);
 - [runtime matcher](docs/reference/matching.md).
 - [standalone automaton parser](docs/reference/automaton-parser.md) — independent
-  `vrp_parser_automaton` package: flat/grouped device and documentation catalogues,
-  context tracking, unresolved-view fallback, CLI and Python usage;
+  `vrp_parser_automaton` package: one flat catalogue or a prepared view hierarchy,
+  context tracking, CLI and Python usage;
   try the quick start below.
 - [format matcher for the automaton parser](docs/reference/automaton-format-matcher.md)
-  — all full device → documentation matches, prefix fallback, entry-view filtering,
-  grouped JSON, parameter slot IDs and an offline `hierarchy` section with
-  scoped documentation transitions and unresolved target options;
+  — device → documentation and documentation → documentation matches, parameter
+  slot IDs, offline hierarchy recovery and a separate runtime catalog preserving
+  known transitions and marking unresolved ones (`prepare_catalogs`, `--save-catalog`);
   try `python3.13 manual_format_matcher_test.py` or benchmark a real CLIs corpus
   using `python3.13 benchmark_format_matcher.py --corpus /path/to/cmd_corpus`.
 - [command catalogue format specification (draft)](docs/reference/command-catalog-format.md)
-  — flat/grouped parser and matcher inputs, parameter types and view references.
-  Contextual parsing is supported; automatic recovery of all device transitions
-  is not yet complete.
+  — flat/grouped matcher inputs, parameter types and view references.
+  The parser uses one prepared runtime document and does not recover hierarchy.
 - [CloudEngine mock catalogues](data/mocks/cloudengine_150/README.md)
   — flat/grouped device fixtures with 150 entries and documentation fixtures with
   151 entries and a restored view hierarchy.
@@ -54,26 +53,29 @@ For flat/grouped catalogues and view tracking, use `vrp_parser_automaton`
 
 ```bash
 python3.13 manual_automaton_test.py \
-  --patterns data/mocks/cloudengine_150/documentation_grouped.json \
-  --line 'bgp 65000' --line ' ipv4-family unicast' --line '#'
+  --patterns data/mocks/cloudengine_150/device_flat.json \
+  --line 'bgp 65000' --line 'ipv4-family unicast'
 ```
 
 To parse your configuration and save plain JSON:
 
 ```bash
 PYTHONPATH=src python3.13 -m vrp_parser_automaton parse \
-  --patterns data/mocks/cloudengine_150/documentation_grouped.json \
+  --patterns data/mocks/cloudengine_150/device_flat.json \
   --config config.txt > parsed.json
 ```
 
-Replace `--patterns` with your device or documentation catalogue. Add `--flat`
-to search all views, or `--mapping mapping.json` to load the offline matcher's
-context information for a grouped target catalogue. Unknown transitions make
-nested blocks use flat parsing; they do not establish a view even if only one
-format matches. A missing `view` key in a command result indicates flat parsing.
+Replace `--patterns` with your runtime pattern document. For `type: grouped`,
+the parser uses `entry_view` and the prepared `switch_to_view` declarations;
+an omitted or null transition keeps the current view. An explicit
+`"switch_to_view": {"status": "unresolved"}` disables view filtering only in that
+command's child block. Add `--flat` to search all views throughout the configuration.
+Matching results to documentation happens in external code using
+the returned `pattern_id`, `slot_id` and repeat coordinates; the parser never
+loads an offline mapping or selects a documentation grammar.
 
 The [usage guide](docs/reference/automaton-parser.md) explains input formats,
-mapping preparation, result fields, exit codes and current limitations.
+prepared hierarchy, result fields, exit codes and current limitations.
 The API and CLI examples below describe the original `vrp_parser` package;
 the `vrp-parser` executable still runs that original implementation.
 
