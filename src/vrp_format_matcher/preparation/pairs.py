@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from functools import cached_property
 
-from vrp_format_matcher.comparison.languages import compare, intersection
+from vrp_format_matcher.comparison.languages import (
+    compare,
+    intersection,
+)
+from vrp_format_matcher.comparison.parameter_types import compatible_types
 from vrp_format_matcher.comparison.structure import canonical_key
 from vrp_format_matcher.documents.catalog import DocumentFormat
 from vrp_format_matcher.documents.parameters import structural_key
@@ -69,6 +73,10 @@ class CompiledPattern:
     def canonical(self) -> tuple[object, ...]:
         return canonical_key(self.ast)
 
+    @cached_property
+    def typed_canonical(self) -> tuple[object, ...]:
+        return canonical_key(self.ast, include_types=True)
+
 
 @dataclass(frozen=True)
 class PairPreparation:
@@ -79,23 +87,30 @@ class PairPreparation:
     limits: MappingLimits
 
     def prepared(self) -> PreparedPair:
-        same_structure = (
-            self.document_pattern.structure == self.device_pattern.structure
+        return (
+            self.structural(ordered=True)
+            or self.structural(ordered=False)
+            or self.intersection()
         )
-        if (
-            same_structure
-            or self.document_pattern.canonical == self.device_pattern.canonical
+
+    def structural(self, *, ordered: bool) -> PreparedPair | None:
+        """A failed type check defers the pair; it does not prove disjointness."""
+        left, right = self.document_pattern, self.device_pattern
+        left_key = left.structure if ordered else left.canonical
+        right_key = right.structure if ordered else right.canonical
+        if left_key != right_key:
+            return None
+        include_types = not ordered and left.typed_canonical == right.typed_canonical
+        bindings = SourceAlignment(
+            left.ast, right.ast, ordered=ordered, include_types=include_types
+        ).bindings()
+        if not all(
+            compatible_types(b.document.type_id, b.device.type_id) for b in bindings
         ):
-            return self._result(
-                "equivalent",
-                SourceAlignment(
-                    self.document_pattern.ast,
-                    self.device_pattern.ast,
-                    ordered=same_structure,
-                ).bindings(),
-                "structural",
-                same_structure,
-            )
+            return None
+        return self._result("equivalent", bindings, "structural", ordered)
+
+    def intersection(self) -> PreparedPair:
         machine = None
         bindings: tuple[ParameterCorrespondence, ...] = ()
         status = "unknown"
@@ -126,8 +141,9 @@ class PairPreparation:
             status,
             bindings,
             "path_dependent" if machine is not None else "unavailable",
-            same_structure,
+            False,
             machine,
+            stage="intersection",
         )
 
     def prefix(self) -> PreparedPair:

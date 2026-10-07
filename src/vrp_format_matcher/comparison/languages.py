@@ -3,9 +3,19 @@
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Iterator
 from dataclasses import dataclass
 
-from vrp_format_matcher.comparison.execution import ProgramExecution, ProgramStep
+from vrp_format_matcher.comparison.execution import (
+    Frontier,
+    ProgramExecution,
+    ProgramStep,
+)
+from vrp_format_matcher.comparison.parameter_types import (
+    DOCUMENT_PARAMETER_TYPES,
+    compatible_types,
+    normalized_type,
+)
 from vrp_format_matcher.models import (
     AnalysisBudget,
     Arc,
@@ -21,6 +31,7 @@ from vrp_parser_automaton.runtime.execution import Configuration
 class LanguageStates:
     execution: ProgramExecution
     budget: AnalysisBudget | None = None
+    typed: bool = False
 
     def accepts(self, states: frozenset[Configuration]) -> bool:
         return any(
@@ -35,8 +46,19 @@ class LanguageStates:
             for step in self.execution.frontier(state, self.budget).steps:
                 if self.budget is not None:
                     self.budget.spend()
-                targets.setdefault(step.label, set()).add(step.target)
+                for label in self._labels(step):
+                    targets.setdefault(label, set()).add(step.target)
         return {label: frozenset(group) for label, group in targets.items()}
+
+    def _labels(self, step: ProgramStep) -> tuple[str, ...]:
+        if not self.typed or step.label != "P":
+            return (step.label,)
+        if step.parameter_type is not None:
+            return ("P:" + step.parameter_type,)
+        # Unknown types may overlap any supported category or an unmodelled one.
+        return tuple("P:" + name for name in sorted(DOCUMENT_PARAMETER_TYPES)) + (
+            "P:other",
+        )
 
 
 def compare(
@@ -46,8 +68,22 @@ def compare(
     maximum_states: int,
     budget: AnalysisBudget | None = None,
 ) -> Comparison:
-    left_language = LanguageStates(ProgramExecution(document, maximum_states), budget)
-    right_language = LanguageStates(ProgramExecution(device, maximum_states), budget)
+    # Preserve the legacy type-independent language when neither side supplies
+    # documentation annotations. Device declarations alone do not enable it.
+    typed = any(
+        tag is not None
+        and tag.name is not None
+        and normalized_type(tag.type_id) is not None
+        for program in (document, device)
+        for slot in program.slots
+        for tag in (slot.document, slot.device)
+    )
+    left_language = LanguageStates(
+        ProgramExecution(document, maximum_states), budget, typed
+    )
+    right_language = LanguageStates(
+        ProgramExecution(device, maximum_states), budget, typed
+    )
     start = (
         frozenset({left_language.execution.start}),
         frozenset({right_language.execution.start}),
@@ -94,6 +130,21 @@ def compare(
     return Comparison(relation)
 
 
+def synchronized_steps(
+    left: Frontier, right: Frontier, budget: AnalysisBudget | None
+) -> Iterator[tuple[ProgramStep, ProgramStep]]:
+    """Pair transitions with compatible labels and parameter types."""
+    right_labels: dict[str, list[ProgramStep]] = {}
+    for step in right.steps:
+        right_labels.setdefault(step.label, []).append(step)
+    for first in left.steps:
+        for second in right_labels.get(first.label, ()):
+            if budget is not None:
+                budget.spend()
+            if compatible_types(first.parameter_type, second.parameter_type):
+                yield first, second
+
+
 def intersection(
     document: PatternProgram,
     device: PatternProgram,
@@ -127,21 +178,15 @@ def intersection(
         right_frontier = right_execution.frontier(right, budget)
         if not prefixes and left_frontier.accepts and right_frontier.accepts:
             arcs.append(Arc(1))
-        right_labels: dict[str, list[ProgramStep]] = {}
-        for step in right_frontier.steps:
-            right_labels.setdefault(step.label, []).append(step)
-        for first in left_frontier.steps:
-            for second in right_labels.get(first.label, ()):
-                if budget is not None:
-                    budget.spend()
-                arcs.append(
-                    Arc(
-                        add((first.target, second.target)),
-                        first.label,
-                        first.document,
-                        second.device,
-                    )
+        for first, second in synchronized_steps(left_frontier, right_frontier, budget):
+            arcs.append(
+                Arc(
+                    add((first.target, second.target)),
+                    first.label,
+                    first.document,
+                    second.device,
                 )
+            )
         # Every nonempty synchronized beginning is a valid unfinished trace.
         # A shorter command may diverge here even if another command can keep
         # following shared transitions (for example, a bounded repetition).

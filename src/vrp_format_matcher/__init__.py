@@ -2,6 +2,8 @@
 
 from .models import (
     CaptureTag,
+    CatalogSources,
+    CommandLocation,
     Comparison,
     DeviceMatch,
     FormatError,
@@ -19,6 +21,8 @@ __all__ = [
     "FormatError",
     "MappingLimitExceeded",
     "MappingLimits",
+    "CatalogSources",
+    "CommandLocation",
     "CaptureTag",
     "Comparison",
     "DeviceMatch",

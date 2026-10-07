@@ -21,9 +21,14 @@ class CommandSuggester:
         self.distance = TokenDistance()
         self.search = SuggestionSearch(automaton, CommandSimilarity(parameter_types))
         self.cache: dict[str, tuple[str, ...]] = {}
-        self.pattern_by_start = dict(
-            zip(automaton.starts, automaton.patterns, strict=True)
-        )
+        allowed = {
+            start for starts in automaton.literal_starts.values() for start in starts
+        }
+        self.pattern_by_start = {
+            start: pattern
+            for start, pattern in zip(automaton.starts, automaton.patterns, strict=True)
+            if start in allowed
+        }
 
     def suggest(self, command: str) -> tuple[str, ...]:
         if command in self.cache:

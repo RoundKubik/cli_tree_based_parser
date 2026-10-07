@@ -51,21 +51,42 @@ def main() -> None:
     arguments = argparse.ArgumentParser(description=__doc__)
     arguments.add_argument("--case", choices=EXAMPLES, default="route-static")
     arguments.add_argument(
-        "--patterns", type=Path, help="JSON file with a commands array"
+        "--patterns", type=Path, help="Legacy patterns or a v1 flat/grouped catalog"
     )
-    arguments.add_argument(
+    input_lines = arguments.add_mutually_exclusive_group()
+    input_lines.add_argument(
         "--line", action="append", help="Concrete command; repeat for several commands"
     )
+    input_lines.add_argument(
+        "--config", type=Path, help="Configuration file with indentation"
+    )
+    arguments.add_argument(
+        "--mapping", type=Path, help="Offline matcher JSON for this catalog"
+    )
+    arguments.add_argument(
+        "--flat", action="store_true", help="Search all views without a context stack"
+    )
     args = arguments.parse_args()
+    if args.mapping and not args.patterns:
+        arguments.error("--mapping requires --patterns")
     pattern, examples = EXAMPLES[args.case]
+    mapping = (
+        json.loads(args.mapping.read_text(encoding="utf-8")) if args.mapping else None
+    )
     if args.patterns:
-        parser = CommandLineParser.from_json_file(args.patterns)
+        parser = CommandLineParser.from_json_file(args.patterns, mapping=mapping)
     else:
         parser = CommandLineParser({"commands": [pattern]})
-    lines = args.line or examples
+    content = (
+        args.config.read_text(encoding="utf-8")
+        if args.config
+        else "\n".join(args.line or examples)
+    )
     print(f"PATTERNS: {parser.command_count}")
     print(f"AUTOMATON STATES: {len(parser.automaton.states)}")
-    report = ConfigurationParser(parser).parse("\n".join(lines))
+    report = ConfigurationParser(parser, contextual=False if args.flat else None).parse(
+        content
+    )
     print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2, default=str))
 
 

@@ -1,4 +1,4 @@
-"""Automatic catalog passes and parameter bindings on unfinished traces."""
+"""Complete pair matching and parameter bindings on unfinished traces."""
 
 from __future__ import annotations
 
@@ -8,15 +8,12 @@ from dataclasses import asdict
 import pytest
 
 from vrp_format_matcher import FormatMatcher, MappingLimits
-from vrp_format_matcher.preparation.candidates import (
-    CandidateIndex,
-    PrefixCandidateIndex,
-)
-from vrp_format_matcher.preparation.pipeline import DocumentationIndex
+from vrp_format_matcher.preparation.candidates import PrefixCandidateIndex
+from vrp_format_matcher.preparation.pairs import PairPreparation
 from vrp_parser_automaton import CommandLineParser, ParsedCommand
 
 
-def test_four_global_passes_only_visit_remaining_devices():
+def test_all_full_matches_survive_and_only_remaining_devices_reach_prefix():
     devices = [
         "exact INTEGER<1-10>",
         "iface { INTEGER<1-10> INTEGER<1-10> | INTEGER<1-10> }",
@@ -42,21 +39,17 @@ def test_four_global_passes_only_visit_remaining_devices():
         for event in progress
         if event.devices_done == 0
     ] == [
-        ("exact", 5),
-        ("reordered", 4),
-        ("intersection", 3),
+        ("matching", 5),
         ("prefix", 2),
     ]
     assert list(dict.fromkeys(e.stage for e in progress)) == [
-        "exact",
-        "reordered",
-        "intersection",
+        "matching",
         "prefix",
     ]
     assert [d.device_format for d in result.devices.values()] == devices
     assert [d.stage for d in result.devices.values()] == [
-        "exact",
-        "reordered",
+        "mixed",
+        "mixed",
         "intersection",
         "prefix",
         None,
@@ -70,22 +63,23 @@ def test_four_global_passes_only_visit_remaining_devices():
     ]
     assert [p.document_id for p in result.pairs] == [
         "exact",
+        "exact-partial",
         "reordered",
+        "iface-partial",
         "intersection",
         "prefix",
     ]
     prefix = result.pairs[-1]
     assert prefix.status == "prefix_match" and prefix.binding_mode == "prefix_dependent"
     assert [b.document.name for b in prefix.bindings] == ["first"]
-    assert progress[-1].pairs_prepared == 4
+    assert progress[-1].pairs_prepared == 6
 
 
-def test_exact_pass_does_not_build_even_the_reordered_index(monkeypatch):
+def test_exact_pair_does_not_build_an_intersection_or_prefix_index(monkeypatch):
     def forbidden(*args, **kwargs):
-        raise AssertionError("no later stage may run after an exact match")
+        raise AssertionError("no product or prefix fallback after an exact pair")
 
-    monkeypatch.setattr(DocumentationIndex, "reordered", property(forbidden))
-    monkeypatch.setattr(CandidateIndex, "__init__", forbidden)
+    monkeypatch.setattr(PairPreparation, "intersection", forbidden)
     monkeypatch.setattr(PrefixCandidateIndex, "__init__", forbidden)
     branch = " | ".join(f"k{i} <id{i}>" for i in range(24))
     source = f"c {{ {branch} }} *"
@@ -98,7 +92,7 @@ def test_exact_pass_does_not_build_even_the_reordered_index(monkeypatch):
     assert len(result.pairs[0].bindings) == 24
 
 
-def test_exact_document_wins_even_if_reordered_document_appears_first():
+def test_exact_documents_do_not_hide_reordered_documents():
     device = "interface { STRING<1-20> STRING<1-20> | STRING<1-20> }"
     documents = [
         {"id": "reordered", "format": "interface { <name> | <type> <name> }"},
@@ -110,8 +104,13 @@ def test_exact_document_wins_even_if_reordered_document_appears_first():
     ]
     result = FormatMatcher().compile_formats([device, device], documents)
     for target in result.devices.values():
-        assert target.stage == "exact"
-        assert [p.document_id for p in target.mappings] == ["exact", "exact-copy"]
+        assert target.stage == "mixed"
+        assert [p.document_id for p in target.mappings] == [
+            "reordered",
+            "exact",
+            "exact-copy",
+        ]
+        assert [p.stage for p in target.mappings] == ["reordered", "exact", "exact"]
     assert len(result.devices) == 2
 
 

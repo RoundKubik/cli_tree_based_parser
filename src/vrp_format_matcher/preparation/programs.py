@@ -38,7 +38,7 @@ class ParameterSource:
             declaration.name if isinstance(declaration, NamedParameter) else None,
             self.node.source,
             declaration.type_id
-            if isinstance(declaration, ParameterDeclaration)
+            if isinstance(declaration, (ParameterDeclaration, NamedParameter))
             else None,
             repeat_ids=self.repeat_ids,
         )
@@ -133,6 +133,7 @@ class SourceAlignment:
     document: Sequence
     device: Sequence
     ordered: bool = False
+    include_types: bool = False
 
     def bindings(self) -> tuple[ParameterCorrespondence, ...]:
         parameters: list[ParameterCorrespondence] = []
@@ -193,8 +194,15 @@ class SourceAlignment:
             return tuple(zip(document.alternatives, device.alternatives, strict=True))
         by_shape: dict[tuple[object, ...], deque[Sequence]] = defaultdict(deque)
         for branch in document.alternatives:
-            by_shape[canonical_key(branch)].append(branch)
+            by_shape[canonical_key(branch, include_types=self.include_types)].append(
+                branch
+            )
         return tuple(
-            (by_shape[canonical_key(branch)].popleft(), branch)
+            (
+                by_shape[
+                    canonical_key(branch, include_types=self.include_types)
+                ].popleft(),
+                branch,
+            )
             for branch in device.alternatives
         )

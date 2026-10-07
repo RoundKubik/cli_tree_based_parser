@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from vrp_format_matcher.comparison.parameter_types import normalized_type
 from vrp_parser_automaton.patterns import (
     Group,
     GroupMode,
@@ -16,30 +17,44 @@ from vrp_parser_automaton.text import ascii_lower
 type Expression = Node | PatternSequence
 
 
-def canonical_key(expression: Expression) -> tuple[object, ...]:
-    """Preserve multiplicity and cardinality, ignoring alternative order/types."""
+def canonical_key(
+    expression: Expression, *, include_types: bool = False
+) -> tuple[object, ...]:
+    """Preserve cardinality; optionally distinguish parameter type categories."""
     expression = unwrapped(expression)
     if isinstance(expression, PatternSequence):
         return (
             "sequence",
-            tuple(canonical_key(item) for item in sequence_items(expression)),
+            tuple(
+                canonical_key(item, include_types=include_types)
+                for item in sequence_items(expression)
+            ),
         )
     if isinstance(expression, Literal):
         return ("literal", ascii_lower(expression.value))
     if isinstance(expression, Parameter):
+        if include_types:
+            return (
+                "parameter",
+                normalized_type(getattr(expression.declaration, "type_id", None)),
+            )
         return ("parameter",)
     if isinstance(expression, Repeat):
         return (
             "repeat",
             expression.minimum,
             expression.maximum,
-            canonical_key(expression.atom),
+            canonical_key(expression.atom, include_types=include_types),
         )
     return (
         expression.mode.value,
         tuple(
             sorted(
-                (canonical_key(branch) for branch in expression.alternatives), key=repr
+                (
+                    canonical_key(branch, include_types=include_types)
+                    for branch in expression.alternatives
+                ),
+                key=repr,
             )
         ),
     )

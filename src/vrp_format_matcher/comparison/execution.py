@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
+from vrp_format_matcher.comparison.parameter_types import normalized_type
 from vrp_format_matcher.models import (
     AnalysisBudget,
     CaptureTag,
@@ -49,6 +50,7 @@ class ProgramStep:
     label: str
     document: CaptureTag | None = None
     device: CaptureTag | None = None
+    parameter_type: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,6 +119,7 @@ class ProgramExecution:
             else "P"
         )
         slot = self.program.slots[current.instruction]
+        tag = slot.document or slot.device
         state = WalkState(position=current.state.position + 1)
         target = self._settled(current.at(node.target, state), budget)
         return ProgramStep(
@@ -124,6 +127,7 @@ class ProgramExecution:
             label,
             self._tag(slot.document, current, document=True),
             self._tag(slot.device, current, document=False),
+            normalized_type(tag.type_id) if tag is not None else None,
         )
 
     def _settled(

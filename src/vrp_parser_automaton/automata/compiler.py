@@ -15,6 +15,8 @@ from .sources import PatternSources
 class PatternCompiler:
     parameter_types: ParameterTypeRegistry
 
-    def compile(self, commands: tuple[str, ...]) -> CommandAutomaton:
-        sources = PatternSources(commands, self.parameter_types).parsed()
+    def compile(
+        self, commands: tuple[str, ...], *, documentation: bool = False
+    ) -> CommandAutomaton:
+        sources = PatternSources(commands, self.parameter_types, documentation).parsed()
         return AutomatonBuilder().build(sources)

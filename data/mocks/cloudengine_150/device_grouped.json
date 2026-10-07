@@ -1,0 +1,1100 @@
+{
+  "schema_version": 1,
+  "source": "device",
+  "vendor": "Huawei",
+  "device": "Huawei VRP",
+  "model_type": "CloudEngine 9800/8800/6800",
+  "software_version": "v300r024c00",
+  "type": "grouped",
+  "metadata": {
+    "mock": true,
+    "reference_corpus": "huawei-cloudengine-9800-8800-6800-v300r024c00",
+    "random_seed": 20261006,
+    "command_count": 150,
+    "selection": "14 fixed entries for hierarchy and ACL ambiguity; 136 seeded, view-stratified random entries",
+    "parameter_types": "Derived from ParaDef and selected name heuristics; string also represents enum, MAC, prefix and dotted AS values",
+    "synthetic_fields": [
+      "device parameter declarations",
+      "device view IDs"
+    ]
+  },
+  "entry_view": "system",
+  "views": {
+    "system": [
+      {
+        "format": "acl [ number ] INTEGER<3000-3999>",
+        "metadata": {
+          "corpus_file": "2.5.10.8_acl_number.json",
+          "format_index": 2
+        }
+      },
+      {
+        "format": "acl [ number ] INTEGER<2000-2999>",
+        "metadata": {
+          "corpus_file": "2.5.10.8_acl_number.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "anti-attack tcp-syn enable",
+        "metadata": {
+          "corpus_file": "2.13.1.8_anti-attack_tcp-syn_enable.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "bgp STRING<1-255>",
+        "metadata": {
+          "corpus_file": "2.6.5.84_bgp.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "configuration file auto-save backup-to-server server X.X.X.X [ vpn-instance STRING<1-31> ] transport-type { tftp | { ftp | sftp } [ port INTEGER<1-65535> ] user STRING<1-64> password STRING<1-255> } [ path STRING<1-64> ]",
+        "metadata": {
+          "corpus_file": "2.1.5.20_configuration_file_auto-save_backup-to-server.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "grpc",
+        "metadata": {
+          "corpus_file": "2.15.8.6_grpc.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "ip import-rib vpn-instance STRING<1-31> protocol static [ valid-route ] [ route-policy STRING<1-200> ]",
+        "metadata": {
+          "corpus_file": "2.8.2.12_ip_import-rib_vpn-instance_protocol_static.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "isis INTEGER<0-4294967295> [ vpn-instance STRING<1-255> ]",
+        "metadata": {
+          "corpus_file": "2.6.6.94_isis.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "lldp mdn trap-interval INTEGER<5-3600>",
+        "metadata": {
+          "corpus_file": "2.3.9.21_lldp_mdn_trap-interval.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "multicast layer-2 invalid-packet igmp snooping max-count INTEGER<1-100>",
+        "metadata": {
+          "corpus_file": "2.7.8.85_multicast_layer-2_invalid-packet_igmp_snooping.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "ndb silent fault disable",
+        "metadata": {
+          "corpus_file": "2.3.1.64_ndb_silent_fault_disable.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "ospf INTEGER<1-4294967295> [ router-id X.X.X.X | vpn-instance STRING<1-31> ] *",
+        "metadata": {
+          "corpus_file": "2.6.3.77_ospf.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "rip [ vpn-instance STRING<1-31> ]",
+        "metadata": {
+          "corpus_file": "2.6.7.29_rip.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "route-policy STRING<1-200> STRING<1-255> node INTEGER<0-65535>",
+        "metadata": {
+          "corpus_file": "2.6.9.99_route-policy.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "ssh user STRING<1-253> sftp-directory STRING<1-255>",
+        "metadata": {
+          "corpus_file": "2.13.9.102_ssh_user.json",
+          "format_index": 4
+        }
+      },
+      {
+        "format": "undo device warm-reboot enable",
+        "metadata": {
+          "corpus_file": "2.3.20.6_device_warm-reboot_enable.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo ftp server default-directory",
+        "metadata": {
+          "corpus_file": "2.1.2.40_ftp_server_default-directory.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo lldp transmit multiplier",
+        "metadata": {
+          "corpus_file": "2.3.9.31_lldp_transmit_multiplier.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo multicast layer-2 invalid-packet mld snooping",
+        "metadata": {
+          "corpus_file": "2.7.11.44_multicast_layer-2_invalid-packet_mld_snooping.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "vlan INTEGER<1-4094>",
+        "metadata": {
+          "corpus_file": "2.4.3.49_vlan_system_view.json",
+          "format_index": 0
+        }
+      }
+    ],
+    "bgp": [
+      {
+        "format": "dampening [ INTEGER<1-45> INTEGER<1-20000> INTEGER<1-20000> INTEGER<1001-20000> | [ route-policy STRING<1-200> ] ] * [ update-standard ]",
+        "metadata": {
+          "corpus_file": "2.6.5.105_dampening_BGP_view.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "group STRING<1-47> unnumbered { internal | external }",
+        "metadata": {
+          "corpus_file": "2.6.5.1432_group_unnumbered.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "ipv4-family unicast",
+        "metadata": {
+          "corpus_file": "2.6.5.333_ipv4-family_unicast.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "ipv6-family unicast",
+        "metadata": {
+          "corpus_file": "2.6.5.336_ipv6-family.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "peer STRING<1-47> bfd enable per-link one-arm-echo",
+        "metadata": {
+          "corpus_file": "2.6.5.526_peer_bfd_enable_BGP_view_group.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "peer X.X.X.X password { cipher STRING<1-255> | simple STRING<1-255> }",
+        "metadata": {
+          "corpus_file": "2.6.5.987_peer_password_BGP_view_IPv4.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "peer X.X.X.X ssl-policy disable",
+        "metadata": {
+          "corpus_file": "2.6.5.1174_peer_ssl-policy_BGP_view.json",
+          "format_index": 5
+        }
+      },
+      {
+        "format": "peer X.X.X.X ssl-policy role client",
+        "metadata": {
+          "corpus_file": "2.6.5.1177_peer_ssl-policy_role.json",
+          "format_index": 7
+        }
+      },
+      {
+        "format": "peer X.X.X.X timer keepalive INTEGER<0-21845> hold INTEGER<3-65535>",
+        "metadata": {
+          "corpus_file": "2.6.5.1214_peer_timer_BGP_view.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "undo peer STRING<1-47> default-route-advertise",
+        "metadata": {
+          "corpus_file": "2.6.5.601_peer_default-route-advertise_BGP_view_group.json",
+          "format_index": 2
+        }
+      },
+      {
+        "format": "undo peer STRING<1-47> graceful-restart peer-reset",
+        "metadata": {
+          "corpus_file": "2.6.5.701_peer_graceful-restart_peer-reset_BGP_view_group.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo peer STRING<1-47> advertise add-path path-number INTEGER<2-64> route-policy STRING<1-200>",
+        "metadata": {
+          "corpus_file": "2.6.5.400_peer_advertise_add-path_path-number_BGP-IPv4_unicast_address_family_view_group.json",
+          "format_index": 2
+        }
+      },
+      {
+        "format": "undo peer X.X.X.X graceful-restart peer-reset",
+        "metadata": {
+          "corpus_file": "2.6.5.700_peer_graceful-restart_peer-reset_BGP_view.json",
+          "format_index": 2
+        }
+      },
+      {
+        "format": "undo peer X.X.X.X graceful-restart timer restart",
+        "metadata": {
+          "corpus_file": "2.6.5.713_peer_graceful-restart_timer_restart_BGP_view.json",
+          "format_index": 1
+        }
+      }
+    ],
+    "bgp-ipv4": [
+      {
+        "format": "default local-preference INTEGER<0-4294967295>",
+        "metadata": {
+          "corpus_file": "2.6.5.113_default_local-preference_BGP-IPv4_unicast_address_family_view.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "filter-policy { INTEGER<2000-2999> | ip-prefix STRING<1-169> | acl-name STRING<1-32> } { import | export [ direct | { isis | ospf | rip } INTEGER<1-4294967295> | static ] }",
+        "metadata": {
+          "corpus_file": "2.6.5.282_filter-policy_BGP-IPv4_unicast_address_family_view.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "peer STRING<1-47> default-route-advertise [ route-policy STRING<1-200> ] { conditional-route-match-all | conditional-route-match-any } { X.X.X.X { INTEGER<0-32> | X.X.X.X } } &<1-4>",
+        "metadata": {
+          "corpus_file": "2.6.5.601_peer_default-route-advertise_BGP_view_group.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "peer STRING<1-47> load-balancing [ as-path-ignore | as-path-relax ]",
+        "metadata": {
+          "corpus_file": "2.6.5.864_peer_load-balancing_BGP_view_group.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "peer X:X::X:X aggregate-link-bandwidth [ limit INTEGER<1-4294967295> ]",
+        "metadata": {
+          "corpus_file": "2.6.5.441_peer_aggregate-link-bandwidth_BGP-IPv4_unicast_address_family_view_BGP-IPv6_unicast_address_family_v.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "peer X:X::X:X filter-policy acl-name STRING<1-32> import",
+        "metadata": {
+          "corpus_file": "2.6.5.684_peer_filter-policy_import_BGP-IPv4_unicast_address_family_view_IPv6.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "peer X:X::X:X route-policy STRING<1-200> import",
+        "metadata": {
+          "corpus_file": "2.6.5.1124_peer_route-policy_import_BGP-IPv4_unicast_address_family_view_IPv6.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "summary automatic",
+        "metadata": {
+          "corpus_file": "2.6.5.1384_summary_automatic_BGP-IPv4_unicast_address_family_view.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "undo maximum load-balancing ebgp",
+        "metadata": {
+          "corpus_file": "2.6.5.360_maximum_load-balancing_BGP-IPv4_unicast_address_family_view.json",
+          "format_index": 7
+        }
+      },
+      {
+        "format": "undo peer X.X.X.X allow-as-loop",
+        "metadata": {
+          "corpus_file": "2.6.5.448_peer_allow-as-loop_BGP-IPv4_unicast_address_family_view_IPv4.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo peer X:X::X:X group STRING<1-47>",
+        "metadata": {
+          "corpus_file": "2.6.5.747_peer_group_BGP-IPv4_unicast_address_family_view_IPv6.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo peer X:X::X:X next-hop-local",
+        "metadata": {
+          "corpus_file": "2.6.5.956_peer_next-hop-local_BGP-IPv4_unicast_address_family_view_IPv6.json",
+          "format_index": 1
+        }
+      }
+    ],
+    "bgp-ipv6": [
+      {
+        "format": "peer STRING<1-47> aggregate-link-bandwidth [ limit INTEGER<1-4294967295> ]",
+        "metadata": {
+          "corpus_file": "2.6.5.439_peer_aggregate-link-bandwidth_BGP-IPv4_unicast_address_family_view_BGP-IPv6_unicast_address_family_v.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "peer X:X::X:X peer-as-check",
+        "metadata": {
+          "corpus_file": "2.6.5.1000_peer_peer-as-check_BGP-IPv4_unicast_address_family_view_BGP-_IPv6_unicast_address_family_view_IPv6.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "undo nexthop recursive-lookup route-policy",
+        "metadata": {
+          "corpus_file": "2.6.5.391_nexthop_recursive-lookup_route-policy_BGP-IPv6_unicast_address_family_view.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo peer STRING<1-47> filter-policy acl6-name STRING<1-64> export",
+        "metadata": {
+          "corpus_file": "2.6.5.672_peer_filter-policy_export_BGP-IPv6_unicast_address_family_view_group.json",
+          "format_index": 3
+        }
+      },
+      {
+        "format": "undo peer X.X.X.X public-as-only",
+        "metadata": {
+          "corpus_file": "2.6.5.1031_peer_public-as-only_BGP-IPv6_unicast_address_family_view_IPv4.json",
+          "format_index": 3
+        }
+      },
+      {
+        "format": "undo peer X.X.X.X route-policy STRING<1-200> import",
+        "metadata": {
+          "corpus_file": "2.6.5.1128_peer_route-policy_import_BGP-IPv6_unicast_address_family_view_IPv4.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo peer X:X::X:X keep-all-routes",
+        "metadata": {
+          "corpus_file": "2.6.5.813_peer_keep-all-routes_BGP-IPv6_unicast_address_family_view_IPv6.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo peer STRING<1-47> next-hop-invariable",
+        "metadata": {
+          "corpus_file": "2.6.5.949_peer_next-hop-invariable_BGP-IPv6_unicast_address_family_view_group.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo peer X.X.X.X as-path-filter { INTEGER<1-256> | STRING<1-51> } import",
+        "metadata": {
+          "corpus_file": "2.6.5.487_peer_as-path-filter_import_IPv4.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo peer X:X::X:X aggregate-link-bandwidth [ limit INTEGER<1-4294967295> ]",
+        "metadata": {
+          "corpus_file": "2.6.5.441_peer_aggregate-link-bandwidth_BGP-IPv4_unicast_address_family_view_BGP-IPv6_unicast_address_family_v.json",
+          "format_index": 2
+        }
+      },
+      {
+        "format": "undo prefix low-memory exempt ipv6-prefix STRING<1-169>",
+        "metadata": {
+          "corpus_file": "2.6.5.1284_prefix_low-memory_exempt_ipv6-prefix.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo slow-peer absolute-detection threshold INTEGER<3-3600>",
+        "metadata": {
+          "corpus_file": "2.6.5.1362_slow-peer_absolute-detection_BGP-IPv6_unicast_address_family_view.json",
+          "format_index": 2
+        }
+      }
+    ],
+    "grpc": [
+      {
+        "format": "grpc server",
+        "metadata": {
+          "corpus_file": "2.15.8.8_grpc_server.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "grpc server ipv6",
+        "metadata": {
+          "corpus_file": "2.15.8.9_grpc_server_ipv6.json",
+          "format_index": 0
+        }
+      }
+    ],
+    "grpc-server": [
+      {
+        "format": "acl STRING<1-32>",
+        "metadata": {
+          "corpus_file": "2.15.8.1_acl.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "acl INTEGER<2000-3999>",
+        "metadata": {
+          "corpus_file": "2.15.8.1_acl.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "compression gzip",
+        "metadata": {
+          "corpus_file": "2.15.8.3_compression_gzip.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "server enable",
+        "metadata": {
+          "corpus_file": "2.15.8.15_server_enable.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "server-port INTEGER<10000-57999>",
+        "metadata": {
+          "corpus_file": "2.15.8.17_server-port.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "ssl-policy STRING<1-23>",
+        "metadata": {
+          "corpus_file": "2.15.8.23_ssl-policy_GRPC_server_view.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "ssl-verify peer",
+        "metadata": {
+          "corpus_file": "2.15.8.26_ssl-verify_peer_GRPC_server_view.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "undo compression gzip",
+        "metadata": {
+          "corpus_file": "2.15.8.3_compression_gzip.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo idle-timeout [ INTEGER<1-3600> ]",
+        "metadata": {
+          "corpus_file": "2.15.8.10_idle-timeout.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo server-port [ INTEGER<10000-57999> ]",
+        "metadata": {
+          "corpus_file": "2.15.8.17_server-port.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo source-ip [ X.X.X.X [ vpn-instance STRING<1-31> ] ]",
+        "metadata": {
+          "corpus_file": "2.15.8.20_source-ip_GRPC_server_view.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo ssl-policy [ STRING<1-23> ]",
+        "metadata": {
+          "corpus_file": "2.15.8.23_ssl-policy_GRPC_server_view.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo ssl-verify peer",
+        "metadata": {
+          "corpus_file": "2.15.8.26_ssl-verify_peer_GRPC_server_view.json",
+          "format_index": 1
+        }
+      }
+    ],
+    "grpc-server-ipv6": [
+      {
+        "format": "acl STRING<1-32>",
+        "metadata": {
+          "corpus_file": "2.15.8.2_acl_GRPC_IPv6_server_view.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "acl INTEGER<2000-3999>",
+        "metadata": {
+          "corpus_file": "2.15.8.2_acl_GRPC_IPv6_server_view.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "compression gzip",
+        "metadata": {
+          "corpus_file": "2.15.8.4_compression_gzip_GRPC_IPv6_server_view.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "idle-timeout INTEGER<1-3600>",
+        "metadata": {
+          "corpus_file": "2.15.8.11_idle-timeout_GRPC_IPv6_server_view.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "permit no-tls { gnmi }",
+        "metadata": {
+          "corpus_file": "2.15.8.14_permit_no-tls_GRPC_IPv6_server_view.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "server-port INTEGER<10000-57999>",
+        "metadata": {
+          "corpus_file": "2.15.8.18_server-port_GRPC_IPv6_server_view.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "ssl-policy STRING<1-23>",
+        "metadata": {
+          "corpus_file": "2.15.8.22_ssl-policy_GRPC_IPv6_server_view.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "undo acl [ STRING<1-32> ]",
+        "metadata": {
+          "corpus_file": "2.15.8.2_acl_GRPC_IPv6_server_view.json",
+          "format_index": 2
+        }
+      },
+      {
+        "format": "undo idle-timeout [ INTEGER<1-3600> ]",
+        "metadata": {
+          "corpus_file": "2.15.8.11_idle-timeout_GRPC_IPv6_server_view.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo permit no-tls { gnmi }",
+        "metadata": {
+          "corpus_file": "2.15.8.14_permit_no-tls_GRPC_IPv6_server_view.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo server-port [ INTEGER<10000-57999> ]",
+        "metadata": {
+          "corpus_file": "2.15.8.18_server-port_GRPC_IPv6_server_view.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo ssl-policy [ STRING<1-23> ]",
+        "metadata": {
+          "corpus_file": "2.15.8.22_ssl-policy_GRPC_IPv6_server_view.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo ssl-verify peer",
+        "metadata": {
+          "corpus_file": "2.15.8.25_ssl-verify_peer_GRPC_IPv6_server_view.json",
+          "format_index": 1
+        }
+      }
+    ],
+    "acl4-basic": [
+      {
+        "format": "description STRING<1-127>",
+        "metadata": {
+          "corpus_file": "2.5.10.10_description.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "rule INTEGER<0-4294967294> description STRING<1-127>",
+        "metadata": {
+          "corpus_file": "2.5.10.33_rule_description_Basic_ACL_view.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "rule [ INTEGER<0-4294967294> ] [ name STRING<1-32> ] { permit | deny } [ fragment-type fragment | source { X.X.X.X { X.X.X.X | 0 | INTEGER<1-32> } | any } | time-range STRING<1-32> | [ vpn-instance STRING<1-31> | vpn-instance-any ] | logging ] *",
+        "metadata": {
+          "corpus_file": "2.5.10.30_rule_basic_ACL_view.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "step INTEGER<1-20>",
+        "metadata": {
+          "corpus_file": "2.5.10.36_step.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "undo description",
+        "metadata": {
+          "corpus_file": "2.5.10.10_description.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo rule INTEGER<0-4294967294> [ to INTEGER<0-4294967294> ]",
+        "metadata": {
+          "corpus_file": "2.5.10.30_rule_basic_ACL_view.json",
+          "format_index": 2
+        }
+      },
+      {
+        "format": "undo rule INTEGER<0-4294967294> description",
+        "metadata": {
+          "corpus_file": "2.5.10.40_undo_rule_Basic_ACL_view.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "undo rule [ name STRING<1-32> ] { permit | deny } [ fragment-type fragment | source { X.X.X.X { X.X.X.X | 0 | INTEGER<1-32> } | any } | time-range STRING<1-32> | [ vpn-instance STRING<1-31> | vpn-instance-any ] | logging ] *",
+        "metadata": {
+          "corpus_file": "2.5.10.30_rule_basic_ACL_view.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo step",
+        "metadata": {
+          "corpus_file": "2.5.10.36_step.json",
+          "format_index": 1
+        }
+      }
+    ],
+    "acl4-advance": [
+      {
+        "format": "description STRING<1-127>",
+        "metadata": {
+          "corpus_file": "2.5.10.10_description.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "rule INTEGER<0-4294967294> description STRING<1-127>",
+        "metadata": {
+          "corpus_file": "2.5.10.32_rule_description_Advanced_ACL_view.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "step INTEGER<1-20>",
+        "metadata": {
+          "corpus_file": "2.5.10.36_step.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "undo description",
+        "metadata": {
+          "corpus_file": "2.5.10.10_description.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo rule INTEGER<0-4294967294> [ to INTEGER<0-4294967294> ]",
+        "metadata": {
+          "corpus_file": "2.5.10.27_rule_Advanced_ACL_view_gre-igmp-ip-ipinip-ospf.json",
+          "format_index": 4
+        }
+      },
+      {
+        "format": "undo rule INTEGER<0-4294967294> description",
+        "metadata": {
+          "corpus_file": "2.5.10.39_undo_rule_Advanced_ACL_view.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "undo step",
+        "metadata": {
+          "corpus_file": "2.5.10.36_step.json",
+          "format_index": 1
+        }
+      }
+    ],
+    "vlan": [
+      {
+        "format": "dhcp snooping alarm dhcpv6-reply threshold INTEGER<1-1000>",
+        "metadata": {
+          "corpus_file": "2.5.8.7_dhcp_snooping_alarm_dhcpv6-reply_threshold.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "dhcp snooping check dhcpv6-rate INTEGER<1-5000>",
+        "metadata": {
+          "corpus_file": "2.5.8.22_dhcp_snooping_check_dhcpv6-rate.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "igmp snooping require-router-alert",
+        "metadata": {
+          "corpus_file": "2.7.8.54_igmp_snooping_require-router-alert.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "mld snooping router-learning disable",
+        "metadata": {
+          "corpus_file": "2.7.11.32_mld_snooping_router-learning_disable.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "undo dhcp snooping enable",
+        "metadata": {
+          "corpus_file": "2.5.8.27_dhcp_snooping_enable.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo igmp snooping explicit-tracking [ all-version ]",
+        "metadata": {
+          "corpus_file": "2.7.8.23_igmp_snooping_explicit-tracking.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo igmp snooping ssm-mapping X.X.X.X { X.X.X.X | INTEGER<4-32> } X.X.X.X",
+        "metadata": {
+          "corpus_file": "2.7.8.68_igmp_snooping_ssm-mapping_VLAN_view.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo ip source check user-bind alarm enable",
+        "metadata": {
+          "corpus_file": "2.13.3.5_ip_source_check_user-bind_alarm_enable.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo mld snooping group-policy",
+        "metadata": {
+          "corpus_file": "2.7.11.13_mld_snooping_group-policy.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo mld snooping version",
+        "metadata": {
+          "corpus_file": "2.7.11.43_mld_snooping_version.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo multicast vlan send-query prune-source-port",
+        "metadata": {
+          "corpus_file": "2.7.8.91_multicast_vlan_send-query_prune-source-port.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo subordinate separate",
+        "metadata": {
+          "corpus_file": "2.4.3.48_subordinate_separate.json",
+          "format_index": 1
+        }
+      }
+    ],
+    "route-policy": [
+      {
+        "format": "apply comm-filter STRING<1-51> delete",
+        "metadata": {
+          "corpus_file": "2.6.9.7_apply_comm-filter_delete.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "apply dampening INTEGER<1-45> INTEGER<1-19998> INTEGER<2-19999> INTEGER<1001-20000>",
+        "metadata": {
+          "corpus_file": "2.6.9.12_apply_dampening.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "apply extcommunity bandwidth { STRING<3-19> | none }",
+        "metadata": {
+          "corpus_file": "2.6.9.102_apply_extcommunity_bandwidth.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "if-match extcommunity-list soo STRING<1-51>",
+        "metadata": {
+          "corpus_file": "2.6.9.53_if-match_extcommunity-list_soo.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "if-match ip next-hop acl { INTEGER<2000-2999> | STRING<1-32> }",
+        "metadata": {
+          "corpus_file": "2.6.9.55_if-match_ip_next-hop_acl.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "if-match ip-prefix STRING<1-169>",
+        "metadata": {
+          "corpus_file": "2.6.9.59_if-match_ip-prefix.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "if-match ipv6 address prefix-list STRING<1-169>",
+        "metadata": {
+          "corpus_file": "2.6.9.61_if-match_ipv6_address_prefix-list.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "undo apply community",
+        "metadata": {
+          "corpus_file": "2.6.9.8_apply_community.json",
+          "format_index": 2
+        }
+      },
+      {
+        "format": "undo if-match community-filter { INTEGER<1-99> | INTEGER<100-199> } &<1-16>",
+        "metadata": {
+          "corpus_file": "2.6.9.50_if-match_community-filter.json",
+          "format_index": 2
+        }
+      },
+      {
+        "format": "undo if-match ipv6 address [ prefix-list STRING<1-169> ]",
+        "metadata": {
+          "corpus_file": "2.6.9.61_if-match_ipv6_address_prefix-list.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo if-match ipv6 route-source [ prefix-list STRING<1-169> ]",
+        "metadata": {
+          "corpus_file": "2.6.9.65_if-match_ipv6_route-source_prefix-list.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo if-match route-state [ bgp-not-best ]",
+        "metadata": {
+          "corpus_file": "2.6.9.72_if-match_route-state_bgp-not-best.json",
+          "format_index": 1
+        }
+      }
+    ],
+    "ospf": [
+      {
+        "format": "domain-id { null | { X.X.X.X | X.X.X.X } [ [ type { 0005 | 0105 | 0205 | 8005 } value STRING<1-255> ] | secondary ] * }",
+        "metadata": {
+          "corpus_file": "2.6.3.47_domain-id.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "filter-lsa-out peer X.X.X.X { all | { ase [ acl { INTEGER<2000-2999> | STRING<1-32> } ] | nssa [ acl { INTEGER<2000-2999> | STRING<1-32> } ] | summary [ acl { INTEGER<2000-2999> | STRING<1-32> } ] } * }",
+        "metadata": {
+          "corpus_file": "2.6.3.50_filter-lsa-out_peer.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "import-route limit INTEGER<1-4294967295> [ threshold-alarm { upper-limit INTEGER<1-100> | lower-limit INTEGER<1-100> } * ]",
+        "metadata": {
+          "corpus_file": "2.6.3.63_import-route_limit.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "lsa-age refresh disable",
+        "metadata": {
+          "corpus_file": "2.6.3.65_lsa-age_refresh_disable.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "lsa-arrival-interval intelligent-timer INTEGER<1-300000> INTEGER<0-60000> INTEGER<1-60000>",
+        "metadata": {
+          "corpus_file": "2.6.3.66_lsa-arrival-interval_OSPF_view.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "preference { INTEGER<1-255> | route-policy STRING<1-200> } *",
+        "metadata": {
+          "corpus_file": "2.6.3.124_preference_OSPF_view.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "prefix-priority { critical | high | medium } ip-prefix STRING<1-169>",
+        "metadata": {
+          "corpus_file": "2.6.3.125_prefix-priority_OSPF_view.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "spf-schedule-interval intelligent-timer INTEGER<1-300000> INTEGER<1-60000> INTEGER<1-60000> [ conservative ]",
+        "metadata": {
+          "corpus_file": "2.6.3.142_spf-schedule-interval.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo advertise link-attributes remote-ip disable",
+        "metadata": {
+          "corpus_file": "2.6.3.3_advertise_link-attributes_disable.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo eca-route-type compatible",
+        "metadata": {
+          "corpus_file": "2.6.3.48_eca-route-type_compatible.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo filter-policy [ INTEGER<2000-2999> | acl-name STRING<1-32> | ip-prefix STRING<1-169> | route-policy STRING<1-200> ] export bgp",
+        "metadata": {
+          "corpus_file": "2.6.3.51_filter-policy_export_OSPF_view.json",
+          "format_index": 15
+        }
+      },
+      {
+        "format": "undo import-route limit [ INTEGER<1-4294967295> ] [ threshold-alarm [ upper-limit INTEGER<1-100> | lower-limit INTEGER<1-100> ] * ]",
+        "metadata": {
+          "corpus_file": "2.6.3.63_import-route_limit.json",
+          "format_index": 1
+        }
+      }
+    ],
+    "isis": [
+      {
+        "format": "circuit-cost { INTEGER<1-63> } [ level-1 | level-2 ]",
+        "metadata": {
+          "corpus_file": "2.6.6.15_circuit-cost_IS-IS_view.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "cost-style { narrow | wide | wide-compatible | { compatible | narrow-compatible } [ relax-spf-limit ] }",
+        "metadata": {
+          "corpus_file": "2.6.6.18_cost-style.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "import-route { ospf | isis } [ INTEGER<1-4294967295> ] inherit-cost [ { level-1 | level-2 | level-1-2 } | tag INTEGER<1-4294967295> | route-policy STRING<1-200> ] *",
+        "metadata": {
+          "corpus_file": "2.6.6.68_import-route_IS-IS_view.json",
+          "format_index": 3
+        }
+      },
+      {
+        "format": "ipv6 circuit-cost { INTEGER<1-63> } [ level-1 | level-2 ]",
+        "metadata": {
+          "corpus_file": "2.6.6.15_circuit-cost_IS-IS_view.json",
+          "format_index": 2
+        }
+      },
+      {
+        "format": "ipv6 filter-policy { INTEGER<2000-2999> | acl6-name STRING<1-32> | ipv6-prefix STRING<1-169> | route-policy STRING<1-200> } { export [ direct | static | ripng INTEGER<1-4294967295> | bgp | ospfv3 INTEGER<1-4294967295> | isis INTEGER<1-4294967295> ] }",
+        "metadata": {
+          "corpus_file": "2.6.6.79_ipv6_filter-policy_export.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "ipv6 import-route isis level-2 into level-1 [ tag INTEGER<1-4294967295> | filter-policy { INTEGER<2000-2999> | acl6-name STRING<1-32> | ipv6-prefix STRING<1-169> | route-policy STRING<1-200> } | direct { allow-filter-policy | allow-up-down-bit } * ] *",
+        "metadata": {
+          "corpus_file": "2.6.6.84_ipv6_import-route_isis_level-2_into_level-1_IS-IS_view.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "timer lsp-generation INTEGER<1-120> [ INTEGER<1-60000> [ INTEGER<1-60000> ] ] [ level-1 | level-2 ]",
+        "metadata": {
+          "corpus_file": "2.6.6.187_timer_lsp-generation_IS-IS_view.json",
+          "format_index": 0
+        }
+      },
+      {
+        "format": "undo ipv6 import-route { direct | static | { ospfv3 | ripng | isis } [ INTEGER<1-4294967295> ] | bgp }",
+        "metadata": {
+          "corpus_file": "2.6.6.82_ipv6_import-route_IS-IS_view.json",
+          "format_index": 2
+        }
+      },
+      {
+        "format": "undo is-name [ STRING<1-64> ]",
+        "metadata": {
+          "corpus_file": "2.6.6.92_is-name.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo maximum load-balancing",
+        "metadata": {
+          "corpus_file": "2.6.6.161_maximum_load-balancing_IS-IS_view.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo nexthop X.X.X.X",
+        "metadata": {
+          "corpus_file": "2.6.6.164_nexthop_weight_IS-IS_view.json",
+          "format_index": 1
+        }
+      },
+      {
+        "format": "undo suppress-flapping lsp-generation",
+        "metadata": {
+          "corpus_file": "2.6.6.183_suppress-flapping_lsp-generation.json",
+          "format_index": 1
+        }
+      }
+    ]
+  }
+}

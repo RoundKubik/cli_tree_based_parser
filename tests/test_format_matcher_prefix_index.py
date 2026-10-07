@@ -126,12 +126,12 @@ def test_duplicate_sources_keep_ids_and_slots_without_repeating_work(
     device = "c { a <first> | b <second> } * device"
     document = "c { a <first> | b <second> } *" + (suffix or " device")
     calls = []
-    method = "prefix" if suffix else "prepared"
+    method = "prefix" if suffix else "structural"
     original = getattr(PairPreparation, method)
 
-    def observed(pair):
+    def observed(pair, **options):
         calls.append((pair.document.document_id, pair.device.pattern_id))
-        return original(pair)
+        return original(pair, **options)
 
     monkeypatch.setattr(PairPreparation, method, observed)
     result = FormatMatcher().compile_formats(

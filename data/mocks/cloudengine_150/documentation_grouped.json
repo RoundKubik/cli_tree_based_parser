@@ -1,0 +1,2490 @@
+{
+  "schema_version": 1,
+  "source": "documentation",
+  "vendor": "Huawei",
+  "device": "Huawei VRP",
+  "model_type": "CloudEngine 9800/8800/6800",
+  "software_version": "v300r024c00",
+  "type": "grouped",
+  "metadata": {
+    "mock": true,
+    "reference_corpus": "huawei-cloudengine-9800-8800-6800-v300r024c00",
+    "random_seed": 20261006,
+    "command_count": 151,
+    "selection": "150 original source records plus one documented RIP command to populate its target view",
+    "parameter_types": "Derived from ParaDef and selected name heuristics; string also represents enum, MAC, prefix and dotted AS values",
+    "synthetic_fields": [
+      "mock creates/requires rules"
+    ],
+    "switch_to_view_extraction": "FuncDef destinations preserved; missing entries and group membership recovered from documented example prompts and ParentView",
+    "view_name_normalization": "lowercase and collapsed whitespace"
+  },
+  "entry_view": "system view",
+  "views": {
+    "system view": [
+      {
+        "format": "acl [ number ] <advance-acl-number>",
+        "parameter_types": [
+          {
+            "parameter_name": "advance-acl-number",
+            "parameter_type": "integer"
+          }
+        ],
+        "creates": [
+          {
+            "kind": "entity_type",
+            "parameter_name": "advance-acl-number",
+            "entity_type": "acl"
+          }
+        ],
+        "requires": [],
+        "metadata": {
+          "corpus_file": "2.5.10.8_acl_number.json",
+          "format_index": 2,
+          "parent_view": "System view",
+          "switch_to_view_source": {
+            "field": "FuncDef",
+            "text": "The acl number command creates an ACL and displays the ACL view.",
+            "view": "ACL view"
+          }
+        },
+        "switch_to_view": "acl view"
+      },
+      {
+        "format": "acl [ number ] <basic-acl-number>",
+        "parameter_types": [
+          {
+            "parameter_name": "basic-acl-number",
+            "parameter_type": "integer"
+          }
+        ],
+        "creates": [
+          {
+            "kind": "entity_type",
+            "parameter_name": "basic-acl-number",
+            "entity_type": "acl"
+          }
+        ],
+        "requires": [],
+        "metadata": {
+          "corpus_file": "2.5.10.8_acl_number.json",
+          "format_index": 0,
+          "parent_view": "System view",
+          "switch_to_view_source": {
+            "field": "FuncDef",
+            "text": "The acl number command creates an ACL and displays the ACL view.",
+            "view": "ACL view"
+          }
+        },
+        "switch_to_view": "acl view"
+      },
+      {
+        "format": "anti-attack tcp-syn enable",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.13.1.8_anti-attack_tcp-syn_enable.json",
+          "format_index": 0,
+          "parent_view": "System view"
+        }
+      },
+      {
+        "format": "bgp <as-number>",
+        "parameter_types": [
+          {
+            "parameter_name": "as-number",
+            "parameter_type": "string"
+          }
+        ],
+        "creates": [
+          {
+            "kind": "entity_type",
+            "parameter_name": "as-number",
+            "entity_type": "bgp-process"
+          }
+        ],
+        "requires": [],
+        "metadata": {
+          "corpus_file": "2.6.5.84_bgp.json",
+          "format_index": 0,
+          "parent_view": "System view",
+          "switch_to_view_source": {
+            "field": "FuncDef",
+            "text": "The bgp command enables BGP and displays the BGP view or displays the BGP view directly.",
+            "view": "BGP view"
+          }
+        },
+        "switch_to_view": "bgp view"
+      },
+      {
+        "format": "configuration file auto-save backup-to-server server <server-ip> [ vpn-instance <vpn-instance-name> ] transport-type { tftp | { ftp | sftp } [ port <port-value> ] user <user-name> password <password> } [ path <folder> ]",
+        "parameter_types": [
+          {
+            "parameter_name": "server-ip",
+            "parameter_type": "ipv4-address"
+          },
+          {
+            "parameter_name": "vpn-instance-name",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "port-value",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "user-name",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "password",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "folder",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.1.5.20_configuration_file_auto-save_backup-to-server.json",
+          "format_index": 0,
+          "parent_view": "System view"
+        }
+      },
+      {
+        "format": "grpc",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.15.8.6_grpc.json",
+          "format_index": 0,
+          "parent_view": "System view",
+          "switch_to_view_source": {
+            "field": "FuncDef",
+            "text": "The grpc command displays the gRPC view.",
+            "view": "gRPC view"
+          }
+        },
+        "switch_to_view": "grpc view"
+      },
+      {
+        "format": "ip import-rib vpn-instance <vpn-instance-name> protocol static [ valid-route ] [ route-policy <route-policy-name> ]",
+        "parameter_types": [
+          {
+            "parameter_name": "vpn-instance-name",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "route-policy-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.8.2.12_ip_import-rib_vpn-instance_protocol_static.json",
+          "format_index": 0,
+          "parent_view": "System view"
+        }
+      },
+      {
+        "format": "isis <process-id> [ vpn-instance <vpn-instance-name> ]",
+        "parameter_types": [
+          {
+            "parameter_name": "process-id",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "vpn-instance-name",
+            "parameter_type": "string"
+          }
+        ],
+        "creates": [
+          {
+            "kind": "entity_type",
+            "parameter_name": "process-id",
+            "entity_type": "isis-process"
+          }
+        ],
+        "requires": [],
+        "metadata": {
+          "corpus_file": "2.6.6.94_isis.json",
+          "format_index": 0,
+          "parent_view": "System view",
+          "switch_to_view_source": {
+            "field": "Examples",
+            "corpus_file": "2.6.6.15_circuit-cost_IS-IS_view.json",
+            "text": "<HUAWEI> system-view\n[~HUAWEI] isis 1\n[*HUAWEI-isis-1] ipv6 enable\n[*HUAWEI-isis-1] ipv6 circuit-cost 20",
+            "view": "IS-IS view"
+          }
+        },
+        "switch_to_view": "is-is view"
+      },
+      {
+        "format": "lldp mdn trap-interval <trap-interval>",
+        "parameter_types": [
+          {
+            "parameter_name": "trap-interval",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.3.9.21_lldp_mdn_trap-interval.json",
+          "format_index": 0,
+          "parent_view": "System view"
+        }
+      },
+      {
+        "format": "multicast layer-2 invalid-packet igmp snooping max-count <max-Num>",
+        "parameter_types": [
+          {
+            "parameter_name": "max-Num",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.7.8.85_multicast_layer-2_invalid-packet_igmp_snooping.json",
+          "format_index": 0,
+          "parent_view": "System view"
+        }
+      },
+      {
+        "format": "ndb silent fault disable",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.3.1.64_ndb_silent_fault_disable.json",
+          "format_index": 0,
+          "parent_view": "System view"
+        }
+      },
+      {
+        "format": "ospf <process-id> [ router-id <route-id> | vpn-instance <vpname> ] *",
+        "parameter_types": [
+          {
+            "parameter_name": "process-id",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "route-id",
+            "parameter_type": "ipv4-address"
+          },
+          {
+            "parameter_name": "vpname",
+            "parameter_type": "string"
+          }
+        ],
+        "creates": [
+          {
+            "kind": "entity_type",
+            "parameter_name": "process-id",
+            "entity_type": "ospf-process"
+          }
+        ],
+        "requires": [],
+        "metadata": {
+          "corpus_file": "2.6.3.77_ospf.json",
+          "format_index": 0,
+          "parent_view": "System view",
+          "switch_to_view_source": {
+            "field": "Examples",
+            "corpus_file": "2.6.3.47_domain-id.json",
+            "text": "<HUAWEI> system-view\n[~HUAWEI] ip vpn-instance vpn1\n[*HUAWEI-vpn-instance-vpn1] ipv4-family\n[*HUAWEI-vpn-instance-vpn1-af-ipv4] quit\n[*HUAWEI-vpn-instance-vpn1] quit\n[*HUAWEI] ospf 1 vpn-instance vpn1\n[*HUAWEI-ospf-1] domain-id 234",
+            "view": "OSPF view"
+          }
+        },
+        "switch_to_view": "ospf view"
+      },
+      {
+        "format": "rip [ vpn-instance <vpn-instance-name> ]",
+        "parameter_types": [
+          {
+            "parameter_name": "vpn-instance-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.7.29_rip.json",
+          "format_index": 1,
+          "parent_view": "System view",
+          "switch_to_view_source": {
+            "field": "Examples",
+            "corpus_file": "2.6.7.2_bfd_all-interfaces_enable_RIP_view.json",
+            "text": "<HUAWEI> system-view\n[~HUAWEI] bfd\n[*HUAWEI-bfd] quit\n[*HUAWEI] rip\n[*HUAWEI-rip-1] bfd all-interfaces enable",
+            "view": "RIP view"
+          }
+        },
+        "switch_to_view": "rip view"
+      },
+      {
+        "format": "route-policy <route-policy-name> <matchMode> node <node>",
+        "parameter_types": [
+          {
+            "parameter_name": "route-policy-name",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "matchMode",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "node",
+            "parameter_type": "integer"
+          }
+        ],
+        "creates": [
+          {
+            "kind": "entity_type",
+            "parameter_name": "route-policy-name",
+            "entity_type": "route-policy"
+          }
+        ],
+        "requires": [],
+        "metadata": {
+          "corpus_file": "2.6.9.99_route-policy.json",
+          "format_index": 0,
+          "parent_view": "System view",
+          "switch_to_view_source": {
+            "field": "FuncDef",
+            "text": "The route-policy command creates a route-policy and displays the Route-policy view.",
+            "view": "Route-policy view"
+          }
+        },
+        "switch_to_view": "route-policy view"
+      },
+      {
+        "format": "ssh user <user-name> sftp-directory <directoryname>",
+        "parameter_types": [
+          {
+            "parameter_name": "user-name",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "directoryname",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.13.9.102_ssh_user.json",
+          "format_index": 4,
+          "parent_view": "System view"
+        }
+      },
+      {
+        "format": "undo device warm-reboot enable",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.3.20.6_device_warm-reboot_enable.json",
+          "format_index": 1,
+          "parent_view": "System view"
+        }
+      },
+      {
+        "format": "undo ftp server default-directory",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.1.2.40_ftp_server_default-directory.json",
+          "format_index": 1,
+          "parent_view": "System view"
+        }
+      },
+      {
+        "format": "undo lldp transmit multiplier",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.3.9.31_lldp_transmit_multiplier.json",
+          "format_index": 1,
+          "parent_view": "System view"
+        }
+      },
+      {
+        "format": "undo multicast layer-2 invalid-packet mld snooping",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.7.11.44_multicast_layer-2_invalid-packet_mld_snooping.json",
+          "format_index": 1,
+          "parent_view": "System view"
+        }
+      },
+      {
+        "format": "vlan <vlan-id>",
+        "parameter_types": [
+          {
+            "parameter_name": "vlan-id",
+            "parameter_type": "integer"
+          }
+        ],
+        "creates": [
+          {
+            "kind": "entity_type",
+            "parameter_name": "vlan-id",
+            "entity_type": "vlan"
+          }
+        ],
+        "requires": [],
+        "metadata": {
+          "corpus_file": "2.4.3.49_vlan_system_view.json",
+          "format_index": 0,
+          "parent_view": "System view",
+          "switch_to_view_source": {
+            "field": "FuncDef",
+            "text": "The vlan command creates a VLAN and displays the VLAN view.",
+            "view": "VLAN view"
+          }
+        },
+        "switch_to_view": "vlan view"
+      }
+    ],
+    "bgp view": [
+      {
+        "format": "dampening [ <half-life-reach> <reuse> <suppress> <ceiling> | [ route-policy <route-policy-name> ] ] * [ update-standard ]",
+        "parameter_types": [
+          {
+            "parameter_name": "half-life-reach",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "reuse",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "suppress",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "ceiling",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "route-policy-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.105_dampening_BGP_view.json",
+          "format_index": 0,
+          "parent_view": "BGP view"
+        }
+      },
+      {
+        "format": "group <peerGroupName> unnumbered { internal | external }",
+        "parameter_types": [
+          {
+            "parameter_name": "peerGroupName",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.1432_group_unnumbered.json",
+          "format_index": 0,
+          "parent_view": "BGP view"
+        }
+      },
+      {
+        "format": "ipv4-family unicast",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.6.5.333_ipv4-family_unicast.json",
+          "format_index": 0,
+          "parent_view": "BGP view",
+          "switch_to_view_source": {
+            "field": "Examples",
+            "corpus_file": "2.6.5.113_default_local-preference_BGP-IPv4_unicast_address_family_view.json",
+            "text": "<HUAWEI> system-view\n[~HUAWEI] bgp 100\n[*HUAWEI-bgp] ipv4-family unicast\n[*HUAWEI-bgp-af-ipv4] default local-preference 200",
+            "view": "BGP-IPv4 unicast address family view"
+          }
+        },
+        "switch_to_view": "bgp-ipv4 unicast address family view"
+      },
+      {
+        "format": "ipv6-family unicast",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.6.5.336_ipv6-family.json",
+          "format_index": 0,
+          "parent_view": "BGP view",
+          "switch_to_view_source": {
+            "field": "FuncDef",
+            "text": "The ipv6-family command configures a BGP IPv6 address family and displays the BGP IPv6 address family view.",
+            "view": "BGP IPv6 address family view"
+          }
+        },
+        "switch_to_view": "bgp ipv6 address family view"
+      },
+      {
+        "format": "peer <group-name> bfd enable per-link one-arm-echo",
+        "parameter_types": [
+          {
+            "parameter_name": "group-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.526_peer_bfd_enable_BGP_view_group.json",
+          "format_index": 1,
+          "parent_view": "BGP view"
+        }
+      },
+      {
+        "format": "peer <ipv4-address> password { cipher <cipher-password> | simple <simple-password> }",
+        "parameter_types": [
+          {
+            "parameter_name": "ipv4-address",
+            "parameter_type": "ipv4-address"
+          },
+          {
+            "parameter_name": "cipher-password",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "simple-password",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.987_peer_password_BGP_view_IPv4.json",
+          "format_index": 0,
+          "parent_view": "BGP view"
+        }
+      },
+      {
+        "format": "peer <ipv4-address> ssl-policy disable",
+        "parameter_types": [
+          {
+            "parameter_name": "ipv4-address",
+            "parameter_type": "ipv4-address"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.1174_peer_ssl-policy_BGP_view.json",
+          "format_index": 5,
+          "parent_view": "BGP view"
+        }
+      },
+      {
+        "format": "peer <ipv4-address> ssl-policy role client",
+        "parameter_types": [
+          {
+            "parameter_name": "ipv4-address",
+            "parameter_type": "ipv4-address"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.1177_peer_ssl-policy_role.json",
+          "format_index": 7,
+          "parent_view": "BGP view"
+        }
+      },
+      {
+        "format": "peer <ipv4-address> timer keepalive <keepalive-time> hold <hold-time>",
+        "parameter_types": [
+          {
+            "parameter_name": "ipv4-address",
+            "parameter_type": "ipv4-address"
+          },
+          {
+            "parameter_name": "keepalive-time",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "hold-time",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.1214_peer_timer_BGP_view.json",
+          "format_index": 0,
+          "parent_view": "BGP view"
+        }
+      },
+      {
+        "format": "undo peer <group-name> default-route-advertise",
+        "parameter_types": [
+          {
+            "parameter_name": "group-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.601_peer_default-route-advertise_BGP_view_group.json",
+          "format_index": 2,
+          "parent_view": "BGP view"
+        }
+      },
+      {
+        "format": "undo peer <group-name> graceful-restart peer-reset",
+        "parameter_types": [
+          {
+            "parameter_name": "group-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.701_peer_graceful-restart_peer-reset_BGP_view_group.json",
+          "format_index": 1,
+          "parent_view": "BGP view"
+        }
+      },
+      {
+        "format": "undo peer <groupName> advertise add-path path-number <number> route-policy <route-policy-name>",
+        "parameter_types": [
+          {
+            "parameter_name": "groupName",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "number",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "route-policy-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.400_peer_advertise_add-path_path-number_BGP-IPv4_unicast_address_family_view_group.json",
+          "format_index": 2,
+          "parent_view": "BGP view"
+        }
+      },
+      {
+        "format": "undo peer <ipv4-address> graceful-restart peer-reset",
+        "parameter_types": [
+          {
+            "parameter_name": "ipv4-address",
+            "parameter_type": "ipv4-address"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.700_peer_graceful-restart_peer-reset_BGP_view.json",
+          "format_index": 2,
+          "parent_view": "BGP view"
+        }
+      },
+      {
+        "format": "undo peer <ipv4-address> graceful-restart timer restart",
+        "parameter_types": [
+          {
+            "parameter_name": "ipv4-address",
+            "parameter_type": "ipv4-address"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.713_peer_graceful-restart_timer_restart_BGP_view.json",
+          "format_index": 1,
+          "parent_view": "BGP view"
+        }
+      }
+    ],
+    "bgp-ipv4 unicast address family view": [
+      {
+        "format": "default local-preference <local-preference>",
+        "parameter_types": [
+          {
+            "parameter_name": "local-preference",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.113_default_local-preference_BGP-IPv4_unicast_address_family_view.json",
+          "format_index": 0,
+          "parent_view": "BGP-IPv4 unicast address family view"
+        }
+      },
+      {
+        "format": "filter-policy { <acl-number> | ip-prefix <ip-prefix-name> | acl-name <acl-name> } { import | export [ direct | { isis | ospf | rip } <process-id> | static ] }",
+        "parameter_types": [
+          {
+            "parameter_name": "acl-number",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "ip-prefix-name",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "acl-name",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "process-id",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.282_filter-policy_BGP-IPv4_unicast_address_family_view.json",
+          "format_index": 0,
+          "parent_view": "BGP-IPv4 unicast address family view"
+        }
+      },
+      {
+        "format": "peer <group-name> default-route-advertise [ route-policy <route-policy-name> ] { conditional-route-match-all | conditional-route-match-any } { <ipv4-address> { <mask-length> | <mask> } } &<1-4>",
+        "parameter_types": [
+          {
+            "parameter_name": "group-name",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "route-policy-name",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "ipv4-address",
+            "parameter_type": "ipv4-address"
+          },
+          {
+            "parameter_name": "mask-length",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "mask",
+            "parameter_type": "ipv4-address"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.601_peer_default-route-advertise_BGP_view_group.json",
+          "format_index": 1,
+          "parent_view": "BGP-IPv4 unicast address family view"
+        }
+      },
+      {
+        "format": "peer <group-name> load-balancing [ as-path-ignore | as-path-relax ]",
+        "parameter_types": [
+          {
+            "parameter_name": "group-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.864_peer_load-balancing_BGP_view_group.json",
+          "format_index": 0,
+          "parent_view": "BGP-IPv4 unicast address family view"
+        }
+      },
+      {
+        "format": "peer <peerIpv6Addr> aggregate-link-bandwidth [ limit <bandwidth-value> ]",
+        "parameter_types": [
+          {
+            "parameter_name": "peerIpv6Addr",
+            "parameter_type": "ipv6-address"
+          },
+          {
+            "parameter_name": "bandwidth-value",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.441_peer_aggregate-link-bandwidth_BGP-IPv4_unicast_address_family_view_BGP-IPv6_unicast_address_family_v.json",
+          "format_index": 0,
+          "parent_view": "BGP-IPv4 unicast address family view"
+        }
+      },
+      {
+        "format": "peer <peerIpv6Addr> filter-policy acl-name <aclname> import",
+        "parameter_types": [
+          {
+            "parameter_name": "peerIpv6Addr",
+            "parameter_type": "ipv6-address"
+          },
+          {
+            "parameter_name": "aclname",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.684_peer_filter-policy_import_BGP-IPv4_unicast_address_family_view_IPv6.json",
+          "format_index": 1,
+          "parent_view": "BGP-IPv4 unicast address family view"
+        }
+      },
+      {
+        "format": "peer <peerIpv6Addr> route-policy <policy-name> import",
+        "parameter_types": [
+          {
+            "parameter_name": "peerIpv6Addr",
+            "parameter_type": "ipv6-address"
+          },
+          {
+            "parameter_name": "policy-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.1124_peer_route-policy_import_BGP-IPv4_unicast_address_family_view_IPv6.json",
+          "format_index": 0,
+          "parent_view": "BGP-IPv4 unicast address family view"
+        }
+      },
+      {
+        "format": "summary automatic",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.6.5.1384_summary_automatic_BGP-IPv4_unicast_address_family_view.json",
+          "format_index": 0,
+          "parent_view": "BGP-IPv4 unicast address family view"
+        }
+      },
+      {
+        "format": "undo maximum load-balancing ebgp",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.6.5.360_maximum_load-balancing_BGP-IPv4_unicast_address_family_view.json",
+          "format_index": 7,
+          "parent_view": "BGP-IPv4 unicast address family view"
+        }
+      },
+      {
+        "format": "undo peer <ipv4-address> allow-as-loop",
+        "parameter_types": [
+          {
+            "parameter_name": "ipv4-address",
+            "parameter_type": "ipv4-address"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.448_peer_allow-as-loop_BGP-IPv4_unicast_address_family_view_IPv4.json",
+          "format_index": 1,
+          "parent_view": "BGP-IPv4 unicast address family view"
+        }
+      },
+      {
+        "format": "undo peer <peerIpv6Addr> group <peerGroupName>",
+        "parameter_types": [
+          {
+            "parameter_name": "peerIpv6Addr",
+            "parameter_type": "ipv6-address"
+          },
+          {
+            "parameter_name": "peerGroupName",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.747_peer_group_BGP-IPv4_unicast_address_family_view_IPv6.json",
+          "format_index": 1,
+          "parent_view": "BGP-IPv4 unicast address family view"
+        }
+      },
+      {
+        "format": "undo peer <peerIpv6Addr> next-hop-local",
+        "parameter_types": [
+          {
+            "parameter_name": "peerIpv6Addr",
+            "parameter_type": "ipv6-address"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.956_peer_next-hop-local_BGP-IPv4_unicast_address_family_view_IPv6.json",
+          "format_index": 1,
+          "parent_view": "BGP-IPv4 unicast address family view"
+        }
+      }
+    ],
+    "bgp ipv6 address family view": [
+      {
+        "format": "peer <peerGroupName> aggregate-link-bandwidth [ limit <bandwidth-value> ]",
+        "parameter_types": [
+          {
+            "parameter_name": "peerGroupName",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "bandwidth-value",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.439_peer_aggregate-link-bandwidth_BGP-IPv4_unicast_address_family_view_BGP-IPv6_unicast_address_family_v.json",
+          "format_index": 0,
+          "parent_view": "BGP-IPv6 unicast address family view"
+        }
+      },
+      {
+        "format": "peer <peerIpv6Addr> peer-as-check",
+        "parameter_types": [
+          {
+            "parameter_name": "peerIpv6Addr",
+            "parameter_type": "ipv6-address"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.1000_peer_peer-as-check_BGP-IPv4_unicast_address_family_view_BGP-_IPv6_unicast_address_family_view_IPv6.json",
+          "format_index": 0,
+          "parent_view": "BGP-IPv6 unicast address family view"
+        }
+      },
+      {
+        "format": "undo nexthop recursive-lookup route-policy",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.6.5.391_nexthop_recursive-lookup_route-policy_BGP-IPv6_unicast_address_family_view.json",
+          "format_index": 1,
+          "parent_view": "BGP-IPv6 unicast address family view"
+        }
+      },
+      {
+        "format": "undo peer <group-name> filter-policy acl6-name <acl6-name> export",
+        "parameter_types": [
+          {
+            "parameter_name": "group-name",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "acl6-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.672_peer_filter-policy_export_BGP-IPv6_unicast_address_family_view_group.json",
+          "format_index": 3,
+          "parent_view": "BGP-IPv6 unicast address family view"
+        }
+      },
+      {
+        "format": "undo peer <ipv4-address> public-as-only",
+        "parameter_types": [
+          {
+            "parameter_name": "ipv4-address",
+            "parameter_type": "ipv4-address"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.1031_peer_public-as-only_BGP-IPv6_unicast_address_family_view_IPv4.json",
+          "format_index": 3,
+          "parent_view": "BGP-IPv6 unicast address family view"
+        }
+      },
+      {
+        "format": "undo peer <ipv4-address> route-policy <route-policy-name> import",
+        "parameter_types": [
+          {
+            "parameter_name": "ipv4-address",
+            "parameter_type": "ipv4-address"
+          },
+          {
+            "parameter_name": "route-policy-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.1128_peer_route-policy_import_BGP-IPv6_unicast_address_family_view_IPv4.json",
+          "format_index": 1,
+          "parent_view": "BGP-IPv6 unicast address family view"
+        }
+      },
+      {
+        "format": "undo peer <ipv6-address> keep-all-routes",
+        "parameter_types": [
+          {
+            "parameter_name": "ipv6-address",
+            "parameter_type": "ipv6-address"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.813_peer_keep-all-routes_BGP-IPv6_unicast_address_family_view_IPv6.json",
+          "format_index": 1,
+          "parent_view": "BGP-IPv6 unicast address family view"
+        }
+      },
+      {
+        "format": "undo peer <peerGroupName> next-hop-invariable",
+        "parameter_types": [
+          {
+            "parameter_name": "peerGroupName",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.949_peer_next-hop-invariable_BGP-IPv6_unicast_address_family_view_group.json",
+          "format_index": 1,
+          "parent_view": "BGP-IPv6 unicast address family view"
+        }
+      },
+      {
+        "format": "undo peer <peerIpv4Addr> as-path-filter { <number> | <name> } import",
+        "parameter_types": [
+          {
+            "parameter_name": "peerIpv4Addr",
+            "parameter_type": "ipv4-address"
+          },
+          {
+            "parameter_name": "number",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.487_peer_as-path-filter_import_IPv4.json",
+          "format_index": 1,
+          "parent_view": "BGP-IPv6 unicast address family view"
+        }
+      },
+      {
+        "format": "undo peer <peerIpv6Addr> aggregate-link-bandwidth [ limit <bandwidth-value> ]",
+        "parameter_types": [
+          {
+            "parameter_name": "peerIpv6Addr",
+            "parameter_type": "ipv6-address"
+          },
+          {
+            "parameter_name": "bandwidth-value",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.441_peer_aggregate-link-bandwidth_BGP-IPv4_unicast_address_family_view_BGP-IPv6_unicast_address_family_v.json",
+          "format_index": 2,
+          "parent_view": "BGP-IPv6 unicast address family view"
+        }
+      },
+      {
+        "format": "undo prefix low-memory exempt ipv6-prefix <prefix6-filter-name>",
+        "parameter_types": [
+          {
+            "parameter_name": "prefix6-filter-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.1284_prefix_low-memory_exempt_ipv6-prefix.json",
+          "format_index": 1,
+          "parent_view": "BGP-IPv6 unicast address family view"
+        }
+      },
+      {
+        "format": "undo slow-peer absolute-detection threshold <threshold>",
+        "parameter_types": [
+          {
+            "parameter_name": "threshold",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.5.1362_slow-peer_absolute-detection_BGP-IPv6_unicast_address_family_view.json",
+          "format_index": 2,
+          "parent_view": "BGP-IPv6 unicast address family view"
+        }
+      }
+    ],
+    "grpc view": [
+      {
+        "format": "grpc server",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.15.8.8_grpc_server.json",
+          "format_index": 0,
+          "parent_view": "GRPC view",
+          "switch_to_view_source": {
+            "field": "FuncDef",
+            "text": "The grpc server command displays the gRPC IPv4 server view.",
+            "view": "gRPC IPv4 server view"
+          }
+        },
+        "switch_to_view": "grpc ipv4 server view"
+      },
+      {
+        "format": "grpc server ipv6",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.15.8.9_grpc_server_ipv6.json",
+          "format_index": 0,
+          "parent_view": "GRPC view",
+          "switch_to_view_source": {
+            "field": "FuncDef",
+            "text": "The grpc server ipv6 command displays the gRPC IPv6 server view.",
+            "view": "gRPC IPv6 server view"
+          }
+        },
+        "switch_to_view": "grpc ipv6 server view"
+      }
+    ],
+    "grpc ipv4 server view": [
+      {
+        "format": "acl <acl-name>",
+        "parameter_types": [
+          {
+            "parameter_name": "acl-name",
+            "parameter_type": "string"
+          }
+        ],
+        "creates": [],
+        "requires": [
+          {
+            "kind": "entity_type",
+            "parameter_name": "acl-name",
+            "entity_type": "acl"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.15.8.1_acl.json",
+          "format_index": 0,
+          "parent_view": "GRPC server view"
+        }
+      },
+      {
+        "format": "acl <acl-number>",
+        "parameter_types": [
+          {
+            "parameter_name": "acl-number",
+            "parameter_type": "integer"
+          }
+        ],
+        "creates": [],
+        "requires": [
+          {
+            "kind": "entity_type",
+            "parameter_name": "acl-number",
+            "entity_type": "acl"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.15.8.1_acl.json",
+          "format_index": 1,
+          "parent_view": "GRPC server view"
+        }
+      },
+      {
+        "format": "compression gzip",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.15.8.3_compression_gzip.json",
+          "format_index": 0,
+          "parent_view": "GRPC server view"
+        }
+      },
+      {
+        "format": "server enable",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.15.8.15_server_enable.json",
+          "format_index": 0,
+          "parent_view": "GRPC server view"
+        }
+      },
+      {
+        "format": "server-port <port-number>",
+        "parameter_types": [
+          {
+            "parameter_name": "port-number",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.15.8.17_server-port.json",
+          "format_index": 0,
+          "parent_view": "GRPC server view"
+        }
+      },
+      {
+        "format": "ssl-policy <ssl-policy-name>",
+        "parameter_types": [
+          {
+            "parameter_name": "ssl-policy-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.15.8.23_ssl-policy_GRPC_server_view.json",
+          "format_index": 0,
+          "parent_view": "GRPC server view"
+        }
+      },
+      {
+        "format": "ssl-verify peer",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.15.8.26_ssl-verify_peer_GRPC_server_view.json",
+          "format_index": 0,
+          "parent_view": "GRPC server view"
+        }
+      },
+      {
+        "format": "undo compression gzip",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.15.8.3_compression_gzip.json",
+          "format_index": 1,
+          "parent_view": "GRPC server view"
+        }
+      },
+      {
+        "format": "undo idle-timeout [ <time> ]",
+        "parameter_types": [
+          {
+            "parameter_name": "time",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.15.8.10_idle-timeout.json",
+          "format_index": 1,
+          "parent_view": "GRPC server view"
+        }
+      },
+      {
+        "format": "undo server-port [ <port-number> ]",
+        "parameter_types": [
+          {
+            "parameter_name": "port-number",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.15.8.17_server-port.json",
+          "format_index": 1,
+          "parent_view": "GRPC server view"
+        }
+      },
+      {
+        "format": "undo source-ip [ <ip-address> [ vpn-instance <vpn-instance-name> ] ]",
+        "parameter_types": [
+          {
+            "parameter_name": "ip-address",
+            "parameter_type": "ipv4-address"
+          },
+          {
+            "parameter_name": "vpn-instance-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.15.8.20_source-ip_GRPC_server_view.json",
+          "format_index": 1,
+          "parent_view": "GRPC server view"
+        }
+      },
+      {
+        "format": "undo ssl-policy [ <ssl-policy-name> ]",
+        "parameter_types": [
+          {
+            "parameter_name": "ssl-policy-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.15.8.23_ssl-policy_GRPC_server_view.json",
+          "format_index": 1,
+          "parent_view": "GRPC server view"
+        }
+      },
+      {
+        "format": "undo ssl-verify peer",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.15.8.26_ssl-verify_peer_GRPC_server_view.json",
+          "format_index": 1,
+          "parent_view": "GRPC server view"
+        }
+      }
+    ],
+    "grpc ipv6 server view": [
+      {
+        "format": "acl <acl-name>",
+        "parameter_types": [
+          {
+            "parameter_name": "acl-name",
+            "parameter_type": "string"
+          }
+        ],
+        "creates": [],
+        "requires": [
+          {
+            "kind": "entity_type",
+            "parameter_name": "acl-name",
+            "entity_type": "acl"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.15.8.2_acl_GRPC_IPv6_server_view.json",
+          "format_index": 0,
+          "parent_view": "GRPC IPv6 server view"
+        }
+      },
+      {
+        "format": "acl <acl-number>",
+        "parameter_types": [
+          {
+            "parameter_name": "acl-number",
+            "parameter_type": "integer"
+          }
+        ],
+        "creates": [],
+        "requires": [
+          {
+            "kind": "entity_type",
+            "parameter_name": "acl-number",
+            "entity_type": "acl"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.15.8.2_acl_GRPC_IPv6_server_view.json",
+          "format_index": 1,
+          "parent_view": "GRPC IPv6 server view"
+        }
+      },
+      {
+        "format": "compression gzip",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.15.8.4_compression_gzip_GRPC_IPv6_server_view.json",
+          "format_index": 0,
+          "parent_view": "GRPC IPv6 server view"
+        }
+      },
+      {
+        "format": "idle-timeout <time>",
+        "parameter_types": [
+          {
+            "parameter_name": "time",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.15.8.11_idle-timeout_GRPC_IPv6_server_view.json",
+          "format_index": 0,
+          "parent_view": "GRPC IPv6 server view"
+        }
+      },
+      {
+        "format": "permit no-tls { gnmi }",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.15.8.14_permit_no-tls_GRPC_IPv6_server_view.json",
+          "format_index": 0,
+          "parent_view": "GRPC IPv6 server view"
+        }
+      },
+      {
+        "format": "server-port <port-number>",
+        "parameter_types": [
+          {
+            "parameter_name": "port-number",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.15.8.18_server-port_GRPC_IPv6_server_view.json",
+          "format_index": 0,
+          "parent_view": "GRPC IPv6 server view"
+        }
+      },
+      {
+        "format": "ssl-policy <policy-name>",
+        "parameter_types": [
+          {
+            "parameter_name": "policy-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.15.8.22_ssl-policy_GRPC_IPv6_server_view.json",
+          "format_index": 0,
+          "parent_view": "GRPC IPv6 server view"
+        }
+      },
+      {
+        "format": "undo acl [ <acl-name> ]",
+        "parameter_types": [
+          {
+            "parameter_name": "acl-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.15.8.2_acl_GRPC_IPv6_server_view.json",
+          "format_index": 2,
+          "parent_view": "GRPC IPv6 server view"
+        }
+      },
+      {
+        "format": "undo idle-timeout [ <time> ]",
+        "parameter_types": [
+          {
+            "parameter_name": "time",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.15.8.11_idle-timeout_GRPC_IPv6_server_view.json",
+          "format_index": 1,
+          "parent_view": "GRPC IPv6 server view"
+        }
+      },
+      {
+        "format": "undo permit no-tls { gnmi }",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.15.8.14_permit_no-tls_GRPC_IPv6_server_view.json",
+          "format_index": 1,
+          "parent_view": "GRPC IPv6 server view"
+        }
+      },
+      {
+        "format": "undo server-port [ <port-number> ]",
+        "parameter_types": [
+          {
+            "parameter_name": "port-number",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.15.8.18_server-port_GRPC_IPv6_server_view.json",
+          "format_index": 1,
+          "parent_view": "GRPC IPv6 server view"
+        }
+      },
+      {
+        "format": "undo ssl-policy [ <policy-name> ]",
+        "parameter_types": [
+          {
+            "parameter_name": "policy-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.15.8.22_ssl-policy_GRPC_IPv6_server_view.json",
+          "format_index": 1,
+          "parent_view": "GRPC IPv6 server view"
+        }
+      },
+      {
+        "format": "undo ssl-verify peer",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.15.8.25_ssl-verify_peer_GRPC_IPv6_server_view.json",
+          "format_index": 1,
+          "parent_view": "GRPC IPv6 server view"
+        }
+      }
+    ],
+    "acl view": [
+      {
+        "format": "description <text>",
+        "parameter_types": [
+          {
+            "parameter_name": "text",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.5.10.10_description.json",
+          "format_index": 0,
+          "parent_view": "Basic ACL view"
+        }
+      },
+      {
+        "format": "rule <rule-id> description <destext>",
+        "parameter_types": [
+          {
+            "parameter_name": "rule-id",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "destext",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.5.10.33_rule_description_Basic_ACL_view.json",
+          "format_index": 0,
+          "parent_view": "Basic ACL view"
+        }
+      },
+      {
+        "format": "rule [ <rule-id> ] [ name <rule-name> ] { permit | deny } [ fragment-type fragment | source { <source-ip-address> { <source-wildcard> | 0 | <src-netmask> } | any } | time-range <time-name> | [ vpn-instance <vpn-instance-name> | vpn-instance-any ] | logging ] *",
+        "parameter_types": [
+          {
+            "parameter_name": "rule-id",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "rule-name",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "source-ip-address",
+            "parameter_type": "ipv4-address"
+          },
+          {
+            "parameter_name": "source-wildcard",
+            "parameter_type": "ipv4-address"
+          },
+          {
+            "parameter_name": "src-netmask",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "time-name",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "vpn-instance-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.5.10.30_rule_basic_ACL_view.json",
+          "format_index": 0,
+          "parent_view": "Basic ACL view"
+        }
+      },
+      {
+        "format": "step <step-value>",
+        "parameter_types": [
+          {
+            "parameter_name": "step-value",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.5.10.36_step.json",
+          "format_index": 0,
+          "parent_view": "Basic ACL view"
+        }
+      },
+      {
+        "format": "undo description",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.5.10.10_description.json",
+          "format_index": 1,
+          "parent_view": "Basic ACL view"
+        }
+      },
+      {
+        "format": "undo rule <rule-id> [ to <end-rule-id> ]",
+        "parameter_types": [
+          {
+            "parameter_name": "rule-id",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "end-rule-id",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.5.10.30_rule_basic_ACL_view.json",
+          "format_index": 2,
+          "parent_view": "Basic ACL view"
+        }
+      },
+      {
+        "format": "undo rule <rule-id> description",
+        "parameter_types": [
+          {
+            "parameter_name": "rule-id",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.5.10.40_undo_rule_Basic_ACL_view.json",
+          "format_index": 0,
+          "parent_view": "Basic ACL view"
+        }
+      },
+      {
+        "format": "undo rule [ name <rule-name> ] { permit | deny } [ fragment-type fragment | source { <source-ip-address> { <source-wildcard> | 0 | <src-netmask> } | any } | time-range <time-name> | [ vpn-instance <vpn-instance-name> | vpn-instance-any ] | logging ] *",
+        "parameter_types": [
+          {
+            "parameter_name": "rule-name",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "source-ip-address",
+            "parameter_type": "ipv4-address"
+          },
+          {
+            "parameter_name": "source-wildcard",
+            "parameter_type": "ipv4-address"
+          },
+          {
+            "parameter_name": "src-netmask",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "time-name",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "vpn-instance-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.5.10.30_rule_basic_ACL_view.json",
+          "format_index": 1,
+          "parent_view": "Basic ACL view"
+        }
+      },
+      {
+        "format": "undo step",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.5.10.36_step.json",
+          "format_index": 1,
+          "parent_view": "Basic ACL view"
+        }
+      },
+      {
+        "format": "description <text>",
+        "parameter_types": [
+          {
+            "parameter_name": "text",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.5.10.10_description.json",
+          "format_index": 0,
+          "parent_view": "Advanced ACL view"
+        }
+      },
+      {
+        "format": "rule <rule-id> description <destext>",
+        "parameter_types": [
+          {
+            "parameter_name": "rule-id",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "destext",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.5.10.32_rule_description_Advanced_ACL_view.json",
+          "format_index": 0,
+          "parent_view": "Advanced ACL view"
+        }
+      },
+      {
+        "format": "step <step-value>",
+        "parameter_types": [
+          {
+            "parameter_name": "step-value",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.5.10.36_step.json",
+          "format_index": 0,
+          "parent_view": "Advanced ACL view"
+        }
+      },
+      {
+        "format": "undo description",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.5.10.10_description.json",
+          "format_index": 1,
+          "parent_view": "Advanced ACL view"
+        }
+      },
+      {
+        "format": "undo rule <rule-id> [ to <end-rule-id> ]",
+        "parameter_types": [
+          {
+            "parameter_name": "rule-id",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "end-rule-id",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.5.10.27_rule_Advanced_ACL_view_gre-igmp-ip-ipinip-ospf.json",
+          "format_index": 4,
+          "parent_view": "Advanced ACL view"
+        }
+      },
+      {
+        "format": "undo rule <rule-id> description",
+        "parameter_types": [
+          {
+            "parameter_name": "rule-id",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.5.10.39_undo_rule_Advanced_ACL_view.json",
+          "format_index": 0,
+          "parent_view": "Advanced ACL view"
+        }
+      },
+      {
+        "format": "undo step",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.5.10.36_step.json",
+          "format_index": 1,
+          "parent_view": "Advanced ACL view"
+        }
+      }
+    ],
+    "vlan view": [
+      {
+        "format": "dhcp snooping alarm dhcpv6-reply threshold <threshold>",
+        "parameter_types": [
+          {
+            "parameter_name": "threshold",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.5.8.7_dhcp_snooping_alarm_dhcpv6-reply_threshold.json",
+          "format_index": 0,
+          "parent_view": "VLAN view"
+        }
+      },
+      {
+        "format": "dhcp snooping check dhcpv6-rate <rate>",
+        "parameter_types": [
+          {
+            "parameter_name": "rate",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.5.8.22_dhcp_snooping_check_dhcpv6-rate.json",
+          "format_index": 0,
+          "parent_view": "VLAN view"
+        }
+      },
+      {
+        "format": "igmp snooping require-router-alert",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.7.8.54_igmp_snooping_require-router-alert.json",
+          "format_index": 0,
+          "parent_view": "VLAN view"
+        }
+      },
+      {
+        "format": "mld snooping router-learning disable",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.7.11.32_mld_snooping_router-learning_disable.json",
+          "format_index": 0,
+          "parent_view": "VLAN view"
+        }
+      },
+      {
+        "format": "undo dhcp snooping enable",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.5.8.27_dhcp_snooping_enable.json",
+          "format_index": 1,
+          "parent_view": "VLAN view"
+        }
+      },
+      {
+        "format": "undo igmp snooping explicit-tracking [ all-version ]",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.7.8.23_igmp_snooping_explicit-tracking.json",
+          "format_index": 1,
+          "parent_view": "VLAN view"
+        }
+      },
+      {
+        "format": "undo igmp snooping ssm-mapping <group-address> { <group-mask> | <mask-length> } <source-address>",
+        "parameter_types": [
+          {
+            "parameter_name": "group-address",
+            "parameter_type": "ipv4-address"
+          },
+          {
+            "parameter_name": "group-mask",
+            "parameter_type": "ipv4-address"
+          },
+          {
+            "parameter_name": "mask-length",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "source-address",
+            "parameter_type": "ipv4-address"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.7.8.68_igmp_snooping_ssm-mapping_VLAN_view.json",
+          "format_index": 1,
+          "parent_view": "VLAN view"
+        }
+      },
+      {
+        "format": "undo ip source check user-bind alarm enable",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.13.3.5_ip_source_check_user-bind_alarm_enable.json",
+          "format_index": 1,
+          "parent_view": "VLAN view"
+        }
+      },
+      {
+        "format": "undo mld snooping group-policy",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.7.11.13_mld_snooping_group-policy.json",
+          "format_index": 1,
+          "parent_view": "VLAN view"
+        }
+      },
+      {
+        "format": "undo mld snooping version",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.7.11.43_mld_snooping_version.json",
+          "format_index": 1,
+          "parent_view": "VLAN view"
+        }
+      },
+      {
+        "format": "undo multicast vlan send-query prune-source-port",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.7.8.91_multicast_vlan_send-query_prune-source-port.json",
+          "format_index": 1,
+          "parent_view": "VLAN view"
+        }
+      },
+      {
+        "format": "undo subordinate separate",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.4.3.48_subordinate_separate.json",
+          "format_index": 1,
+          "parent_view": "VLAN view"
+        }
+      }
+    ],
+    "route-policy view": [
+      {
+        "format": "apply comm-filter <cmntyName> delete",
+        "parameter_types": [
+          {
+            "parameter_name": "cmntyName",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.9.7_apply_comm-filter_delete.json",
+          "format_index": 1,
+          "parent_view": "Route-policy view"
+        }
+      },
+      {
+        "format": "apply dampening <half-life-reach> <reuse> <suppress> <ceiling>",
+        "parameter_types": [
+          {
+            "parameter_name": "half-life-reach",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "reuse",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "suppress",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "ceiling",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.9.12_apply_dampening.json",
+          "format_index": 0,
+          "parent_view": "Route-policy view"
+        }
+      },
+      {
+        "format": "apply extcommunity bandwidth { <extCmntyString> | none }",
+        "parameter_types": [
+          {
+            "parameter_name": "extCmntyString",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.9.102_apply_extcommunity_bandwidth.json",
+          "format_index": 0,
+          "parent_view": "Route-policy view"
+        }
+      },
+      {
+        "format": "if-match extcommunity-list soo <extcomm-filter-name>",
+        "parameter_types": [
+          {
+            "parameter_name": "extcomm-filter-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.9.53_if-match_extcommunity-list_soo.json",
+          "format_index": 0,
+          "parent_view": "Route-policy view"
+        }
+      },
+      {
+        "format": "if-match ip next-hop acl { <acl-number> | <acl-name> }",
+        "parameter_types": [
+          {
+            "parameter_name": "acl-number",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "acl-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.9.55_if-match_ip_next-hop_acl.json",
+          "format_index": 0,
+          "parent_view": "Route-policy view"
+        }
+      },
+      {
+        "format": "if-match ip-prefix <ip-prefix-name>",
+        "parameter_types": [
+          {
+            "parameter_name": "ip-prefix-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.9.59_if-match_ip-prefix.json",
+          "format_index": 0,
+          "parent_view": "Route-policy view"
+        }
+      },
+      {
+        "format": "if-match ipv6 address prefix-list <ipv6-prefix-name>",
+        "parameter_types": [
+          {
+            "parameter_name": "ipv6-prefix-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.9.61_if-match_ipv6_address_prefix-list.json",
+          "format_index": 0,
+          "parent_view": "Route-policy view"
+        }
+      },
+      {
+        "format": "undo apply community",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.6.9.8_apply_community.json",
+          "format_index": 2,
+          "parent_view": "Route-policy view"
+        }
+      },
+      {
+        "format": "undo if-match community-filter { <basIndex> | <AdvIndex> } &<1-16>",
+        "parameter_types": [
+          {
+            "parameter_name": "basIndex",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "AdvIndex",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.9.50_if-match_community-filter.json",
+          "format_index": 2,
+          "parent_view": "Route-policy view"
+        }
+      },
+      {
+        "format": "undo if-match ipv6 address [ prefix-list <ipv6-prefix-name> ]",
+        "parameter_types": [
+          {
+            "parameter_name": "ipv6-prefix-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.9.61_if-match_ipv6_address_prefix-list.json",
+          "format_index": 1,
+          "parent_view": "Route-policy view"
+        }
+      },
+      {
+        "format": "undo if-match ipv6 route-source [ prefix-list <ipv6-prefix-name> ]",
+        "parameter_types": [
+          {
+            "parameter_name": "ipv6-prefix-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.9.65_if-match_ipv6_route-source_prefix-list.json",
+          "format_index": 1,
+          "parent_view": "Route-policy view"
+        }
+      },
+      {
+        "format": "undo if-match route-state [ bgp-not-best ]",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.6.9.72_if-match_route-state_bgp-not-best.json",
+          "format_index": 1,
+          "parent_view": "Route-policy view"
+        }
+      }
+    ],
+    "ospf view": [
+      {
+        "format": "domain-id { null | { <domain-idvalue> | <domain-idvalue_ipv4> } [ [ type { 0005 | 0105 | 0205 | 8005 } value <domainTypeValue> ] | secondary ] * }",
+        "parameter_types": [
+          {
+            "parameter_name": "domain-idvalue",
+            "parameter_type": "ipv4-address"
+          },
+          {
+            "parameter_name": "domain-idvalue_ipv4",
+            "parameter_type": "ipv4-address"
+          },
+          {
+            "parameter_name": "domainTypeValue",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.3.47_domain-id.json",
+          "format_index": 0,
+          "parent_view": "OSPF view"
+        }
+      },
+      {
+        "format": "filter-lsa-out peer <peer-addr> { all | { ase [ acl { <ase-acl-num> | <ase-acl-name> } ] | nssa [ acl { <nssa-acl-num> | <nssa-acl-name> } ] | summary [ acl { <sum-acl-num> | <sum-acl-name> } ] } * }",
+        "parameter_types": [
+          {
+            "parameter_name": "peer-addr",
+            "parameter_type": "ipv4-address"
+          },
+          {
+            "parameter_name": "ase-acl-num",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "ase-acl-name",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "nssa-acl-num",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "nssa-acl-name",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "sum-acl-num",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "sum-acl-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.3.50_filter-lsa-out_peer.json",
+          "format_index": 0,
+          "parent_view": "OSPF view"
+        }
+      },
+      {
+        "format": "import-route limit <limit-number> [ threshold-alarm { upper-limit <upper-limit-value> | lower-limit <lower-limit-value> } * ]",
+        "parameter_types": [
+          {
+            "parameter_name": "limit-number",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "upper-limit-value",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "lower-limit-value",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.3.63_import-route_limit.json",
+          "format_index": 0,
+          "parent_view": "OSPF view"
+        }
+      },
+      {
+        "format": "lsa-age refresh disable",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.6.3.65_lsa-age_refresh_disable.json",
+          "format_index": 0,
+          "parent_view": "OSPF view"
+        }
+      },
+      {
+        "format": "lsa-arrival-interval intelligent-timer <max-interval> <start-interval> <hold-interval>",
+        "parameter_types": [
+          {
+            "parameter_name": "max-interval",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "start-interval",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "hold-interval",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.3.66_lsa-arrival-interval_OSPF_view.json",
+          "format_index": 1,
+          "parent_view": "OSPF view"
+        }
+      },
+      {
+        "format": "preference { <preferencevalue> | route-policy <route-policy-name> } *",
+        "parameter_types": [
+          {
+            "parameter_name": "preferencevalue",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "route-policy-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.3.124_preference_OSPF_view.json",
+          "format_index": 0,
+          "parent_view": "OSPF view"
+        }
+      },
+      {
+        "format": "prefix-priority { critical | high | medium } ip-prefix <ip-prefix-name>",
+        "parameter_types": [
+          {
+            "parameter_name": "ip-prefix-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.3.125_prefix-priority_OSPF_view.json",
+          "format_index": 0,
+          "parent_view": "OSPF view"
+        }
+      },
+      {
+        "format": "spf-schedule-interval intelligent-timer <max-interval> <start-interval> <hold-interval> [ conservative ]",
+        "parameter_types": [
+          {
+            "parameter_name": "max-interval",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "start-interval",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "hold-interval",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.3.142_spf-schedule-interval.json",
+          "format_index": 1,
+          "parent_view": "OSPF view"
+        }
+      },
+      {
+        "format": "undo advertise link-attributes remote-ip disable",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.6.3.3_advertise_link-attributes_disable.json",
+          "format_index": 1,
+          "parent_view": "OSPF view"
+        }
+      },
+      {
+        "format": "undo eca-route-type compatible",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.6.3.48_eca-route-type_compatible.json",
+          "format_index": 1,
+          "parent_view": "OSPF view"
+        }
+      },
+      {
+        "format": "undo filter-policy [ <acl-number> | acl-name <acl-name> | ip-prefix <ip-prefix-name> | route-policy <route-policy-name> ] export bgp",
+        "parameter_types": [
+          {
+            "parameter_name": "acl-number",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "acl-name",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "ip-prefix-name",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "route-policy-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.3.51_filter-policy_export_OSPF_view.json",
+          "format_index": 15,
+          "parent_view": "OSPF view"
+        }
+      },
+      {
+        "format": "undo import-route limit [ <limit-number> ] [ threshold-alarm [ upper-limit <upper-limit-value> | lower-limit <lower-limit-value> ] * ]",
+        "parameter_types": [
+          {
+            "parameter_name": "limit-number",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "upper-limit-value",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "lower-limit-value",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.3.63_import-route_limit.json",
+          "format_index": 1,
+          "parent_view": "OSPF view"
+        }
+      }
+    ],
+    "is-is view": [
+      {
+        "format": "circuit-cost { <cost> } [ level-1 | level-2 ]",
+        "parameter_types": [
+          {
+            "parameter_name": "cost",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.6.15_circuit-cost_IS-IS_view.json",
+          "format_index": 0,
+          "parent_view": "IS-IS view"
+        }
+      },
+      {
+        "format": "cost-style { narrow | wide | wide-compatible | { compatible | narrow-compatible } [ relax-spf-limit ] }",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.6.6.18_cost-style.json",
+          "format_index": 0,
+          "parent_view": "IS-IS view"
+        }
+      },
+      {
+        "format": "import-route { ospf | isis } [ <process-id> ] inherit-cost [ { level-1 | level-2 | level-1-2 } | tag <tag> | route-policy <route-policy-name> ] *",
+        "parameter_types": [
+          {
+            "parameter_name": "process-id",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "tag",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "route-policy-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.6.68_import-route_IS-IS_view.json",
+          "format_index": 3,
+          "parent_view": "IS-IS view"
+        }
+      },
+      {
+        "format": "ipv6 circuit-cost { <cost> } [ level-1 | level-2 ]",
+        "parameter_types": [
+          {
+            "parameter_name": "cost",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.6.15_circuit-cost_IS-IS_view.json",
+          "format_index": 2,
+          "parent_view": "IS-IS view"
+        }
+      },
+      {
+        "format": "ipv6 filter-policy { <acl6-number> | acl6-name <acl6-name-string> | ipv6-prefix <ipv6-prefix-name> | route-policy <route-policy-name> } { export [ direct | static | ripng <process-id> | bgp | ospfv3 <process-id> | isis <process-id> ] }",
+        "parameter_types": [
+          {
+            "parameter_name": "acl6-number",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "acl6-name-string",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "ipv6-prefix-name",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "route-policy-name",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "process-id",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.6.79_ipv6_filter-policy_export.json",
+          "format_index": 0,
+          "parent_view": "IS-IS view"
+        }
+      },
+      {
+        "format": "ipv6 import-route isis level-2 into level-1 [ tag <tag> | filter-policy { <acl6-number> | acl6-name <acl6-name-string> | ipv6-prefix <ipv6-prefix-name> | route-policy <route-policy-name> } | direct { allow-filter-policy | allow-up-down-bit } * ] *",
+        "parameter_types": [
+          {
+            "parameter_name": "tag",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "acl6-number",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "acl6-name-string",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "ipv6-prefix-name",
+            "parameter_type": "string"
+          },
+          {
+            "parameter_name": "route-policy-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.6.84_ipv6_import-route_isis_level-2_into_level-1_IS-IS_view.json",
+          "format_index": 0,
+          "parent_view": "IS-IS view"
+        }
+      },
+      {
+        "format": "timer lsp-generation <max-interval> [ <init-interval> [ <incr-interval> ] ] [ level-1 | level-2 ]",
+        "parameter_types": [
+          {
+            "parameter_name": "max-interval",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "init-interval",
+            "parameter_type": "integer"
+          },
+          {
+            "parameter_name": "incr-interval",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.6.187_timer_lsp-generation_IS-IS_view.json",
+          "format_index": 0,
+          "parent_view": "IS-IS view"
+        }
+      },
+      {
+        "format": "undo ipv6 import-route { direct | static | { ospfv3 | ripng | isis } [ <process-id> ] | bgp }",
+        "parameter_types": [
+          {
+            "parameter_name": "process-id",
+            "parameter_type": "integer"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.6.82_ipv6_import-route_IS-IS_view.json",
+          "format_index": 2,
+          "parent_view": "IS-IS view"
+        }
+      },
+      {
+        "format": "undo is-name [ <symbolic-name> ]",
+        "parameter_types": [
+          {
+            "parameter_name": "symbolic-name",
+            "parameter_type": "string"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.6.92_is-name.json",
+          "format_index": 1,
+          "parent_view": "IS-IS view"
+        }
+      },
+      {
+        "format": "undo maximum load-balancing",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.6.6.161_maximum_load-balancing_IS-IS_view.json",
+          "format_index": 1,
+          "parent_view": "IS-IS view"
+        }
+      },
+      {
+        "format": "undo nexthop <ip-address>",
+        "parameter_types": [
+          {
+            "parameter_name": "ip-address",
+            "parameter_type": "ipv4-address"
+          }
+        ],
+        "metadata": {
+          "corpus_file": "2.6.6.164_nexthop_weight_IS-IS_view.json",
+          "format_index": 1,
+          "parent_view": "IS-IS view"
+        }
+      },
+      {
+        "format": "undo suppress-flapping lsp-generation",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.6.6.183_suppress-flapping_lsp-generation.json",
+          "format_index": 1,
+          "parent_view": "IS-IS view"
+        }
+      }
+    ],
+    "rip view": [
+      {
+        "format": "bfd all-interfaces enable",
+        "parameter_types": [],
+        "metadata": {
+          "corpus_file": "2.6.7.2_bfd_all-interfaces_enable_RIP_view.json",
+          "format_index": 0,
+          "parent_view": "RIP view"
+        }
+      }
+    ]
+  }
+}

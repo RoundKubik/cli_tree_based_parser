@@ -52,6 +52,83 @@ print(report.to_dict())
 `span` по-прежнему указывает позицию значения во входной строке, а не в формате.
 Перестановка веток набора не меняет их исходные слоты.
 
+## Каталоги и контекст
+
+Парсер принимает старый `{"commands": ["..."]}` и все четыре варианта
+[каталога v1](command-catalog-format.md): device/documentation × flat/grouped.
+Каталог компилируется в один автомат. Для view выбираются допустимые стартовые
+состояния; инструкции, глобальные `pattern_id` и `slot_id` сохраняются.
+Названия view — точные ключи входного документа, без интерпретации их написания.
+
+```python
+parser = CommandLineParser.from_json_file("documentation_grouped.json")
+line = parser.parse("acl 2999")              # entry_view
+line = parser.parse("rule 10", view="ACL view")
+line = parser.parse_flat("rule 10")           # все форматы
+
+report = ConfigurationParser(parser).parse(config_text)
+flat_report = ConfigurationParser(parser, contextual=False).parse(config_text)
+```
+
+Для grouped `ConfigurationParser` ведёт стек по отступам. Строка разбирается
+в текущем view; её `switch_to_view` задаёт контекст следующего вложенного блока.
+Строковое значение означает вход в указанный view, `null` — сохранение текущего,
+отсутствие поля — неизвестный переход. При уменьшении отступа восстанавливается
+контекст родителя. Пустые строки не меняют стек. Отдельная строка `#` завершает
+блоки на своём уровне и ниже; в корне возвращает к `entry_view`.
+Каждый вызов `parse()` начинает с нового стека.
+
+Это правила файла конфигурации, а не интерактивной CLI-сессии: переключение
+не переносится на соседнюю команду с тем же отступом; `quit`/`return` не имеют
+встроенной семантики. Для другого разделителя или ширины табуляции доступен
+`ConfigurationLayout(separators=("!",), tab_width=4)`. Первый блок считается
+начальным; формат входного файла должен сохранять отступы.
+
+При неизвестном или противоречивом переходе вложенный блок разбирается плоско.
+Даже единственное совпадение в нём не устанавливает view. После выхода из блока
+восстанавливается известный родитель. Если view известен, неподходящая команда
+даёт ошибку: форматы других view не участвуют ни в распознавании, ни в подсказках.
+
+У `ParsedCommand` и `ErrorLine` добавлено только `view: str | None`. `None`
+означает разбор без установленного контекста. В `report.to_dict()` ключ `view`
+появляется только для известного контекста. Кандидаты, переходы и копии
+метаданных не добавляются к строкам. `PatternMatch` остаётся прежним;
+исходную запись можно получить из офлайн-маппинга по `pattern_id`.
+Разделители представлены `SeparatorLine` с `kind="separator"`, номером,
+исходной строкой и отступом. Они входят в `summary.total`, но не в `commands`.
+JSON плоского режима сохраняет прежний вид.
+
+Именованные параметры документации принимают один токен без пробелов и
+возвращают его как строку. `parameter_types` проверяется как часть каталога,
+но не валидирует runtime-значения. Правила чтения многословного текста из
+документации пока не заданы; типизированный `TEXT<...>` устройства по-прежнему
+читает остаток строки. `creates`, `requires` и предикаты парсер не вычисляет.
+
+### Подключение офлайн-маппинга
+
+```python
+import json
+from pathlib import Path
+
+mapping = json.loads(Path("mapping.json").read_text(encoding="utf-8"))
+parser = CommandLineParser.from_json_file("device_grouped.json", mapping=mapping)
+report = ConfigurationParser(parser).parse(config_text)
+```
+
+Вход должен совпадать с целевым каталогом, использованным matcher: исходные
+форматы, порядок дубликатов и расположение по view. Перед использованием
+маппинга парсер проверяет эти связи. Явные `switch_to_view` каталога приоритетны.
+Для эффекта из пересечения проверяется сохранённый автомат области применимости
+по разобранной строке, `slot_id` и координатам итераций. Предикаты не вычисляются.
+
+Текущий matcher подтверждает только соответствие начальных view. Остальные
+view остаются кандидатами, включая единственный вариант, поэтому такой JSON
+сам по себе не восстанавливает все переходы устройства. Неизвестные цели или
+неподтверждённый исходный view не становятся известным контекстом. Полный
+сгруппированный разбор работает для переходов, явно заданных во входном каталоге.
+Неиспользуемые графы неизвестных переходов в runtime не загружаются; исходный
+каталог, семантика и JSON маппинга не удерживаются парсером целиком.
+
 ## Построение и исполнение
 
 ```text
@@ -105,6 +182,8 @@ print(report.to_dict())
 | Файл | Ответственность |
 |---|---|
 | `api.py` | Публичные фасады строкового и конфигурационного парсера |
+| `catalogs/` | Чтение flat/grouped, именованные параметры документации |
+| `context/` | Индексы view, стек блоков, подтверждённые переходы и их области |
 | `automata/sources.py` | Исходные шаблоны, стабильные ID и ошибки грамматики |
 | `automata/compiler.py`, `automata/building.py` | Компиляция AST в свежей рабочей области |
 | `automata/model.py`, `automata/first_tokens.py` | Инструкции и индекс входов |
@@ -135,6 +214,9 @@ python3.13 manual_automaton_test.py --case wide-set
 python3.13 manual_automaton_test.py --case large-repeat
 python3.13 manual_automaton_test.py --case optional-chain
 python3.13 manual_automaton_test.py --patterns data/commands.json --line 'display clock'
+python3.13 manual_automaton_test.py --patterns documentation_grouped.json --config config.txt
+python3.13 manual_automaton_test.py --patterns device_grouped.json --mapping mapping.json --config config.txt
+python3.13 manual_automaton_test.py --patterns device_grouped.json --config config.txt --flat
 ```
 
 Скрипт печатает число состояний и полный JSON результата. Первый пример —
@@ -156,6 +238,8 @@ python3.13 manual_automaton_test.py --patterns data/commands.json --line 'displa
 python -m vrp_parser_automaton check-patterns data/commands.json
 python -m vrp_parser_automaton parse --patterns data/commands.json --config config.txt
 ```
+
+Модульный CLI также принимает `--mapping mapping.json` и `--flat`.
 
 Тесты находятся в `tests/automaton/`: перенесённые контракты API, параметры,
 диагностика, CLI и каталог, а также проверки структуры автомата, независимости

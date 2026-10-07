@@ -17,13 +17,13 @@ def test_large_catalog_compares_candidates_instead_of_cartesian_product(monkeypa
     )
     documents = [{"format": f"feature{i} <id>"} for i in range(900)]
     visited = []
-    original = PairPreparation.prepared
+    original = PairPreparation.structural
 
-    def observed(pair):
+    def observed(pair, **options):
         visited.append((pair.document.document_id, pair.device.pattern_id))
-        return original(pair)
+        return original(pair, **options)
 
-    monkeypatch.setattr(PairPreparation, "prepared", observed)
+    monkeypatch.setattr(PairPreparation, "structural", observed)
     progress = []
     prepared = FormatMatcher().compile(parser, documents, on_progress=progress.append)
     assert len(visited) == len(prepared.pairs) == 900

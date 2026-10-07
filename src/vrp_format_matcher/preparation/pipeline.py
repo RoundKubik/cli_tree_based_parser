@@ -1,14 +1,12 @@
-"""Four catalog passes; only unresolved device formats reach the next pass."""
+"""All full command matches, followed by prefix fallback for unresolved devices."""
 
 from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
-from functools import cached_property
 from typing import Any
 
-from vrp_format_matcher.documents.catalog import Documentation
 from vrp_format_matcher.models import (
     DeviceMatch,
     MappingLimits,
@@ -18,67 +16,13 @@ from vrp_format_matcher.models import (
 )
 from vrp_parser_automaton.automata.model import CommandAutomaton, PatternSource
 
-from .candidates import CandidateIndex, PrefixCandidateIndex
+from .indexes import DocumentationIndex, PatternKey, pattern_key
 from .pairs import CompiledPattern, PairPreparation
-
-
-class DocumentationIndex:
-    """Keep all document IDs; defer fallback indexes until they are needed."""
-
-    def __init__(
-        self,
-        documents: Sequence[Mapping[str, Any]],
-        limits: MappingLimits,
-    ) -> None:
-        self.documents = tuple(Documentation(documents).documents())
-        self.sources = tuple(
-            PatternSource(doc.document_id, i, doc.format, doc.ast)
-            for i, doc in enumerate(self.documents)
-        )
-        self.patterns: dict[str, CompiledPattern] = {}
-        self.exact: dict[tuple[object, ...], list[PatternSource]] = {}
-        for source in self.sources:
-            if source.original not in self.patterns:
-                self.patterns[source.original] = CompiledPattern(
-                    source.ast,
-                    limits.automaton_states,
-                    document=True,
-                )
-            key = self.patterns[source.original].structure
-            self.exact.setdefault(key, []).append(source)
-
-    @cached_property
-    def reordered(self) -> dict[tuple[object, ...], list[PatternSource]]:
-        shapes: dict[tuple[object, ...], list[PatternSource]] = {}
-        for source in self.sources:
-            key = self.patterns[source.original].canonical
-            shapes.setdefault(key, []).append(source)
-        return shapes
-
-    @cached_property
-    def intersections(self) -> CandidateIndex:
-        return CandidateIndex(self.sources)
-
-    @cached_property
-    def prefixes(self) -> PrefixCandidateIndex:
-        return PrefixCandidateIndex(self.sources)
-
-    def candidates(
-        self, pattern: CompiledPattern, stage: str
-    ) -> tuple[PatternSource, ...]:
-        if stage == "exact":
-            return tuple(self.exact.get(pattern.structure, ()))
-        if stage == "reordered":
-            return tuple(self.reordered.get(pattern.canonical, ()))
-        if stage == "intersection":
-            return self.intersections.candidates(pattern.ast)
-        if stage == "prefix":
-            return self.prefixes.candidates(pattern.ast)
-        raise ValueError(f"unknown matching stage: {stage}")
+from .views import EntryViewScope
 
 
 class PreparationPipeline:
-    """Four passes share compiled formats, retaining only useful pair results."""
+    """Share compiled formats without choosing one documentation match over another."""
 
     def __init__(
         self,
@@ -87,16 +31,21 @@ class PreparationPipeline:
         limits: MappingLimits,
         on_progress: Callable[[PreparationProgress], None] | None = None,
         graph: CommandAutomaton | None = None,
+        *,
+        entry_scope: EntryViewScope | None = None,
     ) -> None:
         self._devices = devices
         self._documents = DocumentationIndex(documents, limits)
         self._limits = limits
         self._progress = on_progress
-        self._patterns: dict[str, CompiledPattern] = {}
+        self._entry_scope = entry_scope or EntryViewScope()
+        self._keys = {device.pattern_id: pattern_key(device) for device in devices}
+        self._patterns: dict[PatternKey, CompiledPattern] = {}
         for device in devices:
-            if device.original in self._patterns:
+            key = self._keys[device.pattern_id]
+            if key in self._patterns:
                 continue
-            self._patterns[device.original] = CompiledPattern(
+            self._patterns[key] = CompiledPattern(
                 device.ast,
                 limits.automaton_states,
                 document=False,
@@ -109,7 +58,7 @@ class PreparationPipeline:
 
     def prepare(self) -> PreparedMapping:
         pending = self._devices
-        stages = ("exact", "reordered", "intersection", "prefix")
+        stages = ("matching", "prefix")
         for stage in stages:
             if not pending:
                 break
@@ -127,9 +76,12 @@ class PreparationPipeline:
     ) -> tuple[PatternSource, ...]:
         remaining = []
         self._report(stage, 0, len(pending))
-        groups: dict[str, list[PatternSource]] = defaultdict(list)
+        groups: dict[tuple[PatternKey, frozenset[int] | None], list[PatternSource]] = (
+            defaultdict(list)
+        )
         for device in pending:
-            groups[device.original].append(device)
+            scope = self._entry_scope.documents_for(device.index)
+            groups[self._keys[device.pattern_id], scope].append(device)
         completed = 0
         for devices in groups.values():
             pairs = self._pairs(devices[0], stage)
@@ -158,7 +110,9 @@ class PreparationPipeline:
         uncertain = tuple(dict.fromkeys((*previous, *unknown)))
         if matches:
             status = "partial" if stage == "prefix" else "matched"
-            self._finish(device, matches + uncertain, status, stage)
+            stages = {pair.stage for pair in matches}
+            summary = next(iter(stages)) if len(stages) == 1 else "mixed"
+            self._finish(device, matches + uncertain, status, summary)
             return True
         if stage == "prefix":
             status = "unknown" if uncertain else "unmatched"
@@ -169,29 +123,35 @@ class PreparationPipeline:
         return False
 
     def _pairs(self, device: PatternSource, stage: str) -> tuple[PreparedPair, ...]:
-        """Compute identical document strings once for this device and pass.
+        """Compute each source string/type profile once for this device and pass.
 
         The local cache expires before the next device format. All source IDs
         survive, while failed comparisons never accumulate across the corpus.
         """
-        pattern = self._patterns[device.original]
-        cache: dict[str, PreparedPair] = {}
+        allowed = self._entry_scope.documents_for(device.index)
+        if allowed is not None and not allowed:
+            return ()
+        pattern = self._patterns[self._keys[device.pattern_id]]
+        cache: dict[PatternKey, PreparedPair] = {}
         results = []
         for source in self._documents.candidates(pattern, stage):
-            if source.original not in cache:
+            if allowed is not None and source.index not in allowed:
+                continue
+            key = self._documents.keys[source.pattern_id]
+            if key not in cache:
                 preparation = PairPreparation(
                     self._documents.documents[source.index],
                     device,
-                    self._documents.patterns[source.original],
+                    self._documents.patterns[key],
                     pattern,
                     self._limits,
                 )
-                cache[source.original] = (
+                cache[key] = (
                     preparation.prefix()
                     if stage == "prefix"
                     else preparation.prepared()
                 )
-            pair = cache[source.original]
+            pair = cache[key]
             if pair.binding_mode != "unavailable" or pair.status == "unknown":
                 results.append(
                     pair

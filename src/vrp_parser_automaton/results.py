@@ -88,6 +88,7 @@ class ParsedCommand:
     status: MatchStatus
     primary_match: PatternMatch
     alternative_matches: tuple[PatternMatch, ...] = ()
+    view: str | None = None
     kind: Literal["command"] = field(default="command", init=False)
 
     @property
@@ -163,6 +164,7 @@ class ErrorLine:
     raw: str
     indent: str
     error: ParseError
+    view: str | None = None
     kind: Literal["error"] = field(default="error", init=False)
 
     @property
@@ -170,7 +172,15 @@ class ErrorLine:
         return False
 
 
-type LineResult = BlankLine | ParsedCommand | ErrorLine
+@dataclass(frozen=True, slots=True)
+class SeparatorLine:
+    line_number: int
+    raw: str
+    indent: str
+    kind: Literal["separator"] = field(default="separator", init=False)
+
+
+type LineResult = BlankLine | ParsedCommand | ErrorLine | SeparatorLine
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,6 +211,10 @@ class ParseReport:
         converted = JsonValueConverter().convert(self)
         if not isinstance(converted, Mapping):
             raise RuntimeError("a parse report must serialize to an object")
+        # Unknown/flat context adds no field to the existing line representation.
+        for line in converted["lines"]:
+            if line.get("view") is None:
+                line.pop("view", None)
         return converted
 
 
@@ -210,7 +224,7 @@ class ParseReportFactory:
     def create(self, lines: tuple[LineResult, ...]) -> ParseReport:
         blank = sum(isinstance(line, BlankLine) for line in lines)
         errors = sum(isinstance(line, ErrorLine) for line in lines)
-        commands = len(lines) - blank - errors
+        commands = sum(isinstance(line, ParsedCommand) for line in lines)
         ambiguous = sum(
             isinstance(line, ParsedCommand) and line.status is MatchStatus.AMBIGUOUS
             for line in lines

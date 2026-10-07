@@ -10,7 +10,12 @@ from vrp_format_matcher.models import FormatError
 from vrp_parser_automaton.patterns import PatternParser
 from vrp_parser_automaton.patterns import Sequence as PatternSequence
 
-from .parameters import DocumentParameterRecognizer
+from .parameters import (
+    DocumentParameterRecognizer,
+    NamedParameter,
+    declared_types,
+    parameters,
+)
 
 
 @dataclass(frozen=True)
@@ -36,7 +41,20 @@ class DocumentSource:
         if not isinstance(pattern, str) or not pattern.strip():
             raise FormatError("each document requires a nonempty format")
 
-        ast = PatternParser(DocumentParameterRecognizer()).parse(pattern)
+        types = declared_types(document)
+        ast = PatternParser(DocumentParameterRecognizer(types)).parse(pattern)
+        if "parameter_types" in document:
+            names = {
+                node.declaration.name
+                for node in parameters(ast)
+                if isinstance(node.declaration, NamedParameter)
+            }
+            missing, extra = names - types.keys(), types.keys() - names
+            if missing or extra:
+                raise FormatError(
+                    f"parameter_types must cover format parameters exactly: "
+                    f"missing={sorted(missing)}, extra={sorted(extra)}"
+                )
         return DocumentFormat(
             document_id=document_id,
             format=pattern,

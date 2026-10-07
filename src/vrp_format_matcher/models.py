@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from vrp_parser_automaton.automata.model import Instruction
+
+if TYPE_CHECKING:
+    from .hierarchy.models import PreparedHierarchy
 
 
 class FormatError(ValueError):
@@ -21,7 +24,7 @@ class PreparationProgress:
     devices_done: int
     devices_total: int
     pairs_prepared: int
-    stage: str = "exact"
+    stage: str = "matching"
 
 
 @dataclass(frozen=True)
@@ -141,12 +144,31 @@ class DeviceMatch:
     device_format: str
     status: str  # matched, partial, unmatched, unknown
     mappings: tuple[PreparedPair, ...] = ()
-    stage: str | None = None
+    stage: str | None = None  # Common match stage, mixed, or None without matches.
+
+
+@dataclass(frozen=True)
+class CommandLocation:
+    """Index within commands, or within views[view], in the input catalog."""
+
+    view: str | None
+    index: int
+
+
+@dataclass(frozen=True)
+class CatalogSources:
+    """Catalog header and source locations keyed by generated format IDs."""
+
+    info: dict[str, Any]
+    entries: dict[str, CommandLocation]
 
 
 @dataclass(frozen=True)
 class PreparedMapping:
     devices: dict[str, DeviceMatch]
+    device_catalog: CatalogSources | None = None
+    documentation_catalog: CatalogSources | None = None
+    hierarchy: PreparedHierarchy | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Return ordinary JSON data with shared slot descriptions and scopes."""

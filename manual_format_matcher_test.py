@@ -42,6 +42,18 @@ CASES: dict[str, dict[str, Any]] = {
         "commands": ["command INTEGER<1-100> [ to INTEGER<1-100> ]"],
         "documents": [{"format": "command { <a> | <b> to <c> }"}],
     },
+    "types": {
+        "commands": ["command { number INTEGER<1-100> | address X.X.X.X }"],
+        "documents": [
+            {
+                "format": "command { number <id> | address <name> }",
+                "parameter_types": [
+                    {"parameter_name": "id", "parameter_type": "integer"},
+                    {"parameter_name": "name", "parameter_type": "string"},
+                ],
+            }
+        ],
+    },
     "ambiguous": {
         "commands": ["command [ INTEGER<1-100> ] [ INTEGER<1-100> ]"],
         "documents": [{"format": "command [ <a> ] [ <b> ]"}],
@@ -99,6 +111,7 @@ def describe(prepared: PreparedMapping) -> None:
         for pair in device.mappings:
             print(f"  DOCUMENT [{pair.document_id}]: {pair.document_format}")
             print(f"  RELATION: {pair.status}")
+            print(f"  STAGE: {pair.stage}")
             print(f"  BINDING MODE: {pair.binding_mode}")
             if pair.bindings:
                 print("  PARAMETER MAPPING:")
@@ -115,12 +128,18 @@ def main() -> None:
 
     arguments = argparse.ArgumentParser(description=__doc__)
     arguments.add_argument("--case", choices=CASES, default="vlan")
-    arguments.add_argument("--patterns", type=Path, help="JSON with commands array")
     arguments.add_argument(
-        "--documents", type=Path, help="JSON array of id/format objects"
+        "--patterns",
+        type=Path,
+        help="Device/documentation catalog or legacy commands JSON",
     )
     arguments.add_argument(
-        "--target-syntax", choices=("device", "document"), default="device"
+        "--documents", type=Path, help="Documentation catalog or legacy format array"
+    )
+    arguments.add_argument(
+        "--target-syntax",
+        choices=("device", "document"),
+        help="Legacy inputs only; v1 catalogs select syntax from source",
     )
     arguments.add_argument("--summary", action="store_true")
     arguments.add_argument("--save", type=Path, help="Write plain result JSON")
@@ -129,27 +148,60 @@ def main() -> None:
         arguments.error("supply both --patterns and --documents")
     case = CASES[args.case]
     targets = (
-        json.loads(args.patterns.read_text(encoding="utf-8"))["commands"]
+        json.loads(args.patterns.read_text(encoding="utf-8"))
         if args.patterns
-        else case["commands"]
+        else {"commands": case["commands"]}
     )
     documents = (
         json.loads(args.documents.read_text(encoding="utf-8"))
         if args.documents
         else case["documents"]
     )
-    result = FormatMatcher().compile_formats(
-        targets,
-        documents,
-        target_syntax=args.target_syntax,
-        on_progress=show_progress if args.patterns else None,
-    )
+    matcher = FormatMatcher()
+    progress = show_progress if args.patterns else None
+    if isinstance(documents, dict):
+        if args.target_syntax is not None:
+            arguments.error(
+                "v1 catalogs select syntax from source; omit --target-syntax"
+            )
+        result = matcher.compile_catalogs(targets, documents, on_progress=progress)
+    else:
+        if "type" in targets:
+            arguments.error(
+                "supply both inputs as v1 catalogs, or both as legacy inputs"
+            )
+        result = matcher.compile_formats(
+            targets["commands"],
+            documents,
+            target_syntax=args.target_syntax or "device",
+            on_progress=progress,
+        )
     if not args.summary:
         describe(result)
     print("DEVICES:", dict(Counter(d.status for d in result.devices.values())))
     print("STAGES:", dict(Counter(d.stage for d in result.devices.values())))
     print("PAIRS:", dict(Counter(p.status for p in result.pairs)))
     print("PARAMETER LINKS:", sum(len(p.bindings) for p in result.pairs))
+    if result.hierarchy is not None:
+        hierarchy = result.hierarchy
+        print(
+            "HIERARCHY TARGETS:",
+            dict(Counter(target.status for target in hierarchy.targets.values())),
+        )
+        print(
+            "DOCUMENTED EFFECTS:",
+            dict(
+                Counter(
+                    link.transition.kind for link in hierarchy.evidence.command_links
+                )
+            ),
+        )
+        if not args.summary:
+            for name, target in hierarchy.targets.items():
+                print(
+                    f"  {name}: {target.status}; device_view={target.device_view!r}; "
+                    f"candidates={[view.device_view for view in target.candidates]}"
+                )
     if args.save:
         args.save.write_text(
             json.dumps(result.to_dict(), ensure_ascii=False), encoding="utf-8"

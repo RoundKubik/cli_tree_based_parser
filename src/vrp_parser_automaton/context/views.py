@@ -1,0 +1,50 @@
+"""View-specific start indexes over shared instructions and global source IDs."""
+
+from __future__ import annotations
+
+from vrp_parser_automaton.automata.model import CommandAutomaton
+from vrp_parser_automaton.catalogs.source import PatternCatalog
+from vrp_parser_automaton.parameters import ParameterTypeRegistry
+from vrp_parser_automaton.runtime.matcher import CommandMatcher
+
+
+class ViewMatchers:
+    def __init__(
+        self,
+        graph: CommandAutomaton,
+        catalog: PatternCatalog,
+        registry: ParameterTypeRegistry,
+    ) -> None:
+        self._graph = graph
+        self._registry = registry
+        self._starts: dict[str, set[int]] = {view: set() for view in catalog.views}
+        for command, start in zip(catalog.commands, graph.starts, strict=True):
+            if command.view is not None:
+                self._starts[command.view].add(start)
+        self._matchers: dict[str | None, CommandMatcher] = {
+            None: CommandMatcher(graph, registry)
+        }
+
+    def for_view(self, view: str | None) -> CommandMatcher:
+        if view not in self._matchers:
+            if view not in self._starts:
+                raise ValueError(f"unknown view: {view!r}")
+            allowed = self._starts[view]
+            # Keep global pattern indices: accept instructions refer to this table.
+            graph = CommandAutomaton.create(
+                self._graph.states,
+                self._graph.patterns,
+                self._graph.starts,
+                {
+                    word: selected
+                    for word, starts in self._graph.literal_starts.items()
+                    if (
+                        selected := tuple(start for start in starts if start in allowed)
+                    )
+                },
+                tuple(
+                    start for start in self._graph.parameter_starts if start in allowed
+                ),
+            )
+            self._matchers[view] = CommandMatcher(graph, self._registry)
+        return self._matchers[view]

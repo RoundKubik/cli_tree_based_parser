@@ -4,13 +4,21 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from vrp_parser_automaton.automata.compiler import PatternCompiler
 from vrp_parser_automaton.automata.model import CommandAutomaton
-from vrp_parser_automaton.runtime.matcher import CommandMatcher
+from vrp_parser_automaton.catalogs.documentation import documentation_parameter
+from vrp_parser_automaton.catalogs.source import PatternCatalog
+from vrp_parser_automaton.context.configuration import (
+    ConfigurationLayout,
+    ContextSession,
+)
+from vrp_parser_automaton.context.transitions import TransitionRules
+from vrp_parser_automaton.context.views import ViewMatchers
 from vrp_parser_automaton.runtime.resolution import ResolvedMatch
 
 from .errors import PatternDocumentError
@@ -22,6 +30,7 @@ from .results import (
     BlankLine,
     ErrorLine,
     LineResult,
+    MatchStatus,
     ParsedCommand,
     ParseError,
     ParseReport,
@@ -37,12 +46,32 @@ class CommandLineParser:
         pattern_document: Mapping[str, Any],
         *,
         parameter_types: ParameterTypeRegistry | None = None,
+        mapping: Mapping[str, Any] | None = None,
     ) -> None:
-        commands = self._commands(pattern_document)
+        catalog = PatternCatalog.read(pattern_document)
+        commands = tuple(command.format for command in catalog.commands)
         source_registry = parameter_types or default_parameter_registry()
-        self._parameter_types = source_registry.clone().freeze()
-        self._graph = PatternCompiler(self._parameter_types).compile(commands)
-        self._matcher = CommandMatcher(self._graph, self._parameter_types)
+        registry = source_registry.clone()
+        if catalog.documentation:
+            registry.register(documentation_parameter())
+        self._parameter_types = registry.freeze()
+        self._graph = PatternCompiler(self._parameter_types).compile(
+            commands, documentation=catalog.documentation
+        )
+        catalog.validate_parameters(self._graph)
+        self._entry_view = catalog.entry_view
+        self._views = catalog.views
+        self._pattern_views = tuple(command.view for command in catalog.commands)
+        self._matchers = ViewMatchers(self._graph, catalog, self._parameter_types)
+        self._transitions = TransitionRules(catalog, self._graph, mapping)
+
+    @property
+    def entry_view(self) -> str | None:
+        return self._entry_view
+
+    @property
+    def views(self) -> tuple[str, ...]:
+        return self._views
 
     @property
     def command_count(self) -> int:
@@ -61,18 +90,44 @@ class CommandLineParser:
     def parameter_types(self) -> ParameterTypeRegistry:
         return self._parameter_types
 
-    def parse(self, line: str, line_number: int = 1) -> LineResult:
+    def parse(
+        self, line: str, line_number: int = 1, *, view: str | None = None
+    ) -> LineResult:
+        """Parse in the requested view, defaulting to the grouped catalog entry."""
+        return self._parse_at(
+            line, line_number, self.entry_view if view is None else view
+        )
+
+    def parse_flat(self, line: str, line_number: int = 1) -> LineResult:
+        """Explicitly search all source formats, including all grouped views."""
+        return self._parse_at(line, line_number, None)
+
+    def child_view(self, command: ParsedCommand) -> str | None:
+        """Known context for a nested block, or None when it needs flat parsing."""
+        return self._transitions.for_command(command)
+
+    def _parse_at(self, line: str, line_number: int, view: str | None) -> LineResult:
         self._validate_input(line, line_number)
+        matcher = self._matchers.for_view(view)
         indent_end = self._indent_end(line)
         indent = line[:indent_end]
         command = line[indent_end:].rstrip()
         if not command:
             return BlankLine(line_number, line, indent)
 
-        outcome = self._matcher.match(command, span_offset=indent_end)
+        outcome = matcher.match(command, span_offset=indent_end)
         if isinstance(outcome, ParseError):
-            return ErrorLine(line_number, line, indent, outcome)
-        return self._parsed(line_number, line, indent, outcome)
+            return ErrorLine(line_number, line, indent, outcome, view)
+        result = self._parsed(line_number, line, indent, outcome)
+        if not self.views:
+            return result
+        return replace(
+            result,
+            status=MatchStatus.AMBIGUOUS
+            if len({self._pattern_views[m.pattern_index] for m in result.matches}) > 1
+            else result.status,
+            view=view,
+        )
 
     @staticmethod
     def _parsed(
@@ -116,6 +171,7 @@ class CommandLineParser:
         source: str,
         *,
         parameter_types: ParameterTypeRegistry | None = None,
+        mapping: Mapping[str, Any] | None = None,
     ) -> CommandLineParser:
         try:
             document = json.loads(source)
@@ -123,7 +179,7 @@ class CommandLineParser:
             raise PatternDocumentError(f"invalid pattern JSON: {error}") from error
         if not isinstance(document, Mapping):
             raise PatternDocumentError("pattern JSON root must be an object")
-        return cls(document, parameter_types=parameter_types)
+        return cls(document, parameter_types=parameter_types, mapping=mapping)
 
     @classmethod
     def from_json_file(
@@ -131,29 +187,13 @@ class CommandLineParser:
         path: str | Path,
         *,
         parameter_types: ParameterTypeRegistry | None = None,
+        mapping: Mapping[str, Any] | None = None,
     ) -> CommandLineParser:
         return cls.from_json(
             Path(path).read_text(encoding="utf-8"),
             parameter_types=parameter_types,
+            mapping=mapping,
         )
-
-    @staticmethod
-    def _commands(document: Mapping[str, Any]) -> tuple[str, ...]:
-        if "commands" not in document:
-            raise PatternDocumentError("pattern document requires 'commands'")
-        value = document["commands"]
-        if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
-            raise PatternDocumentError("'commands' must be an array of strings")
-        commands: list[str] = []
-        for index, item in enumerate(value):
-            if not isinstance(item, str):
-                raise PatternDocumentError(f"command at index {index} must be a string")
-            if not item.strip():
-                raise PatternDocumentError(f"command at index {index} cannot be empty")
-            commands.append(item)
-        if not commands:
-            raise PatternDocumentError("'commands' cannot be empty")
-        return tuple(commands)
 
 
 class ConfigurationParser:
@@ -163,9 +203,18 @@ class ConfigurationParser:
         self,
         line_parser: CommandLineParser,
         report_factory: ParseReportFactory | None = None,
+        *,
+        contextual: bool | None = None,
+        layout: ConfigurationLayout | None = None,
     ) -> None:
         self._line_parser = line_parser
         self._report_factory = report_factory or ParseReportFactory()
+        self._contextual = (
+            line_parser.entry_view is not None if contextual is None else contextual
+        )
+        if self._contextual and line_parser.entry_view is None:
+            raise ValueError("contextual parsing requires a grouped catalog")
+        self._layout = layout or ConfigurationLayout()
 
     @property
     def line_parser(self) -> CommandLineParser:
@@ -174,10 +223,15 @@ class ConfigurationParser:
     def parse(self, content: str) -> ParseReport:
         if not isinstance(content, str):
             raise TypeError("configuration content must be a string")
+        physical = self._physical_lines(content)
+        if self._contextual:
+            return self._report_factory.create(
+                ContextSession(self._line_parser, self._layout).parse(physical)
+            )
         lines = tuple(
-            self._line_parser.parse(raw, line_number)
+            self._line_parser.parse_flat(raw, line_number)
             for line_number, raw in enumerate(
-                self._physical_lines(content),
+                physical,
                 start=1,
             )
         )

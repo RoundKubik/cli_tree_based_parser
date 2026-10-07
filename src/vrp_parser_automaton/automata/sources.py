@@ -47,9 +47,16 @@ class PatternFailure:
 class PatternSources:
     commands: tuple[str, ...]
     parameter_types: ParameterTypeRegistry
+    documentation: bool = False
 
     def parsed(self) -> tuple[PatternSource, ...]:
-        parser = PatternParser(self.parameter_types)
+        recognizer = (
+            self.parameter_types.get("document-parameter")
+            if self.documentation
+            else self.parameter_types
+        )
+        assert recognizer is not None
+        parser = PatternParser(recognizer)
         policy = RuntimePatternPolicy()
         patterns = []
         issues = []
@@ -57,7 +64,8 @@ class PatternSources:
         for index, original in enumerate(self.commands):
             try:
                 ast = parser.parse(original)
-                policy.validate(ast, original)
+                if not self.documentation:
+                    policy.validate(ast, original)
             except (
                 PatternLanguageError,
                 ParameterDeclarationError,

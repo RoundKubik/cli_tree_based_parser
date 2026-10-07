@@ -50,9 +50,9 @@ def test_same_ambiguous_structures_never_execute_language_product(monkeypatch):
     monkeypatch.setattr(ProgramExecution, "frontier", forbidden)
     monkeypatch.setattr(AutomatonBuilder, "build", forbidden)
     documents = [
-        "c { <first> | <second> } &<1-100000>",
-        "c [ <first> ] [ <second> ]",
-        "c { { <first> | <second> } * } &<1-100000>",
+        "repeat { <first> | <second> } &<1-100000>",
+        "optional [ <first> ] [ <second> ]",
+        "nested { { <first> | <second> } * } &<1-100000>",
         "rule [ <id> ] { permit | deny } [ source <src> | target <dst> ] *",
     ]
     prepared = FormatMatcher(MappingLimits(analysis_steps=1)).compile_formats(
@@ -80,13 +80,23 @@ def test_full_shape_index_handles_a_catalog_with_identical_eight_token_prefixes(
     )
 
 
-def test_each_device_keeps_only_its_first_successful_stage():
+def test_each_device_keeps_all_full_matches_with_their_pair_stages():
     devices = ["c all", "c { all | other }"]
     documents = [{"format": "c all"}, {"format": "c { other | all }"}]
     matcher = FormatMatcher()
     result = matcher.compile_formats(devices, documents)
-    assert [p.stage for p in result.pairs] == ["exact", "reordered"]
-    assert [p.status for p in result.pairs] == ["equivalent", "equivalent"]
+    assert [p.stage for p in result.pairs] == [
+        "exact",
+        "intersection",
+        "intersection",
+        "reordered",
+    ]
+    assert [p.status for p in result.pairs] == [
+        "equivalent",
+        "device_subset",
+        "document_subset",
+        "equivalent",
+    ]
     # An exact match for another device must never steal this device's document.
     fallback = matcher.compile_formats(devices, [{"format": "c all"}])
     assert [p.status for p in fallback.pairs] == ["equivalent", "document_subset"]

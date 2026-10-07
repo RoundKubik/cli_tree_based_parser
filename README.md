@@ -27,9 +27,17 @@ The detailed documentation is split into a short navigation tree:
   `vrp_parser_automaton` package with the same parsing facade and compact AST compilation;
   try `python3.13 manual_automaton_test.py`.
 - [format matcher for the automaton parser](docs/reference/automaton-format-matcher.md)
-  — automatic four-pass device → documentation matching, grouped JSON and parameter slot IDs;
+  — all full device → documentation matches, prefix fallback, entry-view filtering,
+  grouped JSON, parameter slot IDs and an offline `hierarchy` section with
+  scoped documentation transitions and unresolved target options;
   try `python3.13 manual_format_matcher_test.py` or benchmark a real CLIs corpus
   using `python3.13 benchmark_format_matcher.py --corpus /path/to/cmd_corpus`.
+- [command catalogue format specification (draft)](docs/reference/command-catalog-format.md)
+  — flat/grouped matcher inputs, parameter types and view references;
+  grouped runtime parsing and transition recovery are planned.
+- [CloudEngine mock catalogues](data/mocks/cloudengine_150/README.md)
+  — flat/grouped device fixtures with 150 entries and documentation fixtures with
+  151 entries and a restored view hierarchy.
 - [offline documentation/device format mapping](docs/reference/metadata-mapping.md)
   — structural language comparison, parameter bindings, prepared metadata,
   and `python3.13 manual_metadata_test.py` examples.

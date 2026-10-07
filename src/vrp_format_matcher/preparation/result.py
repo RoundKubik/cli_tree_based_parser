@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
+from vrp_format_matcher.hierarchy.result import HierarchyData
 from vrp_format_matcher.models import (
     Arc,
     Automaton,
@@ -27,11 +29,27 @@ class MappingData:
             pattern_id: self._device(device)
             for pattern_id, device in self._mapping.devices.items()
         }
-        return {
+        result = {
             "devices": devices,
             "documents": self._documents,
             "automata": self._automata.records,
         }
+        catalogs = {}
+        for side, catalog, records in (
+            ("device", self._mapping.device_catalog, devices),
+            ("documentation", self._mapping.documentation_catalog, self._documents),
+        ):
+            if catalog is None:
+                continue
+            catalogs[side] = deepcopy(catalog.info)
+            for identifier, record in records.items():
+                location = catalog.entries[identifier]
+                record["source"] = {"view": location.view, "index": location.index}
+        if catalogs:
+            result["catalogs"] = catalogs
+        if self._mapping.hierarchy is not None:
+            result["hierarchy"] = HierarchyData(self._mapping).to_dict()
+        return result
 
     def _device(self, device: DeviceMatch) -> dict[str, Any]:
         slots = {}
