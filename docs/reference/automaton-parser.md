@@ -1,135 +1,301 @@
-# Отдельный парсер на компактном автомате
+# Парсер на автомате: использование и устройство
 
-`src/vrp_parser_automaton` — самостоятельная реализация парсера. Она не
-импортирует `vrp_parser` и не изменяет его движок. AST, лексер, реестр типов,
-валидаторы и публичные модели результатов скопированы внутрь нового пакета.
+`vrp_parser_automaton` разбирает команды и конфигурации по форматам устройства
+или документации. Поддерживаются плоские каталоги и каталоги с view. Это отдельный
+пакет: он не импортирует `vrp_parser` и не использует `RouteExpander`.
 
-## Использование
+Требуется Python 3.13+. Все команды ниже запускаются из корня репозитория.
+Ручные скрипты работают без установки; для модульного CLI без установки
+используется `PYTHONPATH=src`. Для импорта из своего проекта установите пакет:
+`python3.13 -m pip install -e .`.
 
-```python
-from vrp_parser_automaton import CommandLineParser, ConfigurationParser, ParsedCommand
+## Быстрый запуск
 
-parser = CommandLineParser({
-    "commands": [
-        "port trunk allow-pass vlan { all | "
-        "{ INTEGER<1-4095> [ to INTEGER<1-4095> ] } &<1-10> }"
-    ]
-})
-result = parser.parse("  port trunk allow-pass vlan 10 to 20 30")
-if isinstance(result, ParsedCommand):
-    print(result.parameters)
-    print(result.primary_match.trace)
+На готовом [документационном моке](../../data/mocks/cloudengine_150/README.md):
 
-print(len(parser.automaton.states))
-report = ConfigurationParser(parser).parse("port trunk allow-pass vlan all\n")
-print(report.to_dict())
+```bash
+python3.13 manual_automaton_test.py \
+  --patterns data/mocks/cloudengine_150/documentation_grouped.json \
+  --line 'bgp 65000' \
+  --line ' ipv4-family unicast' \
+  --line '#'
 ```
 
-Сохранены конструкторы, `parse`, `from_json`, `from_json_file`,
-`command_count`, `parameter_types`, `ConfigurationParser`, поля результатов,
-нормализация, spans, статусы неоднозначности, приоритеты типов, ошибки валидации
-и расширение реестра пользовательскими типами. Реестр фиксируется при создании
-парсера. Все типы следует импортировать из нового пакета: скопированные классы
-не идентичны одноимённым классам `vrp_parser`.
+Повторные `--line` образуют одну конфигурацию, поэтому начальный пробел во второй
+строке значим. Первая команда разбирается в `system view`, вторая — в `bgp view`,
+третья возвращает к начальному контексту. Названия взяты из этого каталога.
 
-`command_graph` сохранён как имя свойства, но возвращает `CommandAutomaton`;
-`automaton` — явный синоним. В нём доступны `patterns`, `states`, `starts`,
-`literal_starts`, `parameter_starts`. Старых `routes`, `literal_edges` и
-`expression_edges` в этом представлении нет.
+Для своих данных передайте каталог форматов в `--patterns`, а текст конфигурации
+в `--config`:
 
-Идентификаторы исходных шаблонов вычисляются по прежнему правилу. `variation_id`
-детерминирован внутри нового движка и не зависит от положения шаблона в каталоге.
-Он может отличаться от старого движка: новая история ссылается непосредственно
-на пути AST и координаты повторений, без статических трасс раскрытых маршрутов.
-Равнозначные захваты одного исходного слота получают одну представительную
-историю. Захваты из разных слотов или итераций сохраняются раздельно: это важно
-для применения офлайн-соответствий документации. Это не перечисление всех
-синтаксических выводов, если они дают те же захваты.
+```bash
+python3.13 manual_automaton_test.py \
+  --patterns documentation_grouped.json --config config.txt
+```
 
-У каждого `ParameterValue` есть `slot_id` (`p:<позиция в формате>`) и `iterations`
-(`(("r:<позиция повтора>", номер_итерации), ...)`, с нуля). В сочетании с
-`PatternMatch.pattern_id` они связывают реальное значение с офлайн-маппингом.
-`span` по-прежнему указывает позицию значения во входной строке, а не в формате.
-Перестановка веток набора не меняет их исходные слоты.
+`--config` и `--line` взаимоисключающие. Если не передать ни один из них,
+скрипт использует встроенные строки примера `--case`, даже при своём каталоге.
+Скрипт печатает число форматов, число состояний автомата и JSON отчёта.
+Его код завершения не сообщает о наличии ошибок отдельных строк.
+
+### Проверка каталога и сохранение чистого JSON
+
+Для следующих примеров сохраните в `config.txt`:
+
+```text
+bgp 65000
+ ipv4-family unicast
+#
+```
+
+```bash
+PYTHONPATH=src python3.13 -m vrp_parser_automaton check-patterns \
+  data/mocks/cloudengine_150/documentation_grouped.json
+
+PYTHONPATH=src python3.13 -m vrp_parser_automaton parse \
+  --patterns data/mocks/cloudengine_150/documentation_grouped.json \
+  --config config.txt > parsed.json
+```
+
+Модульный CLI выводит только JSON. Коды завершения: `0` — разбор без ошибок
+строк, `1` — в отчёте есть ошибки строк, `2` — ошибка чтения/компиляции входа
+или загрузки маппинга. Неоднозначность сама по себе не считается ошибкой.
+Одна ошибочная строка конфигурации не останавливает разбор следующих.
+
+### Поддерживаемые входы
+
+| Каталог | Параметры | Режим по умолчанию |
+|---|---|---|
+| Старый `{"commands": ["..."]}` | Типизированные декларации устройства | Плоский |
+| `source: device, type: flat` | `INTEGER<…>`, `STRING<…>`, `TEXT<…>`, IP и другие поддерживаемые типы | Плоский |
+| `source: device, type: grouped` | Те же декларации | Текущий view, начиная с `entry_view` |
+| `source: documentation, type: flat` | `<parameter-name>` и `parameter_types` | Плоский |
+| `source: documentation, type: grouped` | Те же именованные параметры | Текущий view, начиная с `entry_view` |
+
+Обязательные поля v1, включая `vendor`, `device`, `model_type`, и примеры JSON
+описаны в [спецификации каталогов](command-catalog-format.md). Для проверки
+доступны [четыре моковых каталога](../../data/mocks/cloudengine_150/README.md).
+
+Именованный параметр документации принимает **один токен без пробелов**,
+его `normalized` остаётся строкой. Поле `parameter_types` проверяется как часть
+каталога и используется matcher, но не валидирует runtime-значения. Поэтому
+`<text>` пока не означает многословный текст. Типизированный `TEXT<…>` устройства
+по-прежнему читает остаток строки; числовые и другие типы устройства валидируются.
 
 ## Каталоги и контекст
 
-Парсер принимает старый `{"commands": ["..."]}` и все четыре варианта
-[каталога v1](command-catalog-format.md): device/documentation × flat/grouped.
-Каталог компилируется в один автомат. Для view выбираются допустимые стартовые
-состояния; инструкции, глобальные `pattern_id` и `slot_id` сохраняются.
-Названия view — точные ключи входного документа, без интерпретации их написания.
+Для `grouped` парсер ищет команды только в текущем view. Названия view — точные
+ключи каталога: парсер не выводит их смысл из написания.
 
-```python
-parser = CommandLineParser.from_json_file("documentation_grouped.json")
-line = parser.parse("acl 2999")              # entry_view
-line = parser.parse("rule 10", view="ACL view")
-line = parser.parse_flat("rule 10")           # все форматы
+| `switch_to_view` у команды | Контекст следующего вложенного блока |
+|---|---|
+| Строка с ключом view | Указанный view |
+| `null` | Текущий view |
+| Поле отсутствует, переход неизвестен или противоречив | Неизвестен; плоский разбор |
 
-report = ConfigurationParser(parser).parse(config_text)
-flat_report = ConfigurationParser(parser, contextual=False).parse(config_text)
-```
-
-Для grouped `ConfigurationParser` ведёт стек по отступам. Строка разбирается
-в текущем view; её `switch_to_view` задаёт контекст следующего вложенного блока.
-Строковое значение означает вход в указанный view, `null` — сохранение текущего,
-отсутствие поля — неизвестный переход. При уменьшении отступа восстанавливается
-контекст родителя. Пустые строки не меняют стек. Отдельная строка `#` завершает
-блоки на своём уровне и ниже; в корне возвращает к `entry_view`.
+`ConfigurationParser` ведёт стек по отступам. Увеличение отступа открывает
+вложенный блок после предыдущей команды; уменьшение возвращает контекст
+родителя. Пустые строки не меняют стек. Отдельная строка `#` закрывает вложенные
+контексты до своего уровня; корневой `#` возвращает к `entry_view`.
 Каждый вызов `parse()` начинает с нового стека.
 
-Это правила файла конфигурации, а не интерактивной CLI-сессии: переключение
-не переносится на соседнюю команду с тем же отступом; `quit`/`return` не имеют
-встроенной семантики. Для другого разделителя или ширины табуляции доступен
-`ConfigurationLayout(separators=("!",), tab_width=4)`. Первый блок считается
-начальным; формат входного файла должен сохранять отступы.
+Это обработка файла конфигурации: переход действует на вложенный блок,
+а не на следующую команду с тем же отступом. Первый блок считается начальным.
+У `quit` и `return` нет встроенной семантики выхода.
 
-При неизвестном или противоречивом переходе вложенный блок разбирается плоско.
-Даже единственное совпадение в нём не устанавливает view. После выхода из блока
-восстанавливается известный родитель. Если view известен, неподходящая команда
-даёт ошибку: форматы других view не участвуют ни в распознавании, ни в подсказках.
+### Что происходит при unresolved
 
-У `ParsedCommand` и `ErrorLine` добавлено только `view: str | None`. `None`
-означает разбор без установленного контекста. В `report.to_dict()` ключ `view`
-появляется только для известного контекста. Кандидаты, переходы и копии
-метаданных не добавляются к строкам. `PatternMatch` остаётся прежним;
-исходную запись можно получить из офлайн-маппинга по `pattern_id`.
-Разделители представлены `SeparatorLine` с `kind="separator"`, номером,
-исходной строкой и отступом. Они входят в `summary.total`, но не в `commands`.
-JSON плоского режима сохраняет прежний вид.
+Если целевой device-view не установлен, команда входа всё ещё разбирается
+в известном родительском view. Следующий вложенный блок разбирается **по всем
+форматам каталога**, а не только по найденным matcher кандидатам view.
 
-Именованные параметры документации принимают один токен без пробелов и
-возвращают его как строку. `parameter_types` проверяется как часть каталога,
-но не валидирует runtime-значения. Правила чтения многословного текста из
-документации пока не заданы; типизированный `TEXT<...>` устройства по-прежнему
-читает остаток строки. `creates`, `requires` и предикаты парсер не вычисляет.
+- Подходящая строка возвращает параметры и `slot_id`; равноправные варианты
+  разбора сохраняются.
+- Единственное совпадение не устанавливает view. Последующие команды блока
+  не используются для сужения кандидатов.
+- Если подходящего формата нет или значение не проходит валидацию, возвращается
+  ошибка строки. `unresolved` не гарантирует успешный разбор любого текста.
+- После выхода из неизвестного блока восстанавливается известный родитель.
 
-### Подключение офлайн-маппинга
+Если текущий view известен, неподходящая команда даёт ошибку без повторного
+поиска в остальных view. Подсказки также ограничены текущим view.
+
+### Принудительный плоский разбор
+
+Добавьте `--flat` к ручному скрипту или модульному CLI:
+
+```bash
+python3.13 manual_automaton_test.py \
+  --patterns data/mocks/cloudengine_150/device_grouped.json \
+  --config config.txt --flat
+```
+
+В этом режиме все команды ищутся глобально и `#` становится обычной входной
+строкой: для его распознавания нужен соответствующий формат в каталоге.
+В grouped-режиме `#` обрабатывается как разделитель без отдельного формата.
+
+## Python API
 
 ```python
 import json
 from pathlib import Path
 
-mapping = json.loads(Path("mapping.json").read_text(encoding="utf-8"))
-parser = CommandLineParser.from_json_file("device_grouped.json", mapping=mapping)
-report = ConfigurationParser(parser).parse(config_text)
+from vrp_parser_automaton import CommandLineParser, ConfigurationParser
+
+parser = CommandLineParser.from_json_file(
+    "data/mocks/cloudengine_150/documentation_grouped.json"
+)
+report = ConfigurationParser(parser).parse(
+    Path("config.txt").read_text(encoding="utf-8")
+)
+Path("parsed.json").write_text(
+    json.dumps(report.to_dict(), ensure_ascii=False, indent=2),
+    encoding="utf-8",
+)
+print(report.summary)
 ```
 
-Вход должен совпадать с целевым каталогом, использованным matcher: исходные
-форматы, порядок дубликатов и расположение по view. Перед использованием
-маппинга парсер проверяет эти связи. Явные `switch_to_view` каталога приоритетны.
-Для эффекта из пересечения проверяется сохранённый автомат области применимости
-по разобранной строке, `slot_id` и координатам итераций. Предикаты не вычисляются.
+Каталог компилируется один раз при создании `CommandLineParser`. Его можно
+повторно использовать для нескольких конфигураций. Также доступны
+`CommandLineParser(document)` для словаря и `from_json(text)` для JSON-строки.
 
-Текущий matcher подтверждает только соответствие начальных view. Остальные
-view остаются кандидатами, включая единственный вариант, поэтому такой JSON
-сам по себе не восстанавливает все переходы устройства. Неизвестные цели или
-неподтверждённый исходный view не становятся известным контекстом. Полный
-сгруппированный разбор работает для переходов, явно заданных во входном каталоге.
-Неиспользуемые графы неизвестных переходов в runtime не загружаются; исходный
-каталог, семантика и JSON маппинга не удерживаются парсером целиком.
+Для отдельных строк и явного выбора view:
+
+```python
+line = parser.parse("bgp 65000")  # entry_view
+line = parser.parse("ipv4-family unicast", view="bgp view")
+line = parser.parse_flat("ipv4-family unicast")  # все форматы
+flat_report = ConfigurationParser(parser, contextual=False).parse("bgp 65000")
+```
+
+`CommandLineParser.parse()` принимает одну строку без перевода строки и не хранит
+стек между вызовами. `view=None` у `parse()` означает начальный view;
+для глобального поиска используйте `parse_flat()`. Несуществующий view вызывает
+`ValueError`. Стек ведёт только `ConfigurationParser`.
+
+Другие разделители и ширина табуляции задаются явно:
+
+```python
+from vrp_parser_automaton import ConfigurationLayout
+
+configuration = ConfigurationParser(
+    parser,
+    layout=ConfigurationLayout(separators=("!",), tab_width=4),
+)
+```
+
+По умолчанию разделитель — `#`, ширина табуляции — 8.
+`contextual=True` требует grouped-каталог; `False` принудительно включает
+плоский режим, а `None` выбирает режим по каталогу.
+
+### Чтение результата
+
+```python
+from vrp_parser_automaton import ErrorLine, ParsedCommand
+
+for line in report.lines:
+    if isinstance(line, ParsedCommand):
+        print(line.line_number, line.view, line.status)
+        for match in line.matches:
+            print(match.pattern_id, match.original_pattern)
+            for parameter in match.parameters:
+                print(parameter.slot_id, parameter.iterations, parameter.raw)
+    elif isinstance(line, ErrorLine):
+        print(line.line_number, line.view, line.error.code, line.error.message)
+```
+
+| Поле | Значение |
+|---|---|
+| `summary.errors`, `has_errors` | Число ошибок строк и их наличие |
+| `status: unique` | Один оставшийся вариант разбора |
+| `status: equivalent` | Несколько эквивалентных вариантов |
+| `status: ambiguous` | Несколько разных интерпретаций; синтаксический разбор успешен |
+| `primary_match`, `alternative_matches` | Первый результат по порядку исходных форматов и остальные равноправные варианты |
+| `view` | Известный контекст строки, в Python — `None` при плоском разборе |
+| `pattern_id` | Идентификатор исходного формата |
+| `slot_id` | `p:<позиция параметра в формате>` |
+| `iterations` | Координаты вхождения параметра в повторения, индексы с нуля |
+| `span` | Полуинтервал символов значения в исходной строке, с учётом отступа |
+| `raw`, `normalized` параметра | Исходное и нормализованное значение |
+
+`line.parameters` — сокращение для параметров только `primary_match`.
+Для последующей обработки неоднозначностей обходите `line.matches`.
+Совпадения одинаковой строки из разных view при плоском поиске считаются
+`ambiguous`; первый вариант не подтверждает семантику или контекст команды.
+
+В JSON `report.to_dict()` поле `view` присутствует только при известном
+контексте. Его отсутствие означает плоский режим или неизвестный вложенный блок,
+даже если `status` равен `unique`. Отдельный статус `unresolved` в результат
+строки не добавляется: он относится к офлайн-иерархии.
+
+`kind` строки — `command`, `error`, `blank` или `separator`.
+Разделители входят в `summary.total`, но не в `commands`, `blank` или `errors`.
+При ошибках доступны `position`, `expected`, `failures` и `suggestions`.
+Ошибки каталога/грамматики (`PatternDocumentError`, `PatternCompilationError`)
+возникают при создании парсера, а не как ошибки отдельных строк конфигурации.
+
+## Подключение офлайн-маппинга
+
+Маппинг **device → documentation** рассчитывается отдельно. Для готовых моков:
+
+```bash
+python3.13 manual_format_matcher_test.py \
+  --patterns data/mocks/cloudengine_150/device_grouped.json \
+  --documents data/mocks/cloudengine_150/documentation_grouped.json \
+  --summary --save mapping.json
+
+PYTHONPATH=src python3.13 -m vrp_parser_automaton parse \
+  --patterns data/mocks/cloudengine_150/device_grouped.json \
+  --mapping mapping.json --config config.txt > parsed-device.json
+```
+
+В Python тот же файл подключается так:
+
+```python
+mapping = json.loads(Path("mapping.json").read_text(encoding="utf-8"))
+device_parser = CommandLineParser.from_json_file(
+    "data/mocks/cloudengine_150/device_grouped.json", mapping=mapping
+)
+device_report = ConfigurationParser(device_parser).parse(
+    Path("config.txt").read_text(encoding="utf-8")
+)
+```
+
+Аргумент `mapping` и флаг `--mapping` предназначены для контекста grouped-каталога.
+Без них парсер использует переходы из самого каталога. Для flat входа
+разбирайте конфигурацию без этого аргумента, а офлайн-JSON используйте отдельно
+при последующей обработке параметров.
+
+Для подключения нужен результат `compile_catalogs()` для того же целевого
+каталога: исходные форматы, порядок дубликатов и расположение по view должны
+совпадать. Перед загрузкой парсер проверяет эти связи. Явные `switch_to_view`
+каталога приоритетны; у частичных совпадений проверяется сохранённая область
+применимости перехода по строке, `slot_id` и координатам повторений.
+
+**Матчинг форматов уже работает; полное автоматическое восстановление переходов
+устройства ещё не завершено.** Текущий matcher подтверждает соответствие
+начальных view. Остальные цели остаются кандидатами, даже если кандидат один.
+Загрузка такого JSON не устраняет `unresolved`: для этих блоков действует
+описанный выше плоский разбор. В примере с device-моком команда `bgp 65000`
+имеет `view: system`, а вложенная `ipv4-family unicast` разбирается без `view`.
+
+Парсер не вычисляет предикаты, `creates` и `requires`, не копирует bindings
+и семантику в каждую строку. Для своей постобработки найдите запись
+`mapping["devices"][match.pattern_id]` и её `mappings`. Связи параметров
+используют `slot_id`; для пересечений необходимо учитывать область применимости,
+а для повторений — `iterations`. Подробности и формат JSON описаны в
+[документации matcher](automaton-format-matcher.md#как-связать-json-с-результатом-парсера).
 
 ## Построение и исполнение
+
+Сохранены конструкторы, нормализация, spans, приоритеты типов и расширение реестра
+параметров. Все классы следует импортировать из `vrp_parser_automaton`:
+скопированные классы не идентичны одноимённым классам `vrp_parser`.
+`command_graph` — совместимое имя для свойства `automaton`; оно возвращает
+`CommandAutomaton` с `patterns`, `states`, `starts`, `literal_starts` и
+`parameter_starts`. Старых `routes`, `literal_edges`, `expression_edges` нет.
+`variation_id` детерминирован внутри нового движка, но может отличаться от
+исходного парсера: история основана на AST и координатах повторений.
 
 ```text
 Форматы → PatternParser → AST → PatternCompiler → CommandAutomaton
@@ -214,9 +380,6 @@ python3.13 manual_automaton_test.py --case wide-set
 python3.13 manual_automaton_test.py --case large-repeat
 python3.13 manual_automaton_test.py --case optional-chain
 python3.13 manual_automaton_test.py --patterns data/commands.json --line 'display clock'
-python3.13 manual_automaton_test.py --patterns documentation_grouped.json --config config.txt
-python3.13 manual_automaton_test.py --patterns device_grouped.json --mapping mapping.json --config config.txt
-python3.13 manual_automaton_test.py --patterns device_grouped.json --config config.txt --flat
 ```
 
 Скрипт печатает число состояний и полный JSON результата. Первый пример —
@@ -232,20 +395,13 @@ python3.13 manual_automaton_test.py --patterns device_grouped.json --config conf
 
 Весь текущий каталог: 7 269 шаблонов, 45 222 состояния.
 
-После установки пакета доступен также модульный CLI:
-
-```bash
-python -m vrp_parser_automaton check-patterns data/commands.json
-python -m vrp_parser_automaton parse --patterns data/commands.json --config config.txt
-```
-
-Модульный CLI также принимает `--mapping mapping.json` и `--flat`.
-
 Тесты находятся в `tests/automaton/`: перенесённые контракты API, параметры,
 диагностика, CLI и каталог, а также проверки структуры автомата, независимости
 от исходного пакета, широких наборов, больших повторов и сложного статического
-маршрута. Для сопоставления форматов на этих инструкциях есть отдельный пакет
+маршрута. Контекст, каталоги и подключение маппинга проверяются в
+`tests/test_automaton_context.py`. Для сопоставления форматов есть отдельный пакет
 [`vrp_format_matcher`](automaton-format-matcher.md). Он использует тот же
 компилятор AST и те же управляющие переходы для общего сравнения языков.
 Одинаковые структуры связываются напрямую по исходным узлам AST. Результат —
-соответствия параметров и статусы; предикатов и обработки метаданных в матчере нет.
+соответствия параметров, статусы и области совпадения; для grouped-каталогов
+добавляется подготовленная информация о view. Предикаты matcher не вычисляет.

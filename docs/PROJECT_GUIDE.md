@@ -1,5 +1,10 @@
 # Complete Guide to the Huawei VRP Parser
 
+This guide describes the original `vrp_parser` package and its flat command
+graph. For the current automaton implementation, grouped catalogues, view
+transitions, unresolved contexts and offline mapping integration, see
+[the automaton parser usage guide](reference/automaton-parser.md).
+
 ## Project Purpose
 
 The project compiles exported Huawei VRP command patterns into a single

@@ -24,8 +24,9 @@ The detailed documentation is split into a short navigation tree:
 - [pattern compiler and command graph](docs/reference/patterns-graph.md);
 - [runtime matcher](docs/reference/matching.md).
 - [standalone automaton parser](docs/reference/automaton-parser.md) — independent
-  `vrp_parser_automaton` package with the same parsing facade and compact AST compilation;
-  try `python3.13 manual_automaton_test.py`.
+  `vrp_parser_automaton` package: flat/grouped device and documentation catalogues,
+  context tracking, unresolved-view fallback, CLI and Python usage;
+  try the quick start below.
 - [format matcher for the automaton parser](docs/reference/automaton-format-matcher.md)
   — all full device → documentation matches, prefix fallback, entry-view filtering,
   grouped JSON, parameter slot IDs and an offline `hierarchy` section with
@@ -33,8 +34,9 @@ The detailed documentation is split into a short navigation tree:
   try `python3.13 manual_format_matcher_test.py` or benchmark a real CLIs corpus
   using `python3.13 benchmark_format_matcher.py --corpus /path/to/cmd_corpus`.
 - [command catalogue format specification (draft)](docs/reference/command-catalog-format.md)
-  — flat/grouped matcher inputs, parameter types and view references;
-  grouped runtime parsing and transition recovery are planned.
+  — flat/grouped parser and matcher inputs, parameter types and view references.
+  Contextual parsing is supported; automatic recovery of all device transitions
+  is not yet complete.
 - [CloudEngine mock catalogues](data/mocks/cloudengine_150/README.md)
   — flat/grouped device fixtures with 150 entries and documentation fixtures with
   151 entries and a restored view hierarchy.
@@ -44,6 +46,36 @@ The detailed documentation is split into a short navigation tree:
 
 Together, the reference documents describe every production class, function,
 property, and private helper.
+
+## Automaton parser quick start
+
+For flat/grouped catalogues and view tracking, use `vrp_parser_automaton`
+(Python 3.13+). From the repository root, without installation:
+
+```bash
+python3.13 manual_automaton_test.py \
+  --patterns data/mocks/cloudengine_150/documentation_grouped.json \
+  --line 'bgp 65000' --line ' ipv4-family unicast' --line '#'
+```
+
+To parse your configuration and save plain JSON:
+
+```bash
+PYTHONPATH=src python3.13 -m vrp_parser_automaton parse \
+  --patterns data/mocks/cloudengine_150/documentation_grouped.json \
+  --config config.txt > parsed.json
+```
+
+Replace `--patterns` with your device or documentation catalogue. Add `--flat`
+to search all views, or `--mapping mapping.json` to load the offline matcher's
+context information for a grouped target catalogue. Unknown transitions make
+nested blocks use flat parsing; they do not establish a view even if only one
+format matches. A missing `view` key in a command result indicates flat parsing.
+
+The [usage guide](docs/reference/automaton-parser.md) explains input formats,
+mapping preparation, result fields, exit codes and current limitations.
+The API and CLI examples below describe the original `vrp_parser` package;
+the `vrp-parser` executable still runs that original implementation.
 
 ## Installation
 
@@ -68,7 +100,7 @@ python3 manual_test.py
 editable `PATTERN_DOCUMENT` and hardcoded input in `main()`. Depending on the
 experiment, construction may deliberately raise `PatternCompilationError`.
 
-## Pattern document
+## Original parser: pattern document
 
 The runtime catalogue is [data/commands.json](data/commands.json). It has one
 required property:
@@ -93,7 +125,7 @@ word is treated as a literal unless runtime policy reserves its spelling.
 The bundled catalogue contains 7,269 unique patterns; 1,051 of them use a
 built-in IPv4 or IPv6 placeholder.
 
-## Python API
+## Original parser: Python API
 
 ```python
 from vrp_parser import (
