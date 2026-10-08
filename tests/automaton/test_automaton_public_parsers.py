@@ -188,3 +188,67 @@ def test_incomplete_known_command_reports_syntax_error_at_end() -> None:
     assert result.error.code is ErrorCode.SYNTAX_ERROR
     assert result.error.position == len("interface")
     assert result.error.expected[0].description == "STRING<1-63>"
+
+
+@pytest.mark.parametrize("explicit_flat", [False, True])
+def test_flat_documentation_parameters_use_existing_result_fields(
+    explicit_flat: bool,
+) -> None:
+    document = (
+        {
+            "source": "documentation",
+            "type": "flat",
+            "commands": [{"format": "acl <acl-number>"}],
+        }
+        if explicit_flat
+        else {"commands": ["acl <acl-number>"]}
+    )
+    report = ConfigurationParser(CommandLineParser(document)).parse(" acl 001")
+
+    assert not report.has_errors
+    line = report.to_dict()["lines"][0]
+    assert "view" not in line and "context_issue" not in line
+    assert line["primary_match"]["parameters"] == [
+        {
+            "type_id": "named",
+            "declaration": "<acl-number>",
+            "raw": "001",
+            "normalized": "001",
+            "span": {"start": 5, "end": 8},
+            "slot_id": "p:4",
+            "iterations": [],
+        }
+    ]
+
+
+def test_named_parameters_keep_distinct_slots_and_repeat_coordinates() -> None:
+    pattern = "vlan { <id> [ to <id> ] } &<1-3>"
+    parser = CommandLineParser({"commands": [pattern]})
+
+    result = parser.parse("vlan 1 to 2 3")
+
+    assert isinstance(result, ParsedCommand)
+    first, last, repeated = result.parameters
+    assert [p.declaration for p in result.parameters] == ["<id>"] * 3
+    assert [p.raw for p in result.parameters] == ["1", "2", "3"]
+    assert first.slot_id == repeated.slot_id != last.slot_id
+    assert first.iterations != repeated.iterations
+
+
+def test_named_parameters_read_one_token_without_inferred_type_validation() -> None:
+    parser = CommandLineParser(
+        {
+            "commands": [
+                {
+                    "format": "acl <id>",
+                    "parameter_types": [
+                        {"parameter_name": "id", "parameter_type": "integer"}
+                    ],
+                }
+            ]
+        }
+    )
+
+    assert isinstance(parser.parse("acl arbitrary-value"), ParsedCommand)
+    assert isinstance(parser.parse("acl"), ErrorLine)
+    assert isinstance(parser.parse("acl two values"), ErrorLine)

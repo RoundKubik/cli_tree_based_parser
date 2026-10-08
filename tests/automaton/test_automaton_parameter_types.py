@@ -6,12 +6,14 @@ import pytest
 
 from vrp_parser_automaton.parameters import (
     ExactDeclarationRecognizer,
+    NamedDeclarationRecognizer,
     ParameterDeclaration,
     ParameterFamily,
     ParameterResult,
     ParameterStatus,
     ParameterType,
     ParameterTypeRegistry,
+    PassValidator,
     SingleTokenReader,
     default_parameter_registry,
 )
@@ -59,6 +61,46 @@ def test_longest_date_time_declaration_wins() -> None:
     declaration = _declaration(default_parameter_registry(), "YYYY/MM/DD,HH:MM:SS")
 
     assert declaration.type_id == "datetime-slash"
+
+
+def test_named_declaration_keeps_its_name_in_the_source() -> None:
+    declaration = default_parameter_registry().recognize("acl <acl-number>", 4)
+
+    assert declaration is not None
+    assert declaration.type_id == "named"
+    assert declaration.source == "<acl-number>"
+    assert (declaration.start, declaration.end) == (4, 16)
+
+
+@pytest.mark.parametrize("source", ["<>", "<id", "<two words>", "<id>suffix"])
+def test_named_recognizer_requires_a_complete_placeholder(source: str) -> None:
+    assert NamedDeclarationRecognizer().recognize(source, 0) is None
+
+
+@pytest.mark.parametrize("raw", ["001", "not-a-number", "", "several words"])
+def test_pass_validator_neither_validates_nor_converts(raw: str) -> None:
+    declaration = _declaration(default_parameter_registry(), "<id>")
+
+    result = PassValidator().probe(raw, declaration)
+
+    assert result.status is ParameterStatus.VALID
+    assert result.normalized == raw
+
+
+def test_explicit_placeholder_type_takes_precedence_over_named_fallback() -> None:
+    registry = default_parameter_registry().register(
+        ParameterType(
+            "custom-id",
+            ParameterFamily.NUMERIC,
+            ExactDeclarationRecognizer("<id>"),
+            SingleTokenReader(),
+            PassValidator(),
+        )
+    )
+
+    assert _declaration(registry.clone().freeze(), "<id>").type_id == "custom-id"
+    assert _declaration(registry, "<hh:mm>").type_id == "time"
+    assert registry.evaluate("<hh:mm>", "25:00").status is ParameterStatus.INVALID
 
 
 def test_declaration_span_is_relative_to_the_complete_pattern() -> None:

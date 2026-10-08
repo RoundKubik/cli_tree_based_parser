@@ -1,19 +1,19 @@
-# Офлайн-сопоставление: устройство → документация
+# Offline matching: device → documentation
 
-Для **каждого формата устройства** `vrp_format_matcher` ищет подходящие форматы
-документации и соответствия параметров. Результат сохраняется обычным JSON.
-Матчер учитывает `parameter_types`, не вычисляет предикаты и не читает
-`requires`/`creates`. Их последующая обработка принадлежит вызывающему коду.
+For **each device format**, `vrp_format_matcher` finds suitable documentation
+formats and parameter correspondences. The result is saved as ordinary JSON.
+The matcher uses `parameter_types`, does not evaluate predicates, and does not read
+`requires`/`creates`. The calling code handles their subsequent processing.
 
-## Подготовить каталог для парсера и итоговый маппинг
+## Prepare a parser catalog and final mapping
 
-Для полного офлайн-этапа используйте `prepare_catalogs(device, documentation)`.
-Второй вход — документация **с подготовленной иерархией**. В этом
-методе отсутствие `switch_to_view` в документации означает сохранение контекста.
-Известные пробелы, включая зависимость цели от параметров без единого перехода,
-нужно явно пометить `"switch_to_view": {"status": "unresolved"}`.
-В исходном grouped-device отсутствие поля по-прежнему означает неизвестность.
-При documentation → documentation оба входа считаются готовыми иерархиями.
+For the complete offline stage, use `prepare_catalogs(device, documentation)`.
+The second input is documentation **with a prepared hierarchy**. In this method,
+an omitted documentation `switch_to_view` means context preservation. Known gaps,
+including parameter-dependent targets without a single transition, must be marked
+explicitly with `"switch_to_view": {"status": "unresolved"}`.
+In the original grouped device input, an omitted field still means unknown.
+For documentation → documentation, both inputs are treated as prepared hierarchies.
 
 ```python
 prepared = FormatMatcher().prepare_catalogs(device, documentation)
@@ -26,91 +26,89 @@ Path("mapping.json").write_text(
 print(prepared.catalog["type"], len(prepared.unresolved))
 ```
 
-`prepared.catalog` — единственный вход runtime-парсера. Маппинг и исходная
-документация используются вашим внешним кодом после разбора конфигурации.
-`prepared.unresolved` содержит `pattern_id` команд, для которых пока нельзя
-установить единый эффект на контекст. Это могут быть также обычные команды,
-если не удалось подтвердить, что они сохраняют view.
+`prepared.catalog` is the runtime parser's only input. Your external code uses the
+mapping and original documentation after configuration parsing. `prepared.unresolved`
+contains the `pattern_id` values of commands whose single effect on context cannot
+yet be established. These can include ordinary commands if view preservation could
+not be confirmed.
 
-Порядок обработки:
+Processing order:
 
-1. Сопоставить форматы и проверить категории типов параметров.
-2. Найти взаимное покрытие view: каждый формат целиком покрывается языком
-   форматов другой стороны. Сначала используются готовые доказательства
-   `equivalent`, `device_subset` и `document_subset`. Если отдельного покрывающего
-   формата нет, проверяется включение в объединение автоматов подходящих форматов
-   **того же view**. Эта проверка работает в обоих направлениях; префиксы не
-   доказывают покрытие законченных команд.
-3. Выбрать только единственное соответствие в обе стороны. Конкурирующий view,
-   целиком входящий в другой набор, тоже блокирует выбор. Пустые группы сами по
-   себе не определяют соответствие. Имена view, веса и число совпадений не используются.
-4. Распространить явно известные переходы от начальной пары view. Они позволяют
-   различать одинаковые наборы команд при documentation → documentation и при
-   наличии уже известных device-переходов. Противоречивые пути не выбираются
-   по порядку обхода. Связи по известным переходам имеют приоритет над сходством
-   полного состава групп.
-5. Перенести переход только при покрытии **всего device-формата**, едином
-   документированном эффекте всех применимых полных пар и однозначной цели.
-   Покрытие может быть совместным: несколько документальных записей с одним
-   эффектом вместе покрывают весь формат. Конфликт даже с частичным или ещё
-   неразрешённым совпадением препятствует общему `switch_to_view`.
-6. Ограничить итоговые пары установленными view. Полные пары и их bindings
-   переиспользуются; если после ограничения исчезло полное совпадение, запускается
-   префиксный fallback в разрешённом view.
+1. Match formats and check parameter type categories.
+2. Find mutual view coverage: each format is fully covered by the language of formats
+   on the other side. Existing `equivalent`, `device_subset`, and `document_subset`
+   proofs are used first. If no individual format provides coverage, check inclusion
+   in the union of automata for suitable formats **from the same view**. This check
+   runs in both directions; prefixes do not prove coverage of complete commands.
+3. Select only a correspondence that is unique in both directions. A competing view
+   fully included in another set also blocks selection. Empty groups alone do not
+   establish correspondence. View names, weights, and match counts are not used.
+4. Propagate explicitly known transitions from the entry view pair. They distinguish
+   identical command sets in documentation → documentation and when device transitions
+   are already known. Conflicting paths are not selected by traversal order. Relations
+   established through known transitions take precedence over similarity of complete
+   group contents.
+5. Transfer a transition only when the **entire device format** is covered, all
+   applicable full pairs have one documented effect, and the target is unambiguous.
+   Coverage may be collective: several documentation records with the same effect
+   can cover the entire format together. A conflict, even with a partial or still
+   unresolved match, prevents a format-wide `switch_to_view`.
+6. Restrict the final pairs to established views. Full pairs and their bindings are
+   reused; if restriction removes a full match, run prefix fallback within the
+   allowed view.
 
-Например, `c { a | b } <id>` покрывается двумя форматами `c a <first>` и
-`c b <second>` при одинаковых типах параметров. Сохраняются обе исходные пары
-с их bindings и областями применимости. Совместная проверка дополнительно
-доказывает, что непокрытых команд не осталось. Если пропущена ветка, допустимое
-отсутствие optional-части или перестановка `{}*`, покрытие не подтверждается.
+For example, `c { a | b } <id>` is covered by `c a <first>` and `c b <second>` when
+parameter types agree. Both original pairs, their bindings, and their applicability
+scopes are preserved. The collective check additionally proves that no commands
+remain uncovered. Coverage is not confirmed if a branch, an allowed omission of an
+optional part, or a `{}*` permutation is missing.
 
-Объединение не копирует графы и не перечисляет маршруты: в обходе сохраняются
-идентификатор исходного автомата и его текущие состояния с регистрами повторов.
-Состояния разных форматов не склеиваются. AST и скомпилированные программы
-переиспользуются; одинаковые языки по типизированной структуре используют общий
-результат проверки. Вычисление bindings и четыре существующих случая матчинга
-отдельных форматов остаются прежними.
+The union does not copy graphs or enumerate routes: traversal keeps the source
+automaton ID and its current states with repetition registers. States from different
+formats are not merged. ASTs and compiled programs are reused; languages with
+identical typed structure share a check result. Binding calculation and the four
+existing matching cases for individual formats remain unchanged.
 
-Проверка включения ограничена `comparison_states` и `analysis_steps`. Исчерпание
-лимита означает неизвестность, а не отсутствие покрытия; такой конкурент не
-создаёт ложную единственность другого view. Неизвестные категории параметров
-тоже не доказывают равенство. Уже доказанное покрытие может использоваться,
-если дополнительные неразрешённые пары не вносят другого эффекта на контекст.
+Inclusion checks are bounded by `comparison_states` and `analysis_steps`. Exhausting
+a limit means unknown, not uncovered; such a competitor cannot falsely make another
+view unique. Unknown parameter categories do not prove equality either. Proven
+coverage can still be used if additional unresolved pairs introduce no different
+context effect.
 
-Это восстановление по согласованному структурному критерию, а не подтверждение
-поведения устройства. Диапазоны чисел и длины строк, как и прежде, не сравниваются.
-В JSON `hierarchy.resolved_views` содержит связи «device-view → documentation-view»;
-неразрешённые view сохраняют глобальные кандидаты.
+This recovers a hierarchy using the agreed structural criterion; it does not confirm
+device behavior. Numeric ranges and string lengths are still not compared.
+In JSON, `hierarchy.resolved_views` contains device-view → documentation-view
+relations; unresolved views retain global candidates.
 
-Готовый grouped-каталог сохраняет **исходные device view ID**, группы и известные
-переключения. Названия документации не переносятся в device-каталог. Неизвестный
-эффект отмечается непосредственно в записи команды:
+The prepared grouped catalog preserves **original device view IDs**, groups, and
+known transitions. Documentation names are not copied into the device catalog.
+An unknown effect is marked directly on the command record:
 
 ```json
 {"format": "interface STRING<1-64>", "switch_to_view": {"status": "unresolved"}}
 ```
 
-Парсер использует всю установленную иерархию. Только вложенный блок после такой
-команды разбирается без ограничения по view; выход из блока возвращает известный
-родительский контекст. При ручном уточнении замените метку на device view ID или
-`null`. Варианты из документации находятся в `hierarchy.transitions[pattern_id]`,
-ссылаются на исходные пары и их bindings; кандидаты целей — в `hierarchy.targets`.
-Не нужно дублировать их в каждой записи runtime-каталога.
+The parser uses the entire established hierarchy. Only the child block after such
+a command is parsed without view restrictions; leaving it restores the known parent
+context. For manual refinement, replace the marker with a device view ID or `null`.
+Documentation alternatives are in `hierarchy.transitions[pattern_id]` and reference
+the original pairs and their bindings; target candidates are in `hierarchy.targets`.
+They do not need to be duplicated in every runtime catalog record.
 
-Если разные участки device-формата соответствуют документальным командам с
-разными переходами, единый `switch_to_view` не назначается: остаётся `unresolved`,
-а все пары и области их применимости сохраняются. Разделение документации на
-форматы с постоянной целью помогает сохранить эти различия, но само по себе не
-создаёт условного перехода для общего device-формата. Выполнение правил по значениям
-параметров пока не реализовано. Нормализация названий не восстанавливает отсутствующее
-правило выбора цели.
+If different parts of a device format correspond to documentation commands with
+different transitions, no single `switch_to_view` is assigned: the record stays
+`unresolved`, and all pairs and their applicability scopes are preserved. Splitting
+documentation into formats with constant targets helps retain these differences,
+but does not itself create a conditional transition for a shared device format.
+Execution of rules based on parameter values is not implemented yet. Name
+normalization cannot recover a missing target-selection rule.
 
-Формат, порядок записей, `pattern_id`, `slot_id` и bindings сохраняются.
-`source.view/index` адресуют исходные каталоги; в подготовленном каталоге эти
-позиции также не меняются. Исходные словари не изменяются.
+Formats, record order, `pattern_id`, `slot_id`, and bindings are preserved.
+`source.view/index` address the original catalogs; these positions also stay the
+same in the prepared catalog. The input dictionaries are not modified.
 
-Плоский целевой каталог также поддерживается: он остаётся плоским. Для
-восстановления grouped-device необходим grouped-документ.
+A flat target catalog is supported and remains flat. Recovering a grouped device
+catalog requires grouped documentation.
 
 ```bash
 python3.13 manual_format_matcher_test.py \
@@ -118,10 +116,10 @@ python3.13 manual_format_matcher_test.py \
   --save-catalog runtime_catalog.json --save mapping.json --summary
 ```
 
-Без `--save-catalog` скрипт сохраняет прежний режим `compile_catalogs()`:
-сопоставление и сбор кандидатов, без подготовки runtime-каталога.
+Without `--save-catalog`, the script retains its previous `compile_catalogs()` mode:
+matching and candidate collection without runtime catalog preparation.
 
-## Посчитать и сохранить
+## Compute and save
 
 ```python
 import json
@@ -144,18 +142,18 @@ Path("mapping.json").write_text(
 )
 ```
 
-Если уже создан `CommandLineParser`, можно вызвать
-`FormatMatcher().compile(parser, documents)`. Этот вариант учитывает его реестр
-типов. Для сравнения двух корпусов с именованными `<placeholder>` используйте
-`compile_formats(..., target_syntax="document")`: тогда литералы вроде
-`YYYY-MM-DD` не интерпретируются как типы устройства.
+If a `CommandLineParser` already exists, call
+`FormatMatcher().compile(parser, documents)`. This uses the parser's type registry.
+To compare two corpora with named `<placeholder>` parameters, use
+`compile_formats(..., target_syntax="document")`: literals such as `YYYY-MM-DD`
+will then not be interpreted as device types.
 
-## Каталоги flat и grouped
+## Flat and grouped catalogs
 
-`compile_catalogs(device_catalog, documentation_catalog)` принимает два объекта
-по [спецификации v1](command-catalog-format.md). Каждый может быть плоским или
-сгруппированным. Синтаксис целевого каталога выбирается по `source`: поэтому
-поддерживаются также сравнения документации с документацией.
+`compile_catalogs(device_catalog, documentation_catalog)` accepts two objects
+following [specification v1](command-catalog-format.md). Each may be flat or grouped.
+The target catalog's syntax is selected by `source`, so documentation-to-documentation
+comparisons are also supported.
 
 ```python
 device = json.loads(Path("device_grouped.json").read_text(encoding="utf-8"))
@@ -166,48 +164,48 @@ result = FormatMatcher().compile_catalogs(device, documentation)
 data = result.to_dict()
 ```
 
-Сопоставление учитывает структуру, совместимость типов и **начальную пару view**.
-Если оба каталога имеют `type="grouped"`, команда из `device.entry_view` ищет
-документацию только внутри `documentation.entry_view`. Имена этих групп могут
-различаться; начальная пара определяется полями `entry_view`, а не именами
-`system`/`System view` или порядком групп в JSON.
+Matching considers structure, type compatibility, and the **entry view pair**.
+If both catalogs have `type="grouped"`, a command from `device.entry_view` searches
+for documentation only within `documentation.entry_view`. These groups may have
+different names; the initial pair is defined by `entry_view`, not names such as
+`system`/`System view` or the order of groups in JSON.
 
-Ограничение применяется перед сравнением пар, включая префиксный fallback.
-Например, для устройства `acl INTEGER<2000-2999>` в начальном view:
+The restriction applies before pair comparison, including prefix fallback.
+For example, consider device format `acl INTEGER<2000-2999>` in the entry view:
 
 ```text
-документация, System view:      acl [ number ] <acl-number>
-документация, GRPC server view: acl <acl-number>
+documentation, System view:      acl [ number ] <acl-number>
+documentation, GRPC server view: acl <acl-number>
 ```
 
-При `documentation.entry_view="System view"` выбирается пересечение с первой
-записью. Точное совпадение из gRPC не участвует в поиске. Если в начальном view
-ничего не найдено или он пуст, поиск не расширяется на чужие view.
+With `documentation.entry_view="System view"`, the intersection with the first record
+is selected. The exact gRPC match does not participate in the search. If nothing is
+found in the entry view, or it is empty, the search does not expand to other views.
 
-Для остальных view устройства соответствие контекстов пока неизвестно:
-применяется поиск по всему каталогу документации. При наличии хотя бы
-одного `flat`-каталога поиск также глобальный. Поэтому `matched` у таких записей
-подтверждает совпадение форматов, **но не соответствие view**. Это правило действует
-и при сравнении documentation → documentation. Матчер не оценивает и не ранжирует
-соответствия view. Восстановление контекстов и перенос `switch_to_view` выполняет
-описанный выше `prepare_catalogs()`; `compile_catalogs()` только собирает основания.
+Context correspondence is still unknown for other device views, so the entire
+documentation catalog is searched. Search is also global if at least one catalog is
+`flat`. Thus `matched` for these records confirms a format match, **not a view
+correspondence**. This also applies to documentation → documentation. The matcher
+does not score or rank view correspondences. Context recovery and `switch_to_view`
+transfer are handled by `prepare_catalogs()` as described above; `compile_catalogs()`
+only collects evidence.
 
-Область поиска входит в ключ группировки одинаковых целевых форматов: результаты
-глобального поиска не подставляются командам начального view. AST и программы
-при этом переиспользуются. Принадлежность записи к начальной паре видна по
-`source.view` и `catalogs.*.entry_view`.
+The search scope is part of the grouping key for identical target formats: global
+search results are not reused for entry-view commands. ASTs and programs are still
+reused. A record's membership in the entry pair is visible through `source.view`
+and `catalogs.*.entry_view`.
 
-В `devices[pattern_id]` и `documents[document_id]` добавляется `source`:
+A `source` is added to `devices[pattern_id]` and `documents[document_id]`:
 
 ```json
 {"view": "System view", "index": 2}
 ```
 
-Это адрес `catalog["views"]["System view"][2]`. Для плоского каталога `view`
-равен `null`, а `index` указывает на `catalog["commands"][index]`. Индекс начинается
-с нуля и относится к исходному массиву, а не к списку найденных совпадений.
-Одинаковые строки из разных view и дубли внутри одной группы имеют отдельные
-внутренние ID и адреса. Входные записи v1 не содержат `id`.
+This addresses `catalog["views"]["System view"][2]`. For a flat catalog, `view` is
+`null`, and `index` points to `catalog["commands"][index]`. The index is zero-based
+and refers to the original array, not the list of matches. Identical strings from
+different views and duplicates within one group have separate internal IDs and
+locations. Input v1 records do not contain `id`.
 
 ```python
 pair = result.pairs[0]
@@ -217,27 +215,27 @@ records = (
     else documentation["views"][location["view"]]
 )
 source_command = records[location["index"]]
-# Здесь доступны исходные creates/requires, parameter_types и switch_to_view.
+# Original creates/requires, parameter_types, and switch_to_view are available here.
 ```
 
-В Python те же адреса доступны через
-`result.device_catalog.entries[pattern_id]` и
-`result.documentation_catalog.entries[document_id]`: поля `view` и `index`.
-Заголовки каталогов, включая vendor/device/model_type, сохраняются один раз
-в `data["catalogs"]["device"]` и `data["catalogs"]["documentation"]`.
-Исходные записи с семантикой не дублируются в результате. Для разрешения адресов
-нужны те же входные каталоги с тем же порядком записей.
+The same locations are available in Python through the `view` and `index` fields of
+`result.device_catalog.entries[pattern_id]` and
+`result.documentation_catalog.entries[document_id]`. Catalog headers, including
+vendor/device/model_type, are stored once in `data["catalogs"]["device"]` and
+`data["catalogs"]["documentation"]`. Original records with semantics are not duplicated
+in the result. Resolving these locations requires the same input catalogs with the
+same record order.
 
-Все записи устройства, включая unmatched, сохраняют адрес. В JSON раздел
-`documents` содержит только записи, участвующие в результате, как и раньше.
-Старые `compile()` и `compile_formats()` сохраняют прежнюю схему JSON.
+All device records, including unmatched ones, retain their locations. As before,
+the JSON `documents` section contains only records that participate in the result.
+The legacy `compile()` and `compile_formats()` methods retain their existing JSON schema.
 
-## Связи view и документальные переходы
+## View relations and documentation transitions
 
-Для двух `grouped`-каталогов `compile_catalogs()` автоматически готовит
-`result.hierarchy` и добавляет раздел `hierarchy` в JSON. Поддерживается также
-documentation → documentation. У плоских и смешанных входов `hierarchy` в Python
-равен `None`, в JSON отсутствует.
+For two `grouped` catalogs, `compile_catalogs()` automatically prepares
+`result.hierarchy` and adds a `hierarchy` section to JSON. Documentation →
+documentation is also supported. For flat or mixed inputs, `hierarchy` is `None`
+in Python and absent from JSON.
 
 ```python
 result = FormatMatcher().compile_catalogs(device, documentation)
@@ -249,84 +247,85 @@ for link in evidence.command_links:
     print(link.device.view, link.documentation.view)
     print(link.pair.pattern_id, link.pair.document_id)
     print(link.transition.kind, link.transition.target_view)
-    # link.pair — исходный PreparedPair, включая bindings и automaton.
+    # link.pair is the original PreparedPair, including bindings and automaton.
 
 for link in evidence.view_links:
     print(link.device_view, link.documentation_view)
-    # link.commands содержит ссылки на соответствующие command_links.
+    # link.commands references the corresponding command_links.
 
 for doc_view, target in hierarchy.targets.items():
     print(doc_view, target.status, target.device_view)
     print([link.device_view for link in target.candidates])
 ```
 
-Отдельный `HierarchyAnalysis(device, documentation, result).collect()` остаётся
-доступным в `vrp_format_matcher.hierarchy`. Метод `.resolve()` возвращает такой же
-`PreparedHierarchy`, как автоматический этап `compile_catalogs()`.
+A separate `HierarchyAnalysis(device, documentation, result).collect()` remains
+available in `vrp_format_matcher.hierarchy`. Its `.resolve()` method returns the same
+`PreparedHierarchy` as the automatic `compile_catalogs()` stage.
 
-`command_links` содержит все пары `exact`, `reordered` и законченные пересечения
-полных команд. Команды без параметров сохраняются. `prefix`, незавершённые
-пересечения и отсутствие совпадения не создают связей. Если пересечение готово,
-а уточнение отношения языков исчерпало лимит, пара со статусом `matched`
-по-прежнему используется.
+`command_links` contains all `exact` and `reordered` pairs and completed intersections
+of full commands. Commands without parameters are retained. `prefix`, unfinished
+intersections, and absent matches do not create relations. If the intersection is
+ready but language-relation refinement exhausts its limit, a pair with status
+`matched` is still used.
 
-`transition.kind` отражает только запись документации:
+`transition.kind` reflects only the documentation record:
 
 | `switch_to_view` | `kind` | `target_view` |
 |---|---|---|
-| Строка | `switch` | Исходный ключ документального view |
+| String | `switch` | Original documentation view key |
 | `null` | `stay` | `None` |
 | `{"status": "unresolved"}` | `unknown` | `None` |
-| Поле отсутствует | `unknown` | `None` |
+| Field omitted | `unknown` | `None` |
 
-Переход связан с областью применимости **конкретной пары**. У `intersection`
-это принимаемые полные пути `link.pair.automaton`, с исходными slot_id и
-координатами повторов. Структурная пара относится ко всей совпавшей структуре.
-Коллекция не вычисляет предикаты и не применяет переходы к runtime-командам.
+A transition is associated with the applicability scope of **a specific pair**.
+For `intersection`, this means the accepted complete paths of `link.pair.automaton`,
+with original slot IDs and repetition coordinates. A structural pair applies to the
+entire matched structure. Collection does not evaluate predicates or apply
+transitions to runtime commands.
 
-Имена view используются только как локальные ссылки. `view_links` группирует
-командные свидетельства без весов, ранжирования или выбора единственного view.
-Несколько целей перехода, а также `stay` и `unknown` от разных документальных
-записей сохраняются отдельно. Цель может быть пустой группой. Отсутствие связи
-между группами не доказывает их несовместимость.
+View names are used only as local references. `view_links` groups command evidence
+without weights, rankings, or selection of a single view. Multiple transition
+targets, as well as `stay` and `unknown` from different documentation records, are
+preserved separately. A target may be an empty group. An absent relation between
+groups does not prove incompatibility.
 
-Нужны исходные каталоги с теми же форматами, типами и порядком записей. Сборщик
-проверяет заголовки, адреса и строки используемых форматов. AST и автоматы
-повторно не строятся; bindings и графы не копируются.
+The original catalogs with the same formats, types, and record order are required.
+The collector checks headers, locations, and the format strings being used. ASTs and
+automata are not rebuilt; bindings and graphs are not copied.
 
-## Разрешение целей переходов
+## Resolving transition targets
 
-Этот раздел описывает базовый результат `compile_catalogs()`. У
-`prepare_catalogs()` дополнительно разрешаются цели по полному покрытию и
-известным переходам; `hierarchy.resolved_views` показывает итоговые соответствия.
+This section describes the basic `compile_catalogs()` result. `prepare_catalogs()`
+additionally resolves targets through full coverage and known transitions;
+`hierarchy.resolved_views` shows the final correspondences.
 
-Сборщик один раз индексирует `view_links` по документальному view. Для каждой
-цели `switch` он сохраняет все найденные связи с device-view. Это положительные
-свидетельства, а не исчерпывающий список возможных целей. Имена между каталогами
-не сравниваются, количество совпадений не используется для выбора.
+The collector indexes `view_links` by documentation view once. For each `switch`
+target, it retains every discovered relation to a device view. These are positive
+observations, not an exhaustive list of possible targets. Names are not compared
+across catalogs, and match counts are not used for selection.
 
-У цели два состояния:
+A target has two possible states:
 
-- `resolved`: целевой документальный view равен `documentation.entry_view`;
-  установленная начальная пара даёт `device.entry_view`;
-- `unresolved`: иной документальный view. Ноль, один или несколько найденных
-  кандидатов сохраняются без автоматического выбора. Пустая группа документации
-  также остаётся неразрешённой, если это не начальный view.
+- `resolved`: the target documentation view equals `documentation.entry_view`;
+  the established entry pair provides `device.entry_view`;
+- `unresolved`: any other documentation view. Zero, one, or multiple discovered
+  candidates are preserved without automatic selection. An empty documentation
+  group also remains unresolved unless it is the entry view.
 
-Статус относится только к **цели**, а не к истинности переноса всей команды.
-Даже при известной цели остаются исходная пара, её область применимости и
-соответствие контекстов источника. У результата нет общего флага «иерархия
-полностью восстановлена»: найденные варианты этого не доказывают.
+The status applies only to the **target**, not to the validity of transferring the
+entire command. Even with a known target, the original pair, its applicability scope,
+and source context correspondence remain relevant. The result has no global
+"hierarchy fully recovered" flag: the discovered alternatives do not prove that.
 
-Если у записи целевого каталога уже задан строковый или `null` `switch_to_view`, он сохраняется в
-`hierarchy.declared_transitions[pattern_id]`: строка — исходный device-view,
-`None` — явно заданное сохранение контекста. Отсутствие ключа означает отсутствие
-установленной декларации; метка `unresolved` также не является известным переходом.
-Такие данные сохраняются и для команд без соответствий документации,
-включая случай `source="documentation"` у целевого каталога. Документальные
-варианты их не перезаписывают и остаются видимыми отдельными записями.
+If a target catalog record already specifies a string or `null` `switch_to_view`,
+it is retained in `hierarchy.declared_transitions[pattern_id]`: a string is the
+original device view; `None` means explicit context preservation. An absent key
+means there is no established declaration; an `unresolved` marker is not a known
+transition either. These data are retained even for commands without documentation
+matches, including target catalogs with `source="documentation"`. Documentation
+alternatives do not overwrite them and remain visible as separate records.
 
-## Представление hierarchy в JSON
+## Hierarchy representation in JSON
 
 ```text
 hierarchy
@@ -336,29 +335,29 @@ hierarchy
     documentation_view
     mappings: {pattern_id: [mapping_index, ...]}
   targets
-    <документальный view>
+    <documentation view>
       status: resolved | unresolved
-      candidates: [индексы в hierarchy.view_links]
-      device_view: установленная цель; только при resolved
+      candidates: [indices into hierarchy.view_links]
+      device_view: established target; only when resolved
   transitions
     <pattern_id>[]
       mapping_index
       kind: switch | stay | unknown
-      target: ключ в hierarchy.targets; только при switch
-  declared_transitions: {pattern_id: device_view | null}  # Если заданы во входе.
-  resolved_views: {device_view: documentation_view}  # После prepare_catalogs().
+      target: key in hierarchy.targets; only for switch
+  declared_transitions: {pattern_id: device_view | null}  # If specified in the input.
+  resolved_views: {device_view: documentation_view}  # After prepare_catalogs().
 ```
 
-`mapping_index` указывает на `devices[pattern_id].mappings[mapping_index]` в этом
-же JSON. Через эту запись доступны `document_id`, bindings и `automaton_id`.
-`source.view` и `source.index` обоих форматов уже находятся в основных таблицах.
-Ссылки действуют для сохранённого результата с неизменённым порядком mappings.
+`mapping_index` points to `devices[pattern_id].mappings[mapping_index]` in the same
+JSON. This record provides `document_id`, bindings, and `automaton_id`. Both formats'
+`source.view` and `source.index` are already in the main tables. References are valid
+for the saved result with its mapping order unchanged.
 
-Цели и свидетельства view хранятся один раз, даже если на них ссылается много
-входных команд. В `hierarchy` нет копий форматов, bindings, slot_id или графов.
-Для записи используйте `result.to_dict()`, не `dataclasses.asdict(result)`.
+Targets and view evidence are stored once, even when many entry commands reference
+them. `hierarchy` contains no copies of formats, bindings, slot IDs, or graphs.
+To serialize it, use `result.to_dict()`, not `dataclasses.asdict(result)`.
 
-Пример чтения области применимости перехода:
+Example of reading a transition's applicability scope:
 
 ```python
 data = result.to_dict()
@@ -368,26 +367,26 @@ for pattern_id, effects in data["hierarchy"]["transitions"].items():
         scope = data["automata"].get(pair.get("automaton_id"))
         if effect["kind"] == "switch":
             target = data["hierarchy"]["targets"][effect["target"]]
-            # target.status == unresolved: выбор device-view не установлен.
+            # target.status == unresolved: the device view has not been established.
 ```
 
-`stay` и `unknown` не объединяются. Разные эффекты нескольких документальных
-записей сохраняются со своими `mapping_index`. Команды с `prefix`, незавершённым
-сравнением или без документации могут не иметь записи в `transitions`;
-отсутствие записи не означает `stay`. Оставшиеся неизвестные сравнения видны
-в основных `devices.*.mappings`.
+`stay` and `unknown` are not merged. Different effects from multiple documentation
+records retain their own `mapping_index`. Commands with `prefix`, unfinished
+comparison, or no documentation may have no entry in `transitions`; an absent entry
+does not mean `stay`. Remaining unknown comparisons are visible in the main
+`devices.*.mappings` lists.
 
-Этот JSON предназначен для внешней постобработки. Runtime-парсер принимает
-один файл форматов; для grouped все переходы уже должны быть подготовлены
-в этом файле. Аргумента `mapping=` у парсера нет. После разбора внешний код
-связывает `pattern_id`, `slot_id` и координаты повторений с данным маппингом.
-См. [вход парсера](automaton-parser.md#входной-документ).
+This JSON is intended for external postprocessing. The runtime parser accepts one
+format file; for grouped input, all transitions must already be prepared in that
+file. The parser has no `mapping=` argument. After parsing, external code connects
+`pattern_id`, `slot_id`, and repetition coordinates to this mapping.
+See [parser input](automaton-parser.md#input-document).
 
-## Совместимость типов параметров
+## Parameter type compatibility
 
-Мапа находится в `comparison/parameter_types.py`:
+The mapping is defined in `comparison/parameter_types.py`:
 
-| Декларация устройства | Тип документации |
+| Device declaration | Documentation type |
 |---|---|
 | `INTEGER<min-max>` | `integer` |
 | `STRING<min-max>` | `string` |
@@ -395,33 +394,33 @@ for pattern_id, effects in data["hierarchy"]["transitions"].items():
 | `X.X.X.X` | `ipv4-address` |
 | `X:X::X:X` | `ipv6-address` |
 
-Если оба типа известны и различаются, параметры не связываются. Диапазоны чисел
-и длины строк не сравниваются. Неизвестный тип устройства допускает сопоставление
-без проверки типа; это не подтверждает его семантическую совместимость.
+If both types are known and differ, the parameters are not linked. Numeric ranges
+and string lengths are not compared. An unknown device type allows matching without
+a type check; this does not establish semantic compatibility.
 
-В каталогах v1 `parameter_types` обязателен для каждой документальной команды,
-включая `[]` у команды без параметров. Нужна ровно одна запись на уникальное имя:
-неподдерживаемые типы, дубли, пропущенные и лишние имена вызывают `FormatError`.
-При сравнении документации с документацией учитываются аннотации обеих сторон.
-Старые входы `compile()`/`compile_formats()` могут опускать это поле: тогда
-сохраняется сопоставление без проверки типов. Переданный массив валидируется.
-`compare(doc, device)` принимает только строки и не использует внешние аннотации.
+In v1 catalogs, `parameter_types` is required for every documentation command,
+including `[]` for commands without parameters. Exactly one entry per unique name
+is required: unsupported types, duplicates, missing names, and extra names raise
+`FormatError`. Documentation-to-documentation comparison uses annotations from both
+sides. Legacy `compile()`/`compile_formats()` inputs may omit this field, retaining
+matching without type checks. A supplied array is validated. `compare(doc, device)`
+accepts only strings and does not use external annotations.
 
-Проверка действует при структурном сопоставлении и обходе автоматов. Если структура совпала, но типы нет,
-поиск продолжится: сначала перестановки веток, затем пересечение. В пересечении
-остаются bindings только продуктивных совместимых путей. При поиске префикса
-несовместимый параметр останавливает общую трассу.
+The check applies during structural matching and automaton traversal. If structure
+matches but types do not, search continues with branch reordering and then
+intersection. The intersection retains bindings only from productive compatible
+paths. During prefix search, an incompatible parameter stops the shared trace.
 
-`slot_id`, исходные декларации и `type_id` устройства сохраняются. Так, `TEXT`
-сравнивается как `string`, но его `type_id` в результате остаётся `text`.
-В документальных слотах `type_id` содержит аннотацию из `parameter_types`.
-Одинаковые строки с разными аннотациями не объединяются в кэшах.
+`slot_id`, original declarations, and device `type_id` are preserved. For example,
+`TEXT` is compared as `string`, but its result `type_id` remains `text`.
+In documentation slots, `type_id` contains the annotation from `parameter_types`.
+Identical strings with different annotations are not merged in caches.
 
-## Схема результата
+## Result schema
 
 ```text
 devices
-  <pattern_id устройства>
+  <device pattern_id>
     device_format
     status: matched | partial | unmatched | unknown
     stage: exact | reordered | intersection | prefix | mixed | null
@@ -433,9 +432,9 @@ devices
       stage: exact | reordered | intersection | prefix
       binding_mode: structural | path_dependent | prefix_dependent | unavailable
       bindings[]
-        device:   slot_id устройства
-        document: slot_id документа
-      automaton_id: ссылка на граф области применимости, если он нужен
+        device:   device slot_id
+        document: document slot_id
+      automaton_id: reference to the applicability graph, if needed
 documents
   <document_id>
     document_format
@@ -444,78 +443,78 @@ documents
 automata
   <automaton_id>
     start, final, edges
-    # На рёбрах: target, label и, для параметров,
+    # Edges contain target, label and, for parameters,
     # document/device: {slot_id, iterations}
 ```
 
-Все форматы устройства присутствуют в `devices`, включая не нашедшие документацию.
-Все найденные полные соответствия и дубли сохраняются раздельно. `matched` у устройства
-означает наличие хотя бы одного соответствия; другие кандидаты могут иметь
-`unknown`. Список `mappings` включает незавершённые сравнения с этим статусом,
-чтобы отсутствие результата не выглядело как доказанное отсутствие совпадения.
-Если подтверждённые пары получены на разных этапах, у устройства `stage="mixed"`.
-У каждой пары указан её собственный этап. Неизвестные пары не меняют сводный этап.
-Полное совпадение без параметров сохраняется с `bindings: []`; это не ошибка.
+All device formats appear in `devices`, including those without documentation
+matches. All discovered full correspondences and duplicates are preserved separately.
+A device status of `matched` means at least one correspondence exists; other
+candidates may be `unknown`. The `mappings` list includes unfinished comparisons
+with this status so that an absent result is not mistaken for a proven absence of
+a match. If confirmed pairs come from different stages, the device has `stage="mixed"`.
+Each pair specifies its own stage. Unknown pairs do not change the summary stage.
+A complete match without parameters is retained with `bindings: []`; this is not
+an error.
 
-`result.pairs` — удобное плоское представление тех же пар в Python, вычисляемое
-свойство. Python API сохраняет полные объекты пар; для JSON вызывайте
-**`result.to_dict()`**, а не `dataclasses.asdict(result)`. Он хранит описания
-слотов один раз на источник, а одинаковые графы — один раз на результат.
-Идентичность графов учитывает переходы, `slot_id` и координаты повторов;
-имена и декларации берутся из таблиц слотов соответствующей пары.
-В JSON нет копии формата устройства и его ID внутри каждого маппинга.
-`stage="exact"` заменяет избыточный флаг `structurally_identical`.
-Диагностических
-`common_example`, `document_only_example`, `device_only_example`, `common_prefix`
-и `reason` нет. `evaluate` и читателя артефактов нет. Данные целиком возвращаются
-в памяти, сохранение — один обычный `json.dumps`, без промежуточных файлов.
-Старые файлы результата нужно пересчитать или оставить их прежнему потребителю.
+`result.pairs` is a convenient flat Python view of the same pairs, exposed as a
+computed property. The Python API retains complete pair objects; for JSON, call
+**`result.to_dict()`**, not `dataclasses.asdict(result)`. It stores slot descriptions
+once per source and identical graphs once per result. Graph identity includes
+transitions, `slot_id`, and repetition coordinates; names and declarations come from
+the corresponding pair's slot tables. Each mapping in JSON does not duplicate the
+device format or its ID. `stage="exact"` replaces the redundant
+`structurally_identical` flag. Diagnostic fields `common_example`,
+`document_only_example`, `device_only_example`, `common_prefix`, and `reason` are
+absent. There is no `evaluate` method or artifact reader. All data are returned in
+memory; saving uses one ordinary `json.dumps`, without intermediate files.
+Old result files must be recalculated or left to their previous consumer.
 
-Статус пары описывает отношение **языка документа к языку устройства**:
+A pair's status describes the relation of the **documentation language to the
+device language**:
 
-Это абстракция ключевых слов и параметров с указанной выше проверкой типов,
-без проверки диапазонов, реальных значений и семантики. `equivalent` при
-неизвестных типах означает структурную совместимость без доказанного конфликта
-типов. При обходе автоматов неизвестный тип допускает любую категорию.
+This is an abstraction over keywords and parameters with the type check described
+above, without checking ranges, real values, or semantics. With unknown types,
+`equivalent` means structural compatibility without a proven type conflict.
+During automaton traversal, an unknown type accepts any category.
 
-| Статус | Значение |
+| Status | Meaning |
 |---|---|
-| `equivalent` | Структурные языки равны |
-| `document_subset` | Документ описывает часть языка устройства |
-| `device_subset` | Язык устройства входит в язык документа |
-| `overlap` | Есть полные общие команды и различия с обеих сторон |
-| `matched` | Полное пересечение и bindings построены, точное отношение не доказано в бюджете |
-| `unknown` | Анализ пары не завершён; bindings для этого результата не выдаются |
-| `prefix_match` | Найдены общие незавершённые трассы; bindings относятся только к их началу |
-| `prefix_only` | Есть только общий префикс |
-| `disjoint` | Нет общих команд и непустого общего префикса |
+| `equivalent` | The structural languages are equal |
+| `document_subset` | The document describes part of the device language |
+| `device_subset` | The device language is included in the documentation language |
+| `overlap` | There are shared complete commands and differences on both sides |
+| `matched` | The complete intersection and bindings are built; the exact relation was not proved within budget |
+| `unknown` | Pair analysis is unfinished; no bindings are returned for this result |
+| `prefix_match` | Shared incomplete traces were found; bindings apply only to their beginnings |
+| `prefix_only` | Only a shared prefix exists |
+| `disjoint` | There are no shared commands or nonempty common prefixes |
 
-Обычная компиляция исключает доказанные несовпадения. Последние два статуса
-доступны при отдельном вызове `compare(doc, device)`, который диагностирует
-отношение полных языков.
-В Python синтаксическая идентичность указана в `structurally_identical`;
-в JSON ей соответствует `stage="exact"`.
-нормализация порядка альтернатив и лишних обязательных групп может дать
-`equivalent` при `structurally_identical=False`.
+Normal compilation excludes proven mismatches. The last two statuses are available
+through a separate `compare(doc, device)` call, which diagnoses the relation between
+complete languages. In Python, syntactic identity is recorded in
+`structurally_identical`; in JSON, it corresponds to `stage="exact"`.
+Normalizing alternative order and redundant mandatory groups can produce
+`equivalent` with `structurally_identical=False`.
 
-## Как связать JSON с результатом парсера
+## Linking JSON to parser results
 
-У `vrp_parser_automaton.ParameterValue` теперь есть:
+`vrp_parser_automaton.ParameterValue` now has:
 
-- `slot_id`: исходная позиция параметра **в формате**, например `p:7`;
-- `iterations`: координаты его вхождения в `&<m-n>`, с нуля, от внешнего повтора
-  к внутреннему, например `(("r:5", 1),)`.
+- `slot_id`: the original parameter position **in the format**, such as `p:7`;
+- `iterations`: zero-based occurrence coordinates within `&<m-n>`, from the outer
+  repetition to the inner one, such as `(("r:5", 1),)`.
 
-`span` по-прежнему указывает положение значения **в реальной строке команды**.
-Это другая система координат. Перестановка веток `[]*`/`{}*` меняет порядок
-значений, но не их `slot_id`. Сам набор не является повторением одного слота:
-каждая его ветка может выбираться один раз. `iterations` появляются при `&<m-n>`.
+`span` still locates the value **in the actual command line**. This is a different
+coordinate system. Reordering `[]*`/`{}*` branches changes value order, but not their
+`slot_id` values. A set itself does not repeat one slot: each branch can be selected
+once. `iterations` arise from `&<m-n>`.
 
-Ключ связи — **`(PatternMatch.pattern_id, ParameterValue.slot_id)`**.
-Не используйте порядковый номер значения, имя типа или одну декларацию:
-`INTEGER<1-4096>` может встречаться несколько раз в одном формате.
+The linking key is **`(PatternMatch.pattern_id, ParameterValue.slot_id)`**.
+Do not use a value's ordinal position, type name, or declaration alone:
+`INTEGER<1-4096>` may appear multiple times in one format.
 
-Пример применения **структурного** соответствия без предикатов:
+Example of applying a **structural** correspondence without predicates:
 
 ```python
 from collections import defaultdict
@@ -534,7 +533,7 @@ for match in parsed.matches:
 
     for pair in device["mappings"]:
         if pair["binding_mode"] != "structural":
-            continue  # Для path_dependent требуется проверка области, см. ниже.
+            continue  # path_dependent requires a scope check; see below.
         document = mapping["documents"][pair["document_id"]]
         for binding in pair["bindings"]:
             slot = document["slots"][binding["document"]]
@@ -543,148 +542,149 @@ for match in parsed.matches:
                       value.normalized, value.iterations)
 ```
 
-Результат: `first=10` и `last=20` в итерации 0, `first=30` в итерации 1.
-В `bindings` перечислены пары исходных слотов. `repeat_ids` в таблицах `slots`
-перечисляет внешние повторы слота. Для структурного соответствия списки устройства
-и документа попарно описывают одни и те же уровни: номера итераций можно перенести
-на идентификаторы повторов документа.
+The result is `first=10` and `last=20` in iteration 0, and `first=30` in iteration 1.
+`bindings` lists pairs of source slots. `repeat_ids` in the `slots` tables lists a
+slot's enclosing repetitions. For a structural correspondence, the device and
+documentation lists describe the same nesting levels pairwise: iteration numbers
+can be transferred to the documentation's repetition identifiers.
 
-Форматы устройства при офлайн-компиляции и в runtime должны быть теми же
-исходными строками: изменение пробелов меняет `pattern_id` и позиции слотов.
-ID формата содержит хеш строки и номер её дубликата в каталоге. Перестановка разных
-форматов не меняет ID. При одинаковых дубликатах сохраняйте ту же кратность каталога.
+Device formats must be the same original strings during offline compilation and
+runtime: changing whitespace changes `pattern_id` and slot positions. A format ID
+contains a hash of the string and its duplicate number within the catalog. Reordering
+different formats does not change IDs. For identical duplicates, preserve their
+multiplicity in the catalog.
 
-Парсер сохраняет альтернативные назначения одного значения разным исходным
-слотам. Например, `c [ INTEGER<1-100> ] [ INTEGER<1-100> ]` и строка `c 1`
-дают `ambiguous` с двумя вариантами `slot_id`. Выбирать только `primary_match`
-в таком случае означает самостоятельно выбрать одну интерпретацию.
+The parser preserves alternative assignments of one value to different source
+slots. For example, `c [ INTEGER<1-100> ] [ INTEGER<1-100> ]` with line `c 1` produces
+`ambiguous` with two `slot_id` alternatives. Choosing only `primary_match` in this
+case means selecting one interpretation yourself.
 
-## Частичные и зависящие от пути соответствия
+## Partial and path-dependent correspondences
 
-При `binding_mode="structural"` одинаковые структуры AST связываются напрямую
-с проверкой совместимости типов; имена и диапазоны не сравниваются. Перестановки
-альтернатив и лишние обязательные группы не требуют раскрытия команд. При
-перестановке типы могут различить одинаковые по форме альтернативы. Внутри
-одинаковой формы и типа сохраняется порядок появления; иной смысловой порядок
-из этих данных восстановить невозможно.
+With `binding_mode="structural"`, identical AST structures are linked directly,
+checking type compatibility but not names or ranges. Reordered alternatives and
+redundant mandatory groups do not require command expansion. When branches are
+reordered, types can distinguish alternatives with identical shapes. Within the
+same shape and type, occurrence order is preserved; a different semantic order
+cannot be recovered from these data.
 
-При `binding_mode="path_dependent"` список `bindings` содержит **возможные** связи.
-Их применимость задаётся полными путями графа, а не только наличием слота.
-В JSON граф доступен как `mapping["automata"][pair["automaton_id"]]`;
-в Python остаётся `pair.automaton`.
-Например:
+With `binding_mode="path_dependent"`, `bindings` lists **possible** correspondences.
+Their applicability is determined by complete graph paths, not just slot presence.
+In JSON, the graph is available as `mapping["automata"][pair["automaton_id"]]`;
+in Python, it remains `pair.automaton`.
+For example:
 
 ```text
 device: c INTEGER<1-100> [ to INTEGER<1-100> ]
 doc:    c { <single> | <first> to <last> }
 ```
 
-Первый слот устройства соответствует `single` для `c 1` и `first` для `c 1 to 2`.
-Также документ `c { a <a> | b <b> }` не применим к `c a 1 b 2`, даже если устройство
-допускает обе ветки через `{}*`. Одно наличие параметров не различает эти случаи.
+The first device slot corresponds to `single` for `c 1` and to `first` for `c 1 to 2`.
+Likewise, documentation format `c { a <a> | b <b> }` does not apply to `c a 1 b 2`,
+even if the device allows both branches through `{}*`. Parameter presence alone
+does not distinguish these cases.
 
-Граф пересечения уже рассчитан офлайн; повторно сопоставлять форматы не нужно.
-В собственной постобработке можно преобразовать его в удобные ограничения.
-Для непосредственного использования:
+The intersection graph is already calculated offline; formats need not be matched
+again. Your postprocessing can convert it into suitable constraints.
+To use it directly:
 
-1. Получить структурные токены реальной команды: каждый захваченный параметр
-   по его `span` считать одним `P` (включая многословные значения), остальные
-   слова — литералами `K:<слово в ASCII lower-case>`.
-2. Пройти готовые `edges` от `start`: `label=null` — ε-переход, `K:...` — литерал,
-   `P` — параметр. На `P` проверить `device.slot_id` и `device.iterations`
-   относительно конкретного `PatternMatch`.
-3. Собирать `document`-привязки только на путях, которые потребили всю команду
-   и достигли `final`. Имена брать по `document.slot_id` из
+1. Obtain structural tokens from the actual command: treat each captured parameter,
+   using its `span`, as one `P` (including values containing several words), and all
+   remaining words as literals `K:<word in ASCII lowercase>`.
+2. Traverse the prepared `edges` from `start`: `label=null` is an ε-transition,
+   `K:...` is a literal, and `P` is a parameter. For `P`, check `device.slot_id` and
+   `device.iterations` against the specific `PatternMatch`.
+3. Collect `document` bindings only along paths that consumed the entire command
+   and reached `final`. Look up names by `document.slot_id` in
    `mapping["documents"][pair["document_id"]]["slots"]`.
-   Альтернативные документальные интерпретации не смешивать.
+   Do not mix alternative documentation interpretations.
 
-На рёбрах сохранены координаты конкретных повторений; сводный `bindings`
-ссылается на слоты без конкретной итерации. Граф содержит только продуктивные пути.
-`tests/test_format_matcher_result.py` проверяет восстановление всех исходных
-привязок и переходов из компактного JSON; проверки применимости к реальным
-разборам находятся в `tests/test_format_matcher_runtime_slots.py`.
+Edges retain coordinates of specific repetitions; the summary `bindings` list
+references slots without a specific iteration. The graph contains only productive
+paths. `tests/test_format_matcher_result.py` checks reconstruction of all original
+bindings and transitions from compact JSON; applicability to actual parses is tested
+in `tests/test_format_matcher_runtime_slots.py`.
 
-## Поиск всех соответствий
+## Finding all correspondences
 
-Для каждого формата устройства индекс выбирает потенциально пересекающиеся
-форматы документации. Каждая пара независимо проходит проверки:
+For each device format, the index selects documentation formats that may intersect.
+Each pair independently goes through the following checks:
 
-| `stage` пары | Условие |
+| Pair `stage` | Condition |
 |---|---|
-| `exact` | Одинаковые AST с тем же порядком веток и совместимыми типами; имена и диапазоны игнорируются |
-| `reordered` | Совпадающие структуры после нормализации порядка веток и лишних обязательных обёрток |
-| `intersection` | Общие полные команды и bindings на их путях |
+| `exact` | Identical ASTs with the same branch order and compatible types; names and ranges are ignored |
+| `reordered` | Matching structures after normalizing branch order and redundant mandatory wrappers |
+| `intersection` | Shared complete commands and bindings along their paths |
 
-Первая успешная проверка завершает анализ **этой пары**, а поиск других
-документов продолжается. Например, для `acl INTEGER<2000-2999>` сохраняются
-и точное соответствие `acl <number>`, и пересечение `acl [ number ] <number>`,
-если оба документа входят в разрешённую область поиска. Команды без параметров
-обрабатываются так же: отсутствие bindings не отменяет полного совпадения.
-Совпадения сохраняются в порядке документации, без весов и ранжирования.
+The first successful check completes analysis of **that pair**, while the search
+for other documents continues. For example, `acl INTEGER<2000-2999>` retains both
+the exact correspondence `acl <number>` and the intersection with
+`acl [ number ] <number>`, if both documents belong to the allowed search scope.
+Commands without parameters are handled in the same way: absent bindings do not
+invalidate a complete match. Matches are retained in documentation order, without
+weights or ranking.
 
-Если полного соответствия не найдено, выполняется `prefix`: поиск общих начал
-незавершённых трасс с хотя бы одним binding до расхождения. Префиксы только
-из ключевых слов не создают маппинг. Ручных режимов `best`/`all` нет.
+If no full correspondence is found, `prefix` searches for common beginnings of
+incomplete traces with at least one binding before divergence. Keyword-only prefixes
+do not create mappings. There are no manual `best`/`all` modes.
 
-Индексы строятся **по документации**. Общие полные команды фильтруются префиксным
-деревом и необходимыми условиями по обязательным/возможным символам AST.
-Это консервативное отсечение: при исчерпании бюджета анализа префиксов выборка
-расширяется, а потенциальные совпадения сохраняются. Для незавершённых трасс
-при необходимости создаётся отдельное дерево путей до первого параметра.
-`undo vlan <id>` и `undo interface <name>` отсеиваются на расхождении ключевых
-слов, до построения произведения автоматов. Полного перебора пар каталогов нет.
+Indexes are built **over the documentation**. Shared complete commands are filtered
+using a prefix tree and necessary conditions on required/possible AST symbols.
+This pruning is conservative: if prefix analysis exhausts its budget, the candidate
+set expands and potential matches are retained. For incomplete traces, a separate
+tree of paths up to the first parameter is built when needed. `undo vlan <id>` and
+`undo interface <name>` are rejected at the differing keywords, before constructing
+the automaton product. There is no exhaustive enumeration of catalog pairs.
 
-Для `exact` и `reordered` автоматы не строятся. Для остальных пар сначала
-строится пересечение с привязками, затем уточняется отношение полных языков.
-Исчерпание бюджета уточнения оставляет готовые bindings со статусом `matched`.
-AST и программы переиспользуются. Одинаковые пары строк и аннотаций типов
-вычисляются один раз, но все исходные ID сохраняются. Кеш сравнений ограничен
-одним форматом устройства на одном проходе; неудачные сравнения не накапливаются
-за весь корпус. Дубли устройств обрабатываются вместе при одинаковых типах
-и области поиска.
+Automata are not built for `exact` and `reordered`. For other pairs, the intersection
+with bindings is built first, followed by refinement of the complete-language
+relation. Exhausting the refinement budget preserves prepared bindings with status
+`matched`. ASTs and programs are reused. Identical pairs of strings and type
+annotations are calculated once, but all source IDs are preserved. The comparison
+cache is scoped to one device format within one pass; failed comparisons do not
+accumulate across the entire corpus. Duplicate device formats are processed together
+when their types and search scopes agree.
 
-`MappingLimits` ограничивает инструкции, конфигурации и операции общего
-алгоритма. Разные наборы всё ещё могут порождать много подмножеств.
-`unknown` сохраняется как незавершённая проверка, включая случаи, когда другой
-документ уже подошёл точно. Если ни одной полной пары не доказано, префиксный
-fallback остаётся доступен; он не превращает неизвестный полный результат
-в доказанное отсутствие совпадения.
+`MappingLimits` bounds instructions, configurations, and operations in the general
+algorithm. Different sets can still generate many subsets. `unknown` is retained
+as an unfinished check, including when another document already matched exactly.
+If no full pair has been proved, prefix fallback remains available; it does not turn
+an unknown full result into a proven absence of a match.
 
-Гарантии относятся к принятому представлению форматов: известные типы
-проверяются по категориям, диапазоны игнорируются, неизвестные типы считаются
-совместимыми. Совпадение форматов само по себе не подтверждает совпадение
-семантики или view. Синтаксически одинаковые альтернативы сопоставляются
-по порядку вхождения, как и раньше.
+The guarantees apply to the chosen format representation: known types are checked
+by category, ranges are ignored, and unknown types are treated as compatible.
+A format match alone does not establish semantic or view correspondence.
+Syntactically identical alternatives are matched by occurrence order, as before.
 
-`on_progress(event)` сообщает `stage="matching"` при поиске полных совпадений
-и `stage="prefix"` для оставшихся устройств. Счётчики `devices_done` и
-`devices_total` относятся к текущему проходу; `pairs_prepared` — число пар
-в завершённых результатах. Эти этапы прогресса отличаются от `stage` конкретной
-пары в JSON.
+`on_progress(event)` reports `stage="matching"` during full-match search and
+`stage="prefix"` for the remaining device formats. `devices_done` and `devices_total`
+refer to the current pass; `pairs_prepared` counts pairs in completed results.
+These progress stages differ from an individual pair's `stage` in JSON.
 
-Поиск сохраняет больше соответствий, чем прежняя остановка после первого
-успешного этапа для устройства. Поэтому результат и время работы могут вырасти
-на каталогах с большим числом пересекающихся форматов. Слоты и графы в JSON
-по-прежнему разделяются между записями без потери bindings.
+Search retains more correspondences than the previous approach of stopping after
+the first successful stage for a device format. Consequently, result size and
+execution time can increase for catalogs with many intersecting formats. JSON slots
+and graphs are still shared across records without losing bindings.
 
-## Применение незавершённых трасс
+## Applying incomplete traces
 
-`stage="prefix"` даёт устройству статус `partial`, паре — `prefix_match`, а
-`binding_mode` — `prefix_dependent`. Это не соответствие целой команды.
-Например, `c <first> doc <tail>` и `c INTEGER<1-100> device INTEGER<1-100>`
-связывают только `first` с первым параметром устройства. После расхождения
-на `doc`/`device` обход не возобновляется, даже если последующие слова совпадают.
+`stage="prefix"` gives the device status `partial`, the pair status `prefix_match`,
+and `binding_mode="prefix_dependent"`. This is not a correspondence for an entire
+command. For example, `c <first> doc <tail>` and
+`c INTEGER<1-100> device INTEGER<1-100>` link only `first` to the first device
+parameter. After divergence at `doc`/`device`, traversal does not resume even if
+subsequent words match.
 
-Граф по `automaton_id` хранит общие непустые префиксы, включая короткие и длинные варианты
-повторений. Для конкретного разбора применяются те пути, которые совпадают с
-началом команды по литералам, `slot_id` и координатам повторов. В отличие от
-`path_dependent`, потребление всей команды здесь не требуется. При выборе
-максимального общего начала следует сохранять самую дальнюю достигнутую
-границу данного пути, а не останавливаться на первом принимающем состоянии.
-Привязки за этой границей отсутствуют. Решение о применимости предикатов к
-такому частичному соответствию остаётся в вашей постобработке.
+The graph referenced by `automaton_id` stores nonempty common prefixes, including
+short and long repetition variants. For a concrete parse, applicable paths match the
+command's beginning in literals, `slot_id`, and repetition coordinates. Unlike
+`path_dependent`, this does not require consuming the entire command. To select the
+longest common beginning, retain the furthest boundary reached along that path
+rather than stopping at the first accepting state. No bindings exist beyond that
+boundary. Your postprocessing decides whether predicates apply to such a partial
+correspondence.
 
-## Ручной запуск
+## Manual execution
 
 ```bash
 python3.13 manual_format_matcher_test.py --case stages --save mapping.json
@@ -695,25 +695,24 @@ python3.13 manual_format_matcher_test.py --patterns device.json --documents docs
 python3.13 manual_format_matcher_test.py --patterns data/mocks/cloudengine_150/device_grouped.json --documents data/mocks/cloudengine_150/documentation_grouped.json --summary --save mapping.json
 ```
 
-`device.json`: объект с массивом `commands`. `docs.json`: массив объектов
-`{"id": "...", "format": "..."}`. `--summary` сокращает вывод.
-Можно передать оба файла как каталоги v1: скрипт автоматически вызывает
-`compile_catalogs`. Смешивать старый формат одного файла с каталогом v1 другого
-нельзя. `--target-syntax` используется только для старых входов; у каталогов v1
-синтаксис определяется полем `source`.
-Проходы выбираются автоматически; переключателей `best`/`all` нет.
+`device.json` is an object with a `commands` array. `docs.json` is an array of
+`{"id": "...", "format": "..."}` objects. `--summary` shortens the output.
+Both files can be v1 catalogs: the script then calls `compile_catalogs` automatically.
+You cannot mix a legacy-format file with a v1 catalog. `--target-syntax` is used only
+for legacy inputs; v1 catalogs determine syntax through `source`.
+Passes are selected automatically; there are no `best`/`all` switches.
 
 ```bash
 python3.13 benchmark_format_matcher.py --corpus /path/to/cmd_corpus --skip-invalid --report /tmp/report.json
 ```
 
-Бенчмарк исключает `display`, сопоставляет корпус с самим собой и проверяет все
-слоты каждого исходного формата. Дубли сохраняются. Некорректные форматы выводятся
-явно; без `--skip-invalid` запуск останавливается. Чтение корпуса и запись JSON
-остаются в скриптах, а не в пакете.
+The benchmark excludes `display`, matches the corpus against itself, and checks
+every slot of each source format. Duplicates are retained. Invalid formats are
+reported explicitly; without `--skip-invalid`, the run stops. Corpus reading and
+JSON writing remain in scripts, outside the package.
 
-Код разделён по ответственности: `preparation/compiler.py` — публичный API,
-`preparation/indexes.py` — индексы, `preparation/pipeline.py` — поиск всех полных
-пар и префиксный fallback, `preparation/pairs.py` —
-анализ одной пары, `preparation/programs.py` — программы и соответствие узлов.
-Предикатов, читателей артефактов и альтернативных режимов поиска в пакете нет.
+Code is split by responsibility: `preparation/compiler.py` is the public API;
+`preparation/indexes.py` contains indexes; `preparation/pipeline.py` searches for all
+full pairs and performs prefix fallback; `preparation/pairs.py` analyzes one pair;
+`preparation/programs.py` handles programs and node correspondences. The package has
+no predicates, artifact readers, or alternative search modes.

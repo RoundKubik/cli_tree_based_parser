@@ -1,41 +1,40 @@
-# Предварительное сопоставление форматов и метаданных
+# Offline format and metadata matching
 
-Пакет `vrp_parser.metadata` сравнивает форматы документации и устройства,
-заранее компилирует связи параметров и применяет подготовленные правила к
-результатам `CommandLineParser`. Существующий парсер не изменён.
+The `vrp_parser.metadata` package compares documentation and device formats,
+precompiles parameter correspondences, and applies prepared rules to
+`CommandLineParser` results. The existing parser is unchanged.
 
-Основная задача первой версии — сопоставление форматов. Предикаты реализованы
-как небольшой вспомогательный механизм, без языка выражений и `eval`.
+The first version focuses on format matching. Predicates are implemented as a small
+supporting mechanism, without an expression language or `eval`.
 
-## Организация кода
+## Code organization
 
-Публичные точки входа — `MetadataCompiler` и `PreparedMetadata` из
-`vrp_parser.metadata`. Внутри задачи разделены между небольшими объектами:
+The public entry points are `MetadataCompiler` and `PreparedMetadata` from
+`vrp_parser.metadata`. Internally, responsibilities are split among small objects:
 
-| Файл | Ответственность |
+| File | Responsibility |
 |---|---|
-| `documents.py` | `Documentation` читает каталог, `DocumentSource` и `DocumentRules` проверяют записи |
-| `patterns.py` | Именованные параметры документации и структурные свойства AST |
-| `programs.py` | Компактная программа из AST и заранее связанные программы для эквивалентных структур |
-| `determinism.py` | Консервативная проверка однозначности для безопасного прямого маппинга |
-| `execution.py` | Исполнение программы с масками наборов и счётчиками повторений |
-| `comparison.py` | Алгоритмы сравнения языков, пересечения и удаления бесполезных состояний |
-| `compiler.py` | `CompiledPattern` кэширует сборку, `PairPreparation` готовит одну пару форматов |
-| `artifacts.py` | `MetadataArtifact` и `ArtifactReader` сохраняют JSON версии 2, загружают версии 1 и 2 |
-| `prepared.py` | `PreparedMetadata` предоставляет публичный API готового результата |
-| `bindings.py` | `CommandAtoms`, `BindingPath` и `BindingSearch` восстанавливают привязки |
-| `rules.py` | `MetadataRule` применяет правило и проверяет согласие альтернатив |
-| `runtime.py` | `PairEvaluation` связывает исполнение автомата с вычислением правил |
+| `documents.py` | `Documentation` reads a catalog; `DocumentSource` and `DocumentRules` validate records |
+| `patterns.py` | Named documentation parameters and structural AST properties |
+| `programs.py` | A compact program compiled from the AST and prebound programs for equivalent structures |
+| `determinism.py` | Conservative determinism checks for safe direct mapping |
+| `execution.py` | Program execution with set masks and repetition counters |
+| `comparison.py` | Language comparison, intersection, and removal of useless states |
+| `compiler.py` | `CompiledPattern` caches compilation; `PairPreparation` prepares one format pair |
+| `artifacts.py` | `MetadataArtifact` and `ArtifactReader` save JSON version 2 and load versions 1 and 2 |
+| `prepared.py` | `PreparedMetadata` provides the public API for prepared results |
+| `bindings.py` | `CommandAtoms`, `BindingPath`, and `BindingSearch` recover bindings |
+| `rules.py` | `MetadataRule` applies a rule and checks agreement between alternatives |
+| `runtime.py` | `PairEvaluation` connects automaton execution to rule evaluation |
 
-Конфигурации и значения представлены преимущественно неизменяемыми объектами.
-Изменяемые очереди и промежуточные графы ограничены одним запуском алгоритма.
-У состояния обхода есть именованные поля вместо вложенных позиционных кортежей.
-Чистые функции оставлены там, где они проще объекта, например для сравнения
-структуры AST.
+Configurations and values are mostly immutable objects. Mutable queues and
+intermediate graphs are scoped to one algorithm run. Traversal states have named
+fields instead of nested positional tuples. Pure functions remain where they are
+simpler than objects, for example when comparing AST structure.
 
-## Ручной запуск
+## Manual execution
 
-Из корня проекта, без установки пакета:
+From the project root, without installing the package:
 
 ```bash
 python3.13 manual_metadata_test.py
@@ -49,44 +48,44 @@ python3.13 manual_metadata_test.py --case wide-optional-set
 python3.13 manual_metadata_test.py --case large-repeat
 ```
 
-В `CASES` внутри скрипта можно менять шаблоны, метаданные и входные строки.
-Пример по умолчанию — `port trunk allow-pass vlan`, включая перестановку
-веток, диапазоны, повторения, отдельную документальную запись без `all`
-и ошибочное значение VLAN.
+Edit patterns, metadata, and input lines in the script's `CASES` dictionary.
+The default example is `port trunk allow-pass vlan`, including reordered branches,
+ranges, repetitions, a separate documentation record without `all`, and an invalid
+VLAN value.
 
-Скрипт показывает отношение языков, совпадение AST-структуры, примеры общих
-и несовпадающих структурных команд, возможные связи исходных параметров,
-конкретные привязки захваченных значений и результаты правил.
-`STRATEGY: structural` означает компактную программу с прямыми привязками,
-`intersection` — подготовленное пересечение. Для программы показано число
-инструкций, для пересечения — число состояний.
+The script shows the language relation, AST structural equality, examples of shared
+and nonshared structural commands, possible source parameter correspondences,
+concrete bindings of captured values, and rule results.
+`STRATEGY: structural` means a compact program with direct bindings;
+`intersection` means a prepared intersection. Programs report instruction counts;
+intersections report state counts.
 
-`wide-set` и `wide-optional-set` проверяют 24 переставленные ветки с параметрами:
-по 75 инструкций, без перечисления подмножеств. `large-repeat` проверяет
-`&<1-100000>`: 4 инструкции, координаты повторений вычисляются при исполнении.
+`wide-set` and `wide-optional-set` exercise 24 reordered branches with parameters:
+75 instructions each, without enumerating subsets. `large-repeat` exercises
+`&<1-100000>`: 4 instructions, with repetition coordinates calculated during execution.
 
 ```bash
-# Собственные данные: commands JSON и массив документальных записей.
+# Custom data: commands JSON and an array of documentation records.
 python3.13 manual_metadata_test.py \
   --patterns device.json --documents documents.json \
   --line 'port trunk allow-pass vlan 10 to 20 30'
 
-# Подготовка выполняется только здесь.
+# Preparation happens only here.
 python3.13 manual_metadata_test.py --case vlan --save /tmp/vlan-mapping.json
 
-# Здесь загружается готовый автомат привязок. Форматы документации не парсятся.
-# Форматы устройства для обычного парсера берутся из артефакта.
+# Load the prepared binding automaton. Documentation formats are not parsed.
+# The artifact supplies device formats for the ordinary parser.
 python3.13 manual_metadata_test.py --load /tmp/vlan-mapping.json \
   --line 'port trunk allow-pass vlan 10 to 20 30'
 ```
 
-`--line` можно повторять. `--json` выводит полные runtime-результаты.
-С собственными файлами или `--load` отсутствие `--line` означает только
-просмотр подготовленных соответствий. `--save` сохраняет подготовленный JSON.
+`--line` can be repeated. `--json` prints complete runtime results.
+With custom files or `--load`, omitting `--line` only displays the prepared
+correspondences. `--save` writes the prepared JSON.
 
-## Входные документы
+## Input documents
 
-`documents.json` содержит массив, например:
+`documents.json` contains an array, for example:
 
 ```json
 [
@@ -118,14 +117,13 @@ python3.13 manual_metadata_test.py --load /tmp/vlan-mapping.json \
 ]
 ```
 
-`id` необязателен; по умолчанию используется `doc:<индекс>`. Идентификаторы
-в одной компиляции должны быть уникальными. `creates` и `requires` могут
-отсутствовать: сравнение форматов и получение привязок работают без правил.
+`id` is optional; it defaults to `doc:<index>`. Identifiers must be unique within one
+compilation. `creates` and `requires` may be omitted: format comparison and binding
+retrieval work without rules.
 
-Имена параметров записываются как `<name>`: первая буква или `_`, затем
-буквы ASCII, цифры, `_`, `-`, `.`, `:`. Разные вхождения одного имени
-сохраняют разные идентификаторы узлов. Правило с таким именем относится
-ко всем соответствующим захватам.
+Parameter names use `<name>`: an initial letter or `_`, followed by ASCII letters,
+digits, `_`, `-`, `.`, or `:`. Different occurrences of the same name retain distinct
+node identifiers. A rule referring to that name applies to all corresponding captures.
 
 ## API
 
@@ -163,123 +161,121 @@ if isinstance(line, ParsedCommand):
     print(report.to_dict())
 ```
 
-Каждый `PreparedPair` относится к конкретной паре документального и
-устройственного шаблонов. `recognizer` возвращает либо компактную `program`,
-либо граф `automaton`. Оба представления хранят уже связанные параметры:
-идентификаторы документации и устройства, имена и объявления. В программе
-координаты повторений добавляются при исполнении. Исходные строки нужны
-для диагностики; runtime не разбирает документальный формат.
+Each `PreparedPair` represents a specific pair of documentation and device patterns.
+Its `recognizer` returns either a compact `program` or an `automaton` graph.
+Both representations store parameters that are already linked: documentation and
+device identifiers, names, and declarations. In a program, repetition coordinates
+are added during execution. Source strings are needed for diagnostics; the runtime
+does not parse the documentation format.
 
-## Что сравнивается
+## What is compared
 
-Алфавит структурного языка:
+The structural language alphabet consists of:
 
-- `K:<слово>` — литерал с приведённым к нижнему регистру ASCII;
-- `P` — параметр независимо от имени, типа, диапазона или ENUM-значений.
+- `K:<word>`: a literal converted to ASCII lowercase;
+- `P`: a parameter, regardless of its name, type, range, or ENUM values.
 
-`P` не совпадает с литералом. Поэтому `<mode>` и `ENUM{access,trunk}`
-структурно совместимы, но `{ access | trunk }` — другая структура языка.
-Каждый параметр, включая `TEXT`, считается одним структурным атомом.
-При исполнении `TEXT` получает целиком захваченное парсером значение.
+`P` does not match a literal. Thus `<mode>` and `ENUM{access,trunk}` are structurally
+compatible, but `{ access | trunk }` describes a different language structure.
+Every parameter, including `TEXT`, is one structural atom. During execution, `TEXT`
+receives the entire value captured by the parser.
 
-Грамматика групп берётся из существующего `PatternParser`. Наборы `*`
-сохраняют семантику уникальности альтернатив, а повторения и элементы
-наборов засчитываются только при потреблении хотя бы одного атома.
+Group grammar comes from the existing `PatternParser`. Sets marked with `*` retain
+unique-alternative semantics, and repetitions and set members count only if they
+consume at least one atom.
 
-Результат `Comparison`:
+The `Comparison` result:
 
-| `relation` | Значение |
+| `relation` | Meaning |
 |---|---|
-| `equivalent` | Структурные языки равны |
-| `document_subset` | Документальный язык — строгое подмножество устройства |
-| `device_subset` | Язык устройства — строгое подмножество документации |
-| `overlap` | Есть общие команды и собственные команды с каждой стороны |
-| `prefix_only` | Общих полных команд нет, но есть непустой общий префикс |
-| `disjoint` | Нет общих полных команд и непустого общего префикса |
-| `unknown` | Подготовка не завершена из-за ограничения ресурсов |
+| `equivalent` | The structural languages are equal |
+| `document_subset` | The documentation language is a strict subset of the device language |
+| `device_subset` | The device language is a strict subset of the documentation language |
+| `overlap` | There are shared commands and commands exclusive to each side |
+| `prefix_only` | There are no shared complete commands, but there is a nonempty common prefix |
+| `disjoint` | There are no shared complete commands or nonempty common prefixes |
+| `unknown` | Preparation did not finish because of a resource limit |
 
-`structurally_identical` дополнительно сравнивает деревья с обезличенными
-параметрами. Перестановка веток меняет этот признак, но не равенство языка.
+`structurally_identical` additionally compares trees with anonymized parameters.
+Reordering branches changes this flag but does not change language equality.
 
-`common_example`, `document_only_example`, `device_only_example` —
-кратчайшие найденные свидетельства в структурном алфавите. `<PARAM>` в них
-обозначает позицию параметра, а не предлагаемое реальное значение.
-`common_prefix` — диагностический пример общего префикса, не гарантия
-глобально самого длинного префикса. При `prefix_only` метаданные
-автоматически не переносятся.
+`common_example`, `document_only_example`, and `device_only_example` are the shortest
+witnesses found in the structural alphabet. `<PARAM>` denotes a parameter position,
+not a suggested real value. `common_prefix` is a diagnostic example of a shared
+prefix, not a guarantee of the globally longest prefix. Metadata is not transferred
+automatically for `prefix_only`.
 
-## Алгоритм подготовки
+## Preparation algorithm
 
-1. Оба AST компилируются в компактные программы без `RouteExpander`.
-   Набор хранит альтернативы, повтор — тело и границы. Подмножества веток
-   и копии тела заранее не создаются.
-2. Канонический ключ игнорирует имена/типы параметров и порядок альтернатив,
-   сохраняя вложенность, кратность веток и границы повторений. Равные ключи
-   доказывают эквивалентность структурных языков без обхода конфигураций.
-3. Если нормализованные токены однозначно определяют путь, строится компактная
-   программа с привязками параметров (`strategy="structural"`). Проверка
-   однозначности консервативна: учитывает начала веток, пустые варианты,
-   границы последовательностей и повторений. Например, `[<a>] [<b>]`
-   не допускает такого упрощения: один параметр может принадлежать разным узлам.
-4. Для разных структур язык сравнивается ленивым обходом пар множеств
-   конфигураций. Наборы используют маски выбранных веток, повторы — счётчики.
-   Создаются только посещённые конфигурации. Три свидетельства — общая команда
-   и собственная команда каждой стороны — сразу доказывают `overlap`.
-5. Если прямой маппинг невозможен и пересечение непусто, строится граф
-   синхронных потребляющих переходов (`strategy="intersection"`). Независимые
-   ε-переходы не перемножаются. Сохраняются все допустимые привязки и удаляются
-   пути, не ведущие к полному совпадению.
+1. Both ASTs are compiled into compact programs without `RouteExpander`. A set stores
+   alternatives; a repetition stores its body and bounds. Branch subsets and body
+   copies are not created in advance.
+2. A canonical key ignores parameter names/types and alternative order while
+   preserving nesting, branch multiplicity, and repetition bounds. Equal keys prove
+   structural language equivalence without traversing configurations.
+3. If normalized tokens uniquely determine the path, a compact program with parameter
+   bindings is built (`strategy="structural"`). The determinism check is conservative:
+   it considers branch starts, empty alternatives, and sequence and repetition
+   boundaries. For example, `[<a>] [<b>]` does not allow this simplification: one
+   parameter can belong to different nodes.
+4. For different structures, languages are compared by lazily traversing pairs of
+   configuration sets. Sets use selected-branch masks; repetitions use counters.
+   Only visited configurations are created. Three witnesses, a shared command and
+   a command exclusive to each side, immediately prove `overlap`.
+5. If direct mapping is impossible and the intersection is nonempty, a graph of
+   synchronous consuming transitions is built (`strategy="intersection"`).
+   Independent ε-transitions are not multiplied. All valid bindings are retained,
+   and paths that do not lead to a complete match are removed.
 
-Runtime исполняет уже связанный результат. Он не сопоставляет форматы заново.
-В компактной программе маска запрещает повторный выбор ветки только внутри
-текущего набора; новый проход внешнего повторения начинает набор с пустой маской.
+The runtime executes the already bound result rather than matching formats again.
+In a compact program, the mask prevents reselecting a branch only within the current
+set; a new outer repetition iteration starts that set with an empty mask.
 
-Привязки не сводятся к безусловной таблице. Например, для
-`command { <a> | <b> to <c> }` первый параметр устройства соответствует
-`a` или `b` в зависимости от полного продолжения команды. Это условие
-уже закодировано в подготовленном автомате.
+Bindings are not reduced to an unconditional table. For example, in
+`command { <a> | <b> to <c> }`, the first device parameter corresponds to `a` or `b`
+depending on the complete continuation of the command. This condition is already
+encoded in the prepared automaton.
 
-Идентификаторы `p:<позиция>` и `r:<позиция>` обозначают исходные позиции
-параметра и повторения в соответствующем формате. Они действуют внутри
-конкретной версии шаблона. Индексы повторений начинаются с нуля; вложенные
-повторения представлены цепочкой координат. После изменения форматов
-артефакт необходимо пересобрать.
+Identifiers `p:<position>` and `r:<position>` refer to original parameter and
+repetition positions in their respective formats. They are valid within a specific
+pattern version. Repetition indices are zero-based; nested repetitions are represented
+by a chain of coordinates. Rebuild the artifact after changing formats.
 
-## Исполнение без изменений парсера
+## Execution without parser changes
 
-Runtime использует `ParsedCommand.matches`, исходную строку и spans параметров.
-Из них восстанавливаются только границы атомов: литералы и уже проверенные
-захваты. Подготовленный автомат исполняется над этой последовательностью.
-Вычисления пересечения и сопоставления форматов в runtime нет.
+The runtime uses `ParsedCommand.matches`, the original line, and parameter spans.
+It reconstructs only atom boundaries: literals and already validated captures.
+The prepared automaton executes over this sequence. Runtime execution does not
+calculate intersections or match formats.
 
-Сравнение конкретного устройства с его же объявлением параметра во время
-исполнения сохраняет выбранную парсером типизированную интерпретацию.
-Это не таблица соответствия типов между документацией и устройством.
+Comparing a concrete device value against its own parameter declaration during
+execution preserves the typed interpretation selected by the parser. This is not a
+type correspondence table between documentation and device formats.
 
-Дополнительный обход нужен потому, что основной парсер может объединить
-разборы с разной принадлежностью параметров к исходным группам. Например,
-`command [ INTEGER<1-100> ] [ INTEGER<1-100> ]` для `command 10` сейчас
-возвращает одно совпадение. Подготовленный автомат сохраняет обе привязки.
-При желании в будущем этот обход можно интегрировать с событиями matcher.
+An additional traversal is needed because the main parser may merge parses that
+assign parameters to different source groups. For example,
+`command [ INTEGER<1-100> ] [ INTEGER<1-100> ]` currently returns one match for
+`command 10`. The prepared automaton retains both bindings. This traversal could
+later be integrated with matcher events.
 
-Для каждой пары и каждого успешного `PatternMatch` возвращается отдельный
-`MetadataApplication`. Результаты разных документальных записей или
-альтернативных интерпретаций устройства не объединяются в безусловный список.
+A separate `MetadataApplication` is returned for each pair and each successful
+`PatternMatch`. Results from different documentation records or alternative device
+interpretations are not merged into an unconditional list.
 
-- `binding_status`: `unique`, `ambiguous` или `unavailable`;
-- `alternatives`: полные альтернативные наборы привязок и их эффекты;
-- `rules`: результат каждого правила — `active`, `inactive` или `ambiguous`;
-- `status`: `applied`, `inactive`, `ambiguous`, `not_applicable` или `unknown`.
+- `binding_status`: `unique`, `ambiguous`, or `unavailable`;
+- `alternatives`: complete alternative binding sets and their effects;
+- `rules`: each rule's result, `active`, `inactive`, or `ambiguous`;
+- `status`: `applied`, `inactive`, `ambiguous`, `not_applicable`, or `unknown`.
 
-Одно правило может быть однозначным, даже если привязки неоднозначны: например,
-все интерпретации дают одну и ту же зависимость для того же значения в той же
-позиции строки. Если интерпретации расходятся, `RuleEvaluation.effects` пуст,
-а возможные эффекты остаются в `alternatives`. Истинность предиката не выбирает
-одну из неоднозначных интерпретаций.
+A rule can be unambiguous even when bindings are ambiguous: for example, all
+interpretations produce the same dependency for the same value at the same line
+position. If interpretations disagree, `RuleEvaluation.effects` is empty, and the
+possible effects remain in `alternatives`. A true predicate does not select one of
+the ambiguous interpretations.
 
-## Минимальные предикаты
+## Minimal predicates
 
-Поддерживаются `"always"`, JSON boolean и объекты:
+Supported forms include `"always"`, JSON booleans, and objects:
 
 ```json
 {"op": "exists", "parameter": "vlan-id2"}
@@ -289,37 +285,36 @@ Runtime использует `ParsedCommand.matches`, исходную стро�
 {"op": "gt", "parameter": "vlan-id1", "value": 10}
 ```
 
-Есть `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `all`/`any` с массивом `args`
-и `not` с полем `arg`. Сравнение истинно, если ему удовлетворяет хотя бы
-одно подходящее значение. Отсутствующие значения дают `false`.
-Для правила на параметр поиск ограничивается совместимыми координатами
-повторений; для правила на команду доступны все захваты.
+Available operators are `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `all`/`any` with an `args`
+array, and `not` with an `arg` field. A comparison is true if at least one applicable
+value satisfies it. Missing values produce `false`. For a parameter rule, lookup
+is restricted to compatible repetition coordinates; command rules can access all
+captures.
 
-Метаданные выдаются как данные. Модуль не проверяет наличие VLAN,
-состояние интерфейса, `context: current` или исполнение зависимой команды.
-Правило на отсутствующий параметр не создаёт эффекта. На `all` нет
-захватов VLAN-параметров. Диапазон `10 to 20` сохраняется как два захвата;
-перечисление всех VLAN диапазона не производится.
+Metadata is returned as data. The module does not check whether a VLAN exists,
+interface state, `context: current`, or execution of a required command.
+A rule for an absent parameter produces no effect. The `all` alternative has no VLAN
+parameter captures. The range `10 to 20` remains two captures; VLANs within the range
+are not enumerated.
 
-## Ограничения первой версии
+## First-version limitations
 
-- Подготовка сравнивает все пары переданных форматов; для интерактивной работы
-  стоит передавать выбранный каталог. Индекс кандидатов пока не реализован.
-- Компактное хранение не отменяет сложности сравнения произвольных языков.
-  Широкие наборы с разной структурой или неоднозначные ветки всё ещё могут
-  потребовать экспоненциального обхода. Превышение лимита даёт `unknown`.
-- Имена полей `MappingLimits` сохранены: `automaton_states` ограничивает число
-  инструкций исходной программы и длину структурного свидетельства;
-  `comparison_states` — число пар множеств конфигураций;
-  `product_states` — состояния пересечения или инструкции связанной программы;
-  `runtime_configurations` — конфигурации исполнения с историями захватов.
-  Лимиты обходов также ограничивают работу одного ε-замыкания. Значения
-  по умолчанию — 20 000. Структурное доказательство не тратит бюджет сравнения.
-- Число состояний не является строгим ограничением общего объёма памяти или времени.
-- Сохраняются артефакты версии 2; старые графы версии 1 читаются. Это формат приложения,
-  а не стандартный экспорт автоматов. Артефакты следует считать доверенными
-  и не изменять их внутренние структуры после подготовки.
-- Подготовка и runtime должны использовать совместимые определения типов
-  параметров устройства. Артефакт не содержит реализации пользовательских валидаторов.
-- Синтаксическая эквивалентность не доказывает одинаковую семантику разных
-  команд или корректность извлечённых из документации требований.
+- Preparation compares every pair of supplied formats; for interactive use, supply
+  a selected catalog. A candidate index is not implemented yet.
+- Compact storage does not eliminate the complexity of comparing arbitrary languages.
+  Wide sets with different structures or ambiguous branches may still require
+  exponential traversal. Exceeding a limit produces `unknown`.
+- `MappingLimits` field names are preserved: `automaton_states` limits source program
+  instructions and structural witness length; `comparison_states` limits pairs of
+  configuration sets; `product_states` limits intersection states or bound program
+  instructions; `runtime_configurations` limits execution configurations with capture
+  histories. Traversal limits also bound the work of one ε-closure. Defaults are
+  20,000. A structural proof does not consume the comparison budget.
+- State counts are not strict bounds on total memory or execution time.
+- Version 2 artifacts are saved; legacy version 1 graphs can be read. This is an
+  application format, not a standard automaton export. Treat artifacts as trusted
+  and do not modify their internal structures after preparation.
+- Preparation and runtime must use compatible device parameter type definitions.
+  The artifact does not contain custom validator implementations.
+- Syntactic equivalence does not prove that different commands have identical
+  semantics or that requirements extracted from documentation are correct.

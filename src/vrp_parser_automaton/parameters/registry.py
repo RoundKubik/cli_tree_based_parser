@@ -64,7 +64,7 @@ class ParameterTypeRegistry:
         return parameter_type.family if parameter_type is not None else None
 
     def recognize(self, pattern: str, position: int = 0) -> ParameterDeclaration | None:
-        """Recognize the longest declaration beginning at ``position``."""
+        """Prefer explicit types, then the longest declaration at ``position``."""
 
         matches = tuple(
             declaration
@@ -73,6 +73,11 @@ class ParameterTypeRegistry:
         )
         if not matches:
             return None
+        # A generic named placeholder must not shadow types such as <hh:mm>.
+        explicit = tuple(
+            match for match in matches if not self._types[match.type_id].fallback
+        )
+        matches = explicit or matches
         longest_end = max(match.end for match in matches)
         longest = tuple(match for match in matches if match.end == longest_end)
         if len(longest) > 1:

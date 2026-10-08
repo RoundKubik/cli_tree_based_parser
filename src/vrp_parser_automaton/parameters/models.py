@@ -105,7 +105,6 @@ class ParameterDeclaration:
     minimum: int | None = None
     maximum: int | None = None
     choices: tuple[str, ...] = ()
-    metadata: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
         if self.start < 0 or self.end < self.start:
@@ -122,7 +121,6 @@ class DeclarationRecognition:
     minimum: int | None = None
     maximum: int | None = None
     choices: tuple[str, ...] = ()
-    metadata: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +170,7 @@ class ParameterType:
     declaration_recognizer: DeclarationRecognizer
     reader: ParameterReader
     validator: ParameterValidator
+    fallback: bool = False
 
     def recognize(self, pattern: str, position: int = 0) -> ParameterDeclaration | None:
         recognized = self.declaration_recognizer.recognize(pattern, position)
@@ -185,7 +184,6 @@ class ParameterType:
             minimum=recognized.minimum,
             maximum=recognized.maximum,
             choices=recognized.choices,
-            metadata=recognized.metadata,
         )
 
     def read(self, text: str, position: int = 0) -> ParameterToken | None:

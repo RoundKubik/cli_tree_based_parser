@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from vrp_parser_automaton.results import (
     BlankLine,
+    ContextIssue,
+    ErrorLine,
     LineResult,
     ParsedCommand,
     SeparatorLine,
@@ -20,6 +22,7 @@ if TYPE_CHECKING:
 class ContextFrame:
     parent_indent: int
     view: str | None
+    issue: ContextIssue | None = None
 
 
 class ContextSession:
@@ -28,7 +31,7 @@ class ContextSession:
 
     def parse(self, lines: tuple[str, ...]) -> tuple[LineResult, ...]:
         frames = [ContextFrame(-1, self._parser.entry_view)]
-        previous: tuple[int, str | None] | None = None
+        previous: ContextFrame | None = None
         results: list[LineResult] = []
         for number, raw in enumerate(lines, 1):
             indent = raw[: len(raw) - len(raw.lstrip())]
@@ -42,20 +45,36 @@ class ContextSession:
                 results.append(SeparatorLine(number, raw, indent))
                 previous = None
                 continue
-            if previous is not None and depth > previous[0]:
-                parent_depth, view = previous
-                frames.append(ContextFrame(parent_depth, view))
+            if previous is not None and depth > previous.parent_indent:
+                frames.append(previous)
             frame = frames[-1]
             result = (
                 self._parser.parse(raw, number, view=frame.view)
                 if frame.view is not None
                 else self._parser.parse_flat(raw, number)
             )
-            target = (
-                self._parser.child_view(result)
-                if isinstance(result, ParsedCommand)
-                else None
-            )
+            assert isinstance(result, (ParsedCommand, ErrorLine))
+            if frame.issue is not None:
+                result = replace(result, context_issue=frame.issue)
             results.append(result)
-            previous = depth, target
+            previous = self._child_frame(depth, result)
         return tuple(results)
+
+    def _child_frame(
+        self, depth: int, result: ParsedCommand | ErrorLine
+    ) -> ContextFrame:
+        if result.context_issue is not None:
+            return ContextFrame(depth, None, result.context_issue)
+        if isinstance(result, ErrorLine):
+            return ContextFrame(
+                depth,
+                None,
+                ContextIssue(
+                    "parent_parse_error",
+                    "The parent command could not be parsed; "
+                    "its child view is unknown.",
+                    result.line_number,
+                ),
+            )
+        target, issue = self._parser.child_context(result)
+        return ContextFrame(depth, target, issue)

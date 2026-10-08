@@ -20,6 +20,8 @@ from .parameters import (
 )
 from .results import (
     BlankLine,
+    CatalogMatch,
+    ContextIssue,
     ErrorCode,
     ErrorLine,
     ExpectedElement,
@@ -41,8 +43,10 @@ __all__ = [
     "CommandAutomaton",
     "Instruction",
     "BlankLine",
+    "CatalogMatch",
     "CommandLineParser",
     "ConfigurationParser",
+    "ContextIssue",
     "SeparatorLine",
     "ErrorCode",
     "ErrorLine",

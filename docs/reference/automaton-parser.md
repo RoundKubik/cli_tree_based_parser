@@ -1,16 +1,17 @@
-# Парсер на автомате
+# Automaton parser
 
-`vrp_parser_automaton` принимает **один документ с готовыми форматами команд**,
-компилирует его и разбирает конфигурацию. По умолчанию сохраняется плоский разбор.
-Для `type: "grouped"` используются view и переходы из того же документа.
+`vrp_parser_automaton` accepts **one document with prepared command formats**,
+compiles it, and parses configurations. Flat parsing remains the default.
+For `type: "grouped"`, it uses the views and transitions from the same document.
 
-Парсер не читает документацию или файл маппинга. Подготовка иерархии происходит
-до разбора; сопоставление результатов с документацией — в отдельном коде после
-разбора. `pattern_id`, `slot_id` и координаты повторений сохраняются для этого.
+The parser does not read documentation or a mapping file. Hierarchy preparation
+happens before parsing; matching results to documentation is handled by separate
+code afterward. `pattern_id`, `slot_id`, and repetition coordinates are preserved
+for that purpose.
 
-## Входной документ
+## Input document
 
-Старый плоский формат работает без изменений:
+The legacy flat format works unchanged:
 
 ```json
 {
@@ -22,10 +23,10 @@
 }
 ```
 
-Можно явно указать `"type": "flat"` и передать команды объектами
-`{"format": "..."}`. В обоих случаях поиск идёт по всем форматам.
+You can explicitly set `"type": "flat"` and pass commands as
+`{"format": "..."}` objects. Both forms search all formats.
 
-Для восстановленной иерархии сохраните в `patterns.json`:
+For a recovered hierarchy, save the following as `patterns.json`:
 
 ```json
 {
@@ -47,36 +48,61 @@
 }
 ```
 
-`entry_view` — начальный контекст, `switch_to_view` — точный ключ целевого view.
-Отсутствие `switch_to_view` или `null` означает сохранение текущего view.
-Если внешний процесс не установил переход, он должен передать его явно:
+`entry_view` is the initial context; `switch_to_view` is the exact key of the target
+view. An omitted or `null` `switch_to_view` preserves the current view.
+If an external process could not establish a transition, it must mark it explicitly:
 
 ```json
 {"format": "interface STRING<1-64>", "switch_to_view": {"status": "unresolved"}}
 ```
 
-Такая запись сохраняет группировку каталога и все известные переходы. Только
-вложенный блок этой команды разбирается без ограничения по view. После выхода
-из блока восстанавливается родительский контекст. Можно вручную заменить метку
-на целевой view или `null`; формат и идентификаторы параметров останутся прежними.
-Просто группировка неизвестных переходов без этих меток не заменяет подготовку.
+This record preserves the catalog's grouping and all known transitions. Only this
+command's child block is parsed without view restrictions. Leaving the block
+restores the parent context. You can manually replace the marker with a target view
+or `null`; the format and parameter identifiers remain unchanged. Grouping commands
+with unknown transitions without these markers does not replace preparation.
 
-Синтаксис параметров прежний: `INTEGER<…>`, `STRING<…>`, `TEXT<…>`, IP-адреса
-и другие декларации реестра. Именованные записи документации `<parameter-name>`
-не включают специальный режим; их подготовка для runtime находится вне парсера.
-`TEXT<…>` читает остаток строки, а числовые и другие типы валидируются как раньше.
+Supported declarations include `INTEGER<…>`, `STRING<…>`, `TEXT<…>`, IP addresses,
+and other registered types, as well as named parameters `<parameter-name>` in both
+flat and grouped catalogs. `NamedDeclarationRecognizer` recognizes `<name>`,
+`SingleTokenReader` reads one token, and `PassValidator` returns it without validation
+or conversion. The result retains `type_id="named"`, `declaration="<name>"`, `raw`,
+`normalized`, `span`, `slot_id`, and `iterations`. The name is available as
+`value.declaration[1:-1]`; the result has no extra `metadata` or `parameter_name` fields.
 
-`vendor`, `device`, `model_type`, `source`, `schema_version`, `metadata` и другие
-описательные поля можно оставить во входном файле. Парсер не использует их для
-выбора грамматики, не проверяет документальную семантику и не вычисляет
-`parameter_types`, `creates`, `requires`.
-Строгая [спецификация каталогов v1](command-catalog-format.md) относится к matcher;
-его требования к заголовкам не переносятся в runtime-парсер.
+Specialized declarations take precedence: `<hh:mm>` is still validated as a time.
+`TEXT<…>` reads the rest of the line, while numeric and other types are validated as
+before. `<text>` alone does not imply reading the rest of the line.
 
-## Запуск
+`vendor`, `device`, `model_type`, `source`, `schema_version`, `metadata`, and other
+descriptive fields can remain in the input file. The parser does not use them to
+select a grammar, check documentation semantics, or evaluate `parameter_types`,
+`creates`, or `requires`.
+The strict [catalog specification v1](command-catalog-format.md) applies to the matcher;
+its header requirements do not apply to the runtime parser.
 
-Требуется Python 3.13+. Команды ниже выполняются из корня репозитория.
-Для примера выше сохраните в `config.txt`:
+### Exporting documentation formats by view
+
+The test script `manual_group_formats_by_view.py` reads corpus pages and groups
+their `CLIs` by the original `ParentView` names:
+
+```bash
+python3.13 manual_group_formats_by_view.py \
+  --corpus /path/to/cmd_corpus --output documentation_grouped.json
+```
+
+It sorts and deduplicates formats within each view and preserves source view names,
+including `All views`. The checked-in `documentation_grouped.json` is a CloudEngine
+v300r024c00 structural export with 282 views and 36,750 view/format records.
+Entries contain only `format`; the script does not infer `switch_to_view`,
+`parameter_types`, or command semantics. Prepare transitions before contextual
+parsing and supply parameter type annotations before using the strict matcher input.
+The export itself does not establish a recovered hierarchy.
+
+## Running the parser
+
+Python 3.13+ is required. Run the following commands from the repository root.
+For the example above, save this as `config.txt`:
 
 ```text
 bgp 65000
@@ -84,18 +110,18 @@ bgp 65000
 #
 ```
 
-Ручной запуск без установки пакета:
+Run manually without installing the package:
 
 ```bash
 python3.13 manual_automaton_test.py --patterns patterns.json --config config.txt
 ```
 
-Скрипт печатает число форматов, число состояний и JSON результата. Отдельные
-строки можно передать через повторный `--line`; они образуют одну конфигурацию.
-`--line` и `--config` взаимоисключающие. Если не передать ни один аргумент,
-используются встроенные строки выбранного `--case`.
+The script prints the format count, state count, and result JSON. Individual lines
+can be supplied using repeated `--line` options; together they form one configuration.
+`--line` and `--config` are mutually exclusive. If neither is supplied, the built-in
+lines for the selected `--case` are used.
 
-Проверка каталога и сохранение чистого JSON:
+Validate a catalog and save plain JSON:
 
 ```bash
 PYTHONPATH=src python3.13 -m vrp_parser_automaton check-patterns patterns.json
@@ -104,43 +130,43 @@ PYTHONPATH=src python3.13 -m vrp_parser_automaton parse \
   --patterns patterns.json --config config.txt > parsed.json
 ```
 
-Коды завершения модульного CLI: `0` — ошибок строк нет; `1` — есть ошибки
-в отчёте; `2` — ошибка чтения или компиляции входа. Неоднозначный успешный разбор
-не считается ошибкой. Ручной скрипт не отражает ошибки строк в коде завершения.
+Module CLI exit codes: `0` means no line errors; `1` means the report contains line
+errors; `2` means an input reading or compilation error. An ambiguous successful
+parse is not an error. The manual script does not reflect line errors in its exit code.
 
-Флаг `--flat` принудительно отключает ограничения view, сохраняя тот же каталог.
-В плоском режиме `#` — обычная строка, для неё нужен отдельный формат.
-Аргумента `--mapping` у парсера нет.
+The `--flat` flag disables view restrictions while retaining the same catalog.
+In flat mode, `#` is an ordinary line and needs its own format.
+The parser has no `--mapping` argument.
 
-## Каталоги и контекст
+## Catalogs and context
 
-`ConfigurationParser` начинает в `entry_view` и ищет команды только в текущем
-view. При увеличении отступа открывается вложенный блок с переходом предыдущей
-команды. Уменьшение отступа возвращает родительский контекст. Пустые строки стек
-не меняют. Корневой разделитель `#` возвращает к начальному view.
-Глубина определяется длиной исходного отступа: для одного пробела на уровень
-это `0`, `1`, `2` и далее. Преобразования табуляции в пробелы нет.
+`ConfigurationParser` starts in `entry_view` and searches for commands only in the
+current view. An increase in indentation opens a child block using the previous
+command's transition. A decrease restores the parent context. Blank lines do not
+change the stack. A root-level `#` separator returns to the initial view.
+Depth is the length of the original indentation: with one space per level, this is
+`0`, `1`, `2`, and so on. Tabs are not expanded into spaces.
 
-В примере `bgp 65000` разбирается в `system`, а `router-id 192.0.2.1` — в `bgp`.
-Переход не переносится на соседнюю команду с тем же отступом: это обработка
-конфигурационного файла, а не интерактивной сессии.
+In the example, `bgp 65000` is parsed in `system`, while `router-id 192.0.2.1` is parsed
+in `bgp`. A transition does not carry over to the next command at the same indentation:
+this handles a configuration file, not an interactive session.
 
-У `quit` и `return` нет встроенной семантики выхода; группа с именем `global`
-не получает специального значения. Названия view берутся из входного документа.
-Для известных view ошибки не запускают повторный поиск в остальных группах.
+`quit` and `return` have no built-in exit semantics; a group named `global` has no
+special meaning. View names come from the input document. Errors in known views do
+not trigger a parsing retry in the other groups.
 
-Неоднозначные результаты сохраняются. Если варианты разбора задают разные
-переходы, парсер не выбирает один: вложенный блок разбирается плоско с
-`view=None` (в JSON поле `view` отсутствует). Аналогично обрабатывается блок после
-ошибочной команды входа или явного `{"status": "unresolved"}`. Даже единственное
-синтаксическое совпадение в таком блоке не устанавливает view. Восстановления
-иерархии, вычисления кандидатов или условных переходов по параметрам в парсере нет.
+Ambiguous results are preserved. If parse alternatives specify different transitions,
+the parser does not choose one: the child block is parsed flat with `view=None`
+(the JSON omits `view`). The same applies to a block following a failed entry command
+or an explicit `{"status": "unresolved"}`. Even a unique syntactic match in such a
+block does not establish the view. The parser does not recover hierarchies, infer
+candidates, or execute parameter-dependent conditional transitions.
 
 ## Python API
 
-Готовый пример инициализации и запуска —
+A complete initialization and execution example is available in
 [`examples/parse_configuration.py`](../../examples/parse_configuration.py).
-Он читает один каталог и одну конфигурацию, затем сохраняет отчёт в отдельный файл:
+It reads one catalog and one configuration, then saves the report to a separate file:
 
 ```bash
 PYTHONPATH=src python3.13 examples/parse_configuration.py \
@@ -149,12 +175,12 @@ PYTHONPATH=src python3.13 examples/parse_configuration.py \
   --output parsed.json
 ```
 
-Для grouped-входа используйте подготовленный каталог с переходами и явными
-метками `unresolved`; для плоского — обычный каталог форматов. Режим выбирается
-автоматически. Скрипт возвращает `0`, если ошибок строк нет, и `1`, если они есть;
-в обоих случаях сохраняется весь отчёт. Маппинг ему не требуется.
+For grouped input, use a prepared catalog with transitions and explicit `unresolved`
+markers; for flat input, use an ordinary format catalog. The mode is selected
+automatically. The script returns `0` if there are no line errors and `1` otherwise;
+it saves the complete report in both cases. It does not need a mapping.
 
-После установки `python3.13 -m pip install -e .` или с `PYTHONPATH=src`:
+After `python3.13 -m pip install -e .`, or with `PYTHONPATH=src`:
 
 ```python
 import json
@@ -172,25 +198,24 @@ Path("parsed.json").write_text(
 )
 ```
 
-Каталог компилируется один раз. Его можно использовать для нескольких файлов;
-каждый разбор конфигурации начинает с нового стека.
+The catalog is compiled once and can be reused for multiple files.
+Each configuration parse starts with a fresh stack.
 
 ```python
-line = parser.parse("bgp 65000")  # начальный view
+line = parser.parse("bgp 65000")  # entry view
 line = parser.parse("router-id 192.0.2.1", view="bgp")
 line = parser.parse_flat("router-id 192.0.2.1")
 flat_report = ConfigurationParser(parser, contextual=False).parse("bgp 65000")
 ```
 
-Строковый `parse()` принимает одну физическую строку без перевода строки и
-не хранит контекст между вызовами. `view=None` у него означает начальный view;
-для поиска по всему каталогу используется `parse_flat()`.
+The line-level `parse()` accepts one physical line without a line terminator and
+does not retain context between calls. Its `view=None` means the entry view;
+use `parse_flat()` to search the entire catalog.
 
-Из методов загрузки также доступны `CommandLineParser(document)` и
-`from_json(text)`. Аргумент `parameter_types=` по-прежнему принимает
-пользовательский реестр типов.
+`CommandLineParser(document)` and `from_json(text)` are also available for loading.
+The `parameter_types=` argument still accepts a custom type registry.
 
-## Результат и последующая обработка
+## Results and subsequent processing
 
 ```python
 from vrp_parser_automaton import ErrorLine, ParsedCommand
@@ -206,115 +231,147 @@ for line in report.lines:
         print(line.line_number, line.error.code, line.error.message)
 ```
 
-`status` успешной строки — `unique`, `equivalent` или `ambiguous`.
-`primary_match` и `alternative_matches` сохраняют оставшиеся равноправные
-варианты. `line.parameters` — параметры только первого варианта; для внешнего
-сопоставления при неоднозначности обходите `line.matches`.
+A successful line's `status` is `unique`, `equivalent`, or `ambiguous`.
+`primary_match` and `alternative_matches` preserve the remaining equally ranked
+alternatives. `line.parameters` contains parameters from the first alternative only;
+for external matching of ambiguous results, iterate over `line.matches`.
 
-`pattern_id` указывает на исходный формат, `slot_id` — на позицию параметра
-в этом формате, `iterations` — на конкретное вхождение внутри повторений.
-`span` указывает на значение в исходной строке с учётом отступа. Форматы и
-порядок их дубликатов должны совпадать с теми, для которых рассчитан офлайн-маппинг.
+`pattern_id` identifies the original format, `slot_id` identifies the parameter's
+position in that format, and `iterations` identifies an occurrence within repetitions.
+`span` locates the value in the original line, including indentation. Formats and
+the ordering of their duplicates must match those used to calculate the offline mapping.
 
-После разбора внешний код может найти запись
-`mapping["devices"][match.pattern_id]` и её `mappings`. Сам парсер этого
-JSON не загружает, bindings и семантику к строкам не добавляет. Формат связей
-описан в [документации matcher](automaton-format-matcher.md#как-связать-json-с-результатом-парсера).
+After parsing, external code can look up `mapping["devices"][match.pattern_id]` and
+its `mappings`. The parser does not load this JSON or attach bindings and semantics
+to lines. The relation format is described in the
+[matcher documentation](automaton-format-matcher.md#linking-json-to-parser-results).
 
-У строки есть `view`, только если контекст известен. В Python отсутствие
-контекста представлено `None`, в JSON ключ опускается. `kind` принимает значения
-`command`, `error`, `blank`, `separator`. Разделители входят в `summary.total`,
-но не в `commands`, `blank` или `errors`.
-`summary.errors` и `has_errors` показывают ошибки строк. Одна ошибка не
-останавливает разбор остальных строк.
+A line has a `view` only when the context is known. In Python, an absent context is
+`None`; in JSON, the key is omitted. `kind` is one of `command`, `error`, `blank`, or
+`separator`. Separators count toward `summary.total`, but not `commands`, `blank`,
+or `errors`. `summary.errors` and `has_errors` report line errors.
+One error does not stop parsing subsequent lines.
 
-## Построение и исполнение
+### Context diagnostics
 
-Сохранены конструкторы, нормализация, spans, приоритеты типов и расширение реестра
-параметров. Все классы следует импортировать из `vrp_parser_automaton`:
-скопированные классы не идентичны одноимённым классам `vrp_parser`.
-`command_graph` — совместимое имя для свойства `automaton`; оно возвращает
-`CommandAutomaton` с `patterns`, `states`, `starts`, `literal_starts` и
-`parameter_starts`. Старых `routes`, `literal_edges`, `expression_edges` нет.
-`variation_id` детерминирован внутри нового движка, но может отличаться от
-исходного парсера: история основана на AST и координатах повторений.
+The existing error codes remain `unknown_command`, `syntax_error`, and
+`validation_error`. For a failure in a known view, `error.catalog_matches` lists
+complete matches with valid parameters in other views. Each entry contains `view`,
+`pattern_id`, and `format`. An empty list means that the diagnostic search found
+no such match; it does not prove that the intended format is missing from the
+catalog, since the input may contain a syntax or value error.
+
+This search uses the global automaton's entry index only after a scoped parse fails.
+It preserves all accepting formats before ranking across views. Diagnostic matches
+do not replace the failed result or change its code, selected view, or scoped suggestions.
+They do not switch context or establish a missing transition.
+
+When a child block has an unknown view, its command and error results carry
+`context_issue` with a `code`, an English `message`, and `source_line` pointing to the
+command that made the context unknown:
+
+| Code | Cause |
+|---|---|
+| `parent_parse_error` | The parent command could not be parsed |
+| `unresolved_transition` | A parent match declares an unresolved transition |
+| `ambiguous_transition` | Parent matches specify different known target views |
+
+The cause is preserved through deeper nesting, including successful flat fallback
+parses and further errors. Leaving the affected block restores the known context.
+A successful fallback still counts as a parsed command; `context_issue` records the
+context uncertainty separately. An omitted or null `switch_to_view` still means
+stay: the parser cannot infer that this declaration was incorrect.
+
+Ordinary flat catalogs and explicit `contextual=False`/`parse_flat()` calls omit
+these diagnostic fields from JSON. Known-context successes omit `context_issue` too.
+
+## Construction and execution
+
+Constructors, normalization, spans, type priorities, and parameter registry extension
+are preserved. Import all classes from `vrp_parser_automaton`: copied classes are
+not identical to their counterparts in `vrp_parser`. `command_graph` is a compatibility
+alias for `automaton`; it returns `CommandAutomaton` with `patterns`, `states`,
+`starts`, `literal_starts`, and `parameter_starts`. The old `routes`, `literal_edges`,
+and `expression_edges` are absent. `variation_id` is deterministic within the new
+engine but may differ from the original parser: its history is based on the AST and
+repetition coordinates.
 
 ```text
-Форматы → PatternParser → AST → PatternCompiler → CommandAutomaton
-                                                    ↓
-Строка → CommandMatcher → активные конфигурации → результаты / диагностика
+Formats → PatternParser → AST → PatternCompiler → CommandAutomaton
+                                                     ↓
+Line → CommandMatcher → active configurations → results / diagnostics
 ```
 
-Это компактный ε-НКА с регистрами наборов и повторений. Полный ДКА не строится.
-Компиляция не перечисляет команды, маршруты, подмножества набора или копии
-тела повторения. `Instruction.target` и `branches` содержат номера состояний.
-У атомарных переходов сохранены исходные AST-узлы, включая spans параметров.
+This is a compact ε-NFA with set and repetition registers. It does not build a full
+DFA. Compilation does not enumerate commands, routes, set subsets, or copies of
+repetition bodies. `Instruction.target` and `branches` contain state numbers.
+Atomic transitions retain the original AST nodes, including parameter spans.
 
-| Конструкция | Представление |
+| Construct | Representation |
 |---|---|
-| Литерал / параметр | Потребляющий переход к следующему состоянию |
-| Последовательность | Соединённые фрагменты |
-| `{ A \| B }` | Развилка и общий выход |
-| `[ A ]` | Развилка с возможностью пропуска |
-| `{ A \| B } *`, `[ A \| B ] *` | Цикл выбора с маской уже использованных веток |
-| `&<m-n>` | Одно тело, счётчик и проверки границ |
+| Literal / parameter | A consuming transition to the next state |
+| Sequence | Connected fragments |
+| `{ A \| B }` | A branch and a shared exit |
+| `[ A ]` | A branch that can be skipped |
+| `{ A \| B } *`, `[ A \| B ] *` | A selection loop with a mask of already used branches |
+| `&<m-n>` | One body, a counter, and bounds checks |
 
-Общий хвост после альтернатив хранится один раз внутри шаблона. У разных
-исходных шаблонов свои фрагменты; объединение их общих префиксов пока не
-реализовано. Для каталога используется индекс первых допустимых литералов,
-а шаблоны с параметром в начале рассматриваются дополнительно.
+A shared suffix after alternatives is stored once per pattern. Different source
+patterns have their own fragments; merging their shared prefixes is not implemented
+yet. The catalog uses an index of allowed first literals and also considers patterns
+that begin with a parameter.
 
-Исполнитель использует очередь по позиции во входной строке. Сначала он
-обрабатывает ε-переходы данной позиции, затем потребляющие переходы. Рекурсивных
-вызовов matcher для вложенных выражений нет: вложенность хранится в стеке
-неизменяемых `Frame`. Новое вхождение набора начинает с пустой маски. Итерация
-повтора или выбранная ветка набора засчитывается только при потреблении ввода.
+The executor uses a queue ordered by position in the input line. It processes the
+ε-transitions at a position first, then the consuming transitions. Nested expressions
+do not invoke the matcher recursively: nesting is kept in a stack of immutable
+`Frame` objects. Each new set occurrence starts with an empty mask. A repetition
+iteration or selected set branch counts only if it consumes input.
 
-`ConfigurationFrontier` сравнивает пути только при одинаковом состоянии,
-позиции и регистрах. Он сохраняет несравнимые типизированные интерпретации,
-а также учитывает `INVALID` и `NOT_APPLICABLE`. Читатели параметров могут
-потреблять несколько токенов: пути с разной длиной вектора приоритетов не
-отсекаются преждевременно перед общим продолжением.
+`ConfigurationFrontier` compares paths only when state, position, and registers
+agree. It preserves incomparable typed interpretations and accounts for `INVALID`
+and `NOT_APPLICABLE`. Parameter readers can consume multiple tokens: paths with
+different priority-vector lengths are not discarded prematurely before a shared
+continuation.
 
-Размер скомпилированной структуры линейный по числу AST-узлов. Это не обещание
-линейного времени разбора: неоднозначные ветки, разные назначения параметров
-и состояния наборов могут порождать много конфигураций. Лимита в 512 маршрутов
-и переключения способа исполнения нет.
+The compiled structure is linear in the number of AST nodes. This does not promise
+linear parsing time: ambiguous branches, different parameter assignments, and set
+states can generate many configurations. There is no 512-route limit or execution
+strategy switch.
 
-Подсказки при ошибках выполняют отдельный ограниченный поиск по автомату с
-оценкой опечаток. Их бюджет не ограничивает распознавание команды. Ранжирование
-сложных подсказок может отличаться от старого движка.
+Error suggestions run a separate bounded search over the automaton, with typo
+scoring. Their budget does not limit command recognition. Rankings for complex
+suggestions may differ from those of the old engine.
 
-## Организация кода
+## Code organization
 
-| Файл | Ответственность |
+| File | Responsibility |
 |---|---|
-| `api.py` | Публичные фасады строкового и конфигурационного парсера |
-| `catalogs/` | Чтение одного flat/grouped документа |
-| `context/` | Индексы view и стек блоков по готовым переходам |
-| `automata/sources.py` | Исходные шаблоны, стабильные ID и ошибки грамматики |
-| `automata/compiler.py`, `automata/building.py` | Компиляция AST в свежей рабочей области |
-| `automata/model.py`, `automata/first_tokens.py` | Инструкции и индекс входов |
-| `runtime/execution.py` | Конфигурации, стек и объекты переходов выбора, набора и повтора |
-| `runtime/recognition.py`, `runtime/worklist.py` | Один запуск распознавания и очередь конфигураций |
-| `runtime/matcher.py` | Связывание распознавания, разрешения кандидатов и диагностики |
-| `runtime/atoms.py`, `runtime/frontier.py` | Чтение параметров и безопасное сокращение работы |
-| `runtime/resolution.py`, `runtime/matches.py` | Публичные совпадения и неоднозначность |
-| `diagnostics/` | Структурированные ошибки, сходство и ограниченный поиск подсказок |
-| `patterns/`, `parameters/` | Собственные копии грамматики и подсистемы параметров |
+| `api.py` | Public line and configuration parser facades |
+| `catalogs/` | Reading one flat/grouped document |
+| `context/` | View indexes and a block stack based on prepared transitions |
+| `automata/sources.py` | Source patterns, stable IDs, and grammar errors |
+| `automata/compiler.py`, `automata/building.py` | AST compilation in a fresh workspace |
+| `automata/model.py`, `automata/first_tokens.py` | Instructions and the entry index |
+| `runtime/execution.py` | Configurations, stack, and choice, set, and repetition transition objects |
+| `runtime/recognition.py`, `runtime/worklist.py` | One recognition run and its configuration queue |
+| `runtime/matcher.py` | Combining recognition, candidate resolution, and diagnostics |
+| `runtime/atoms.py`, `runtime/frontier.py` | Reading parameters and safely reducing work |
+| `runtime/resolution.py`, `runtime/matches.py` | Public matches and ambiguity |
+| `diagnostics/` | Structured errors, similarity, and bounded suggestion search |
+| `patterns/`, `parameters/` | Independent copies of the grammar and parameter subsystem |
 
-Корневые `api.py`, `results.py`, `errors.py`, `serialization.py` и `__init__.py`
-сохраняют публичную границу пакета. Внутренняя реализация разнесена по
-`automata/`, `runtime/`, `diagnostics/`. Основные импорты остаются прежними:
+The top-level `api.py`, `results.py`, `errors.py`, `serialization.py`, and `__init__.py`
+retain the package's public boundary. Internal implementation is split across
+`automata/`, `runtime/`, and `diagnostics/`. The main imports are unchanged:
 `from vrp_parser_automaton import CommandLineParser`.
 
-Объекты переходов работают с конкретной инструкцией и конфигурацией.
-Изменяемые очереди, рабочая область компилятора и наборы кандидатов ограничены
-одним запуском. Сам автомат и состояния исполнения неизменяемы.
+Transition objects operate on a specific instruction and configuration. Mutable
+queues, the compiler workspace, and candidate sets are scoped to a single run.
+The automaton and execution states themselves are immutable.
 
-## Ручная проверка
+## Manual checks
 
-Из корня репозитория, без установки пакета:
+From the repository root, without installing the package:
 
 ```bash
 python3.13 manual_automaton_test.py
@@ -324,26 +381,26 @@ python3.13 manual_automaton_test.py --case optional-chain
 python3.13 manual_automaton_test.py --patterns data/commands.json --line 'display clock'
 ```
 
-Скрипт печатает число состояний и полный JSON результата. Первый пример —
-обсуждавшийся `ip route-static` с типизированными параметрами. В примерах есть
-и намеренно ошибочные строки, например повторный `tag` или повторная ветка набора.
+The script prints the state count and full result JSON. Its first example is the
+previously discussed `ip route-static` with typed parameters. Examples also include
+intentionally invalid lines, such as a repeated `tag` or a repeated set branch.
 
-| Пример | Состояний |
+| Example | States |
 |---|---:|
-| Сложный `ip route-static` из скрипта | 56 |
-| Опциональный набор из 24 веток с параметрами | 53 |
-| Параметр с повтором `&<1-100000>` | 6 |
-| 40 независимых опциональных групп с началом и хвостом | 123 |
+| Complex `ip route-static` from the script | 56 |
+| Optional set of 24 branches with parameters | 53 |
+| Parameter repeated with `&<1-100000>` | 6 |
+| 40 independent optional groups with a prefix and suffix | 123 |
 
-Весь текущий каталог: 7 269 шаблонов, 45 222 состояния.
+Entire current catalog: 7,269 patterns, 45,222 states.
 
-Тесты находятся в `tests/automaton/`: перенесённые контракты API, параметры,
-диагностика, CLI и каталог, а также проверки структуры автомата, независимости
-от исходного пакета, широких наборов, больших повторов и сложного статического
-маршрута. Контекст, каталоги и сохранение идентификаторов проверяются в
-`tests/test_automaton_context.py`. Для сопоставления форматов есть отдельный пакет
-[`vrp_format_matcher`](automaton-format-matcher.md). Он использует тот же
-компилятор AST и те же управляющие переходы для общего сравнения языков.
-Одинаковые структуры связываются напрямую по исходным узлам AST. Результат —
-соответствия параметров, статусы и области совпадения; для grouped-каталогов
-добавляется подготовленная информация о view. Предикаты matcher не вычисляет.
+Tests in `tests/automaton/` cover the ported API contracts, parameters, diagnostics,
+CLI, and catalog, along with automaton structure, independence from the original
+package, wide sets, large repetitions, and the complex static route. Context,
+catalogs, and identifier preservation are tested in `tests/test_automaton_context.py`.
+Format matching is handled by a separate package,
+[`vrp_format_matcher`](automaton-format-matcher.md). It uses the same AST compiler
+and control transitions for general language comparison. Identical structures are
+linked directly through their original AST nodes. Results include parameter
+correspondences, statuses, and matching scopes; grouped catalogs also include
+prepared view information. The matcher does not evaluate predicates.

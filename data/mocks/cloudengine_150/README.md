@@ -1,137 +1,140 @@
-# Моковые каталоги CloudEngine
+# CloudEngine mock catalogs
 
-Четыре документа по [спецификации v1](../../../docs/reference/command-catalog-format.md):
+Four documents following [specification v1](../../../docs/reference/command-catalog-format.md):
 
-| Файл | Источник | Представление | Записей |
+| File | Source | Layout | Records |
 |---|---|---|---:|
-| [device_flat.json](device_flat.json) | Устройство, синтетический экспорт | Плоское | 150 |
-| [device_grouped.json](device_grouped.json) | Устройство, синтетический экспорт | 13 view | 150 |
-| [documentation_flat.json](documentation_flat.json) | Документация | Плоское | 151 |
-| [documentation_grouped.json](documentation_grouped.json) | Документация с восстановленной иерархией | 13 view | 151 |
+| [device_flat.json](device_flat.json) | Device, synthetic export | Flat | 150 |
+| [device_grouped.json](device_grouped.json) | Device, synthetic export | 13 views | 150 |
+| [documentation_flat.json](documentation_flat.json) | Documentation | Flat | 151 |
+| [documentation_grouped.json](documentation_grouped.json) | Documentation with a recovered hierarchy | 13 views | 151 |
 
-Основа: `huawei-cloudengine-9800-8800-6800-v300r024c00/cmd_corpus` проекта
-`cli-reference-corpus`. В `metadata` каждой записи указаны исходный JSON-файл
-и индекс формата в `CLIs`, начиная с нуля. Поля `id` в командах нет.
+Based on `huawei-cloudengine-9800-8800-6800-v300r024c00/cmd_corpus` from the
+`cli-reference-corpus` project. Each record's `metadata` identifies the source JSON
+file and zero-based format index in `CLIs`. Commands have no `id` field.
 
-## Выборка
+## Sample selection
 
-- Seed: `20261006`. Из 150 записей 136 выбраны случайно с распределением по view.
-- 12 команд выбраны вручную для проверки переходов, ещё две — ссылки на ACL
-  из IPv4/IPv6 GRPC server view. Наличие перехода проверяется отдельно по `FuncDef`.
-- Используются System, BGP и две его address family, GRPC и два server view,
-  Basic/Advanced ACL, VLAN, Route-policy, OSPF и IS-IS.
-- `display` и `reset` исключены. Форматы с нераспознанной грамматикой или
-  неклассифицированными параметрами пропущены. Известные дополнительные команды
-  входа вне выбранной иерархии не включались в случайную часть.
-- Каждая запись относится к одному допустимому `ParentView` исходной страницы;
-  его исходное название сохранено в документации в `metadata.parent_view`.
-  Один текст команды в разных view считается разными контекстными записями.
-- В документацию добавлена одна команда `bfd all-interfaces enable` из RIP view:
-  она заполняет целевой view уже выбранной команды `rip`. Все исходные 150
-  записей сохранены. Устройство по-прежнему содержит исходную выборку.
+- Seed: `20261006`. Of the 150 records, 136 were selected randomly across views.
+- 12 commands were selected manually to test transitions, and two more are ACL
+  references from IPv4/IPv6 GRPC server views. Transitions are checked separately
+  against `FuncDef`.
+- The sample covers System, BGP and two of its address families, GRPC and two server
+  views, Basic/Advanced ACL, VLAN, Route-policy, OSPF, and IS-IS.
+- `display` and `reset` are excluded. Formats with unrecognized grammar or
+  unclassified parameters were skipped. Known additional entry commands outside
+  the selected hierarchy were excluded from the random portion.
+- Each record belongs to one allowed `ParentView` from its source page; the original
+  name is preserved in documentation `metadata.parent_view`. Identical command text
+  in different views is treated as separate contextual records.
+- One `bfd all-interfaces enable` command from the RIP view was added to the
+  documentation to populate the target view of the already selected `rip` command.
+  All original 150 records are retained. The device catalogs still contain the
+  original sample.
 
-## Что сохранено и что синтетическое
+## Preserved and synthetic data
 
-Документированные форматы взяты из `CLIs` без изменения. `parameter_types`
-определены по `ParaDef` и отдельным эвристикам имён. Представлены все четыре типа:
-`string`, `integer`, `ipv4-address`, `ipv6-address`. Enum, MAC, префиксы и составные
-AS-номера в этом моке представлены строками, без их специальных ограничений.
+Documentation formats are taken from `CLIs` unchanged. `parameter_types` are derived
+from `ParaDef` and selected name heuristics. All four types are represented:
+`string`, `integer`, `ipv4-address`, and `ipv6-address`. This mock represents enums,
+MAC addresses, prefixes, and composite AS numbers as strings, without their special
+constraints.
 
-Device-форматы созданы заменой параметров на типизированные декларации через
-позиции AST. Числовые диапазоны и длины строк берутся из простых описаний либо
-заменяются моковыми границами. Идентификаторы device view — синтетические aliases.
-Это **не выгрузка реального устройства**. Имена параметров и грамматика ветвления
-в документации сохранены; соответствующие пары рассчитаны на этап `exact`.
+Device formats are created by replacing parameters with typed declarations at their
+AST positions. Numeric ranges and string lengths come from simple descriptions or
+are replaced with mock bounds. Device view IDs are synthetic aliases.
+This is **not an export from a real device**. Documentation parameter names and
+branching grammar are preserved; corresponding pairs are intended for the `exact`
+stage.
 
-Добавлены моковые примеры `creates` для семи команд и `requires` для четырёх
-ссылок на ACL. Остальная семантика опущена. Эти правила — тестовые аннотации,
-а не результат полного knowledge-extraction pipeline. В device-файлах
-переходов и семантики нет.
+Mock `creates` examples were added for seven commands and `requires` examples for
+four ACL references. Other semantics are omitted. These rules are test annotations,
+not the output of a complete knowledge-extraction pipeline. Device files contain
+neither transitions nor semantics.
 
-Внутри каждого источника плоская и сгруппированная версии содержат те же записи
-в одном порядке обхода; в плоской документации удалено только `switch_to_view`.
-Принадлежность к документационным группам восстанавливается независимо от
-device-групп. Совпадение их состава, количества или названий не требуется.
+Within each source, flat and grouped versions contain the same records in the same
+traversal order; only `switch_to_view` is removed from flat documentation.
+Documentation group membership is recovered independently of device groups.
+Their contents, counts, and names are not required to match.
 
-## Восстановленная иерархия
+## Recovered hierarchy
 
-[refresh_switches.py](refresh_switches.py) сохраняет явную цель из `FuncDef`.
-Имена параметров, их типы и диапазоны не уточняют эту цель. Название приводится
-к нижнему регистру с едиными пробелами; исходное предложение сохранено
-в `metadata.switch_to_view_source`.
+[refresh_switches.py](refresh_switches.py) preserves the explicit target from
+`FuncDef`. Parameter names, types, and ranges do not refine this target. The name is
+lowercased and whitespace is normalized; the original sentence is retained in
+`metadata.switch_to_view_source`.
 
-Затем скрипт проверяет примеры документации: смена prompt после команды входа
-связывается с `ParentView` страницы последующей команды. Последняя команда
-примера должна соответствовать одному из форматов этой страницы, а её
-`ParentView` должен быть единственным. Команда входа проверяется в известном
-исходном контексте. Например, ACL-ссылка из gRPC не получает переход системной
-команды `acl`. Типы параметров в этой проверке не участвуют.
+The script then checks documentation examples: a prompt change after an entry
+command is linked to the `ParentView` of the following command's page. The example's
+last command must match one of that page's formats, and its `ParentView` must be
+unique. The entry command is checked in a known source context. For example, an ACL
+reference from gRPC does not inherit the system-level `acl` transition. Parameter
+types do not participate in this check.
 
-Примеры дополнили переходы OSPF, IS-IS, RIP и BGP IPv4. Для них в
-`metadata.switch_to_view_source` указаны `field: "Examples"`, исходный файл,
-фрагмент примера и имя view. Всего **13 переходов**, все **13 групп достижимы
-из `system view`**, все цели содержат команды. Неоднозначные наблюдения
-не превращаются в произвольные переходы; недостижимые группы или пустые цели
-прерывают пересборку до записи JSON.
+Examples supplied additional transitions for OSPF, IS-IS, RIP, and BGP IPv4. Their
+`metadata.switch_to_view_source` contains `field: "Examples"`, the source file, an
+example fragment, and the view name. There are **13 transitions** in total, all
+**13 groups are reachable from `system view`**, and every target contains commands.
+Ambiguous observations do not become arbitrary transitions; unreachable groups or
+empty targets stop regeneration before JSON is written.
 
-Группы связаны с названиями целей следующим образом:
+Groups are associated with target names as follows:
 
-| Исходный `ParentView` | Группа каталога |
+| Original `ParentView` | Catalog group |
 |---|---|
 | Basic ACL view, Advanced ACL view | `acl view` |
 | GRPC server view | `grpc ipv4 server view` |
 | BGP-IPv6 unicast address family view | `bgp ipv6 address family view` |
-| Остальные выбранные view | То же название в нижнем регистре |
+| Other selected views | The same name in lowercase |
 
-`acl view` — обобщённая группа для выбранных ACL-форматов. Входы сохраняют цель
-из `FuncDef`; различия Basic/Advanced остаются в `metadata.parent_view`.
-Ограничения доступности отдельных правил по разновидности ACL этот мок не
-моделирует. Исходные записи, включая одинаковые форматы из двух ACL-групп,
-сохранены отдельно, чтобы не потерять их происхождение и аннотации.
+`acl view` is a general group for the selected ACL formats. Entry commands retain
+the target from `FuncDef`; Basic/Advanced distinctions remain in
+`metadata.parent_view`. This mock does not model restrictions on individual rules
+by ACL subtype. Original records, including identical formats from two ACL groups,
+are retained separately to preserve their provenance and annotations.
 
-На системном уровне доступны входы в ACL, BGP, gRPC, VLAN, route-policy,
-OSPF, IS-IS и RIP. Внутри BGP находятся две address family, внутри gRPC —
-IPv4 и IPv6 server view. Это восстановление выбранного документационного мока;
-полнота иерархии всего корпуса не предполагается. У остальных 138 записей поле
-перехода опущено, неподтверждённый `null` не добавляется.
+At the system level, entry commands are available for ACL, BGP, gRPC, VLAN,
+route-policy, OSPF, IS-IS, and RIP. BGP contains two address families; gRPC contains
+IPv4 and IPv6 server views. This recovers the selected documentation mock; it does
+not assume that the entire corpus hierarchy is complete. The remaining 138 records
+omit the transition field; an unconfirmed `null` is not added.
 
-Пересчитать переходы для той же выборки:
+Recalculate transitions for the same sample:
 
 ```bash
 PYTHONPATH=src python3 data/mocks/cloudengine_150/refresh_switches.py --corpus /path/to/cmd_corpus
 ```
 
-Скрипт обновляет оба документационных JSON, сохраняя текущую выборку, форматы,
-типы параметров и моковые `creates`/`requires`. Device-файлы не читаются
-и не изменяются. Повторный запуск даёт тот же результат.
+The script updates both documentation JSON files, retaining the current sample,
+formats, parameter types, and mock `creates`/`requires`. Device files are neither read
+nor changed. Rerunning produces the same result.
 
-## Проверки
+## Checks
 
-Проверены JSON, происхождение форматов и исходных view, достижимость групп,
-подтверждения переходов, покрытие параметров типами и равенство
-плоских/сгруппированных записей. Тесты извлечения проверяют также разные названия
-одного контекста, общий ACL-контекст и изоляцию одинаковых команд в разных view.
-Текущий matcher подтвердил все 150 пар device → documentation и 203 связи слотов,
-а также 150 соответствий documentation → documentation. Runtime-парсер проверен
-на 12 реальных строках для выбранных форматов.
+Checks cover JSON, format and original view provenance, group reachability,
+transition evidence, parameter type coverage, and equality of flat/grouped records.
+Extraction tests also cover different names for one context, the shared ACL context,
+and isolation of identical commands in different views. The current matcher confirmed
+all 150 device → documentation pairs and 203 slot bindings, as well as 150
+documentation → documentation correspondences. The runtime parser was checked on
+12 real lines for the selected formats.
 
-Matcher принимает оба каталога напрямую:
-`FormatMatcher().compile_catalogs(device, documentation)`. В JSON `source.view`
-и `source.index` указывают на исходную запись устройства или документации.
-Для двух grouped-каталогов команды `device.entry_view` ищут документацию только
-в `documentation.entry_view`. Для остальных view и flat-каталогов поиск остаётся
-глобальным; их совпадения ещё не подтверждают соответствие контекстов.
-Для каждого формата сохраняются все полные соответствия документации, включая
-пересечения рядом с точными совпадениями. Эвристических оценок view нет;
-`source.view` позволяет определить исходный контекст каждой найденной пары.
-Для grouped → grouped в итоговый JSON автоматически добавляется `hierarchy`:
-связи view, документальные эффекты и варианты целевых device-view. Кандидаты
-не выбираются по именам или числу совпадений; даже один вариант остаётся
-`unresolved`, если цель не установлена начальной парой view. Явные входные
-`switch_to_view`, если они есть, сохраняются отдельно. Маппинг используется
-внешним кодом после разбора; runtime-парсер его не загружает.
+The matcher accepts both catalogs directly:
+`FormatMatcher().compile_catalogs(device, documentation)`. In JSON, `source.view`
+and `source.index` point to the original device or documentation record. For two
+grouped catalogs, commands in `device.entry_view` search for documentation only in
+`documentation.entry_view`. Search remains global for other views and flat catalogs;
+their matches do not yet establish context correspondence. Each format retains all
+full documentation correspondences, including intersections alongside exact matches.
+There are no heuristic view scores; `source.view` identifies the original context
+of each discovered pair. For grouped → grouped, `hierarchy` is added automatically
+to the result JSON: view relations, documentation effects, and possible device target
+views. Candidates are not selected by name or match count; even one candidate remains
+`unresolved` unless the entry view pair establishes the target. Explicit input
+`switch_to_view` values, if present, are retained separately. External code uses the
+mapping after parsing; the runtime parser does not load it.
 
-Для восстановления device-иерархии и получения отдельного входа парсера:
+To recover the device hierarchy and obtain a separate parser input:
 
 ```bash
 python3.13 manual_format_matcher_test.py \
@@ -140,19 +143,20 @@ python3.13 manual_format_matcher_test.py \
   --save-catalog /tmp/runtime_catalog.json --save /tmp/mapping.json --summary
 ```
 
-Этот режим вызывает `prepare_catalogs()` и считает документальную иерархию
-полной: пропущенный документальный переход означает сохранение контекста.
-Для текущего мока установлены 11 пар view; 19 команд имеют неизвестный эффект
-на контекст: два входа в ACL, вход в отсутствующий device RIP-view и команды
-двух неразличённых ACL-групп. Готовый каталог остаётся `grouped`: эти 19 записей
-содержат `"switch_to_view": {"status": "unresolved"}`, остальные переходы сохранены.
-Итоговый маппинг содержит 166 пар после ограничения установленных контекстов.
-При documentation → documentation получаются `grouped`, 13 соответствий view
-и 167 пар. Это структурное восстановление, без подтверждения на реальном устройстве.
+This mode calls `prepare_catalogs()` and treats the documentation hierarchy as
+complete: an omitted documentation transition means context preservation.
+For the current mock, 11 view pairs are established; 19 commands have an unknown
+context effect: two ACL entry commands, entry into the missing device RIP view, and
+commands from two ACL groups that could not be distinguished. The prepared catalog
+remains `grouped`: these 19 records contain `"switch_to_view": {"status": "unresolved"}`,
+while the other transitions are preserved. The final mapping contains 166 pairs
+after restricting established contexts. Documentation → documentation produces a
+`grouped` catalog, 13 view correspondences, and 167 pairs. This is structural recovery,
+without confirmation on a real device.
 
-## Запуск парсера на моках
+## Running the parser on mocks
 
-Из корня репозитория, Python 3.13+, установка пакета не требуется:
+From the repository root, with Python 3.13+, no package installation required:
 
 ```bash
 python3.13 manual_automaton_test.py \
@@ -160,13 +164,13 @@ python3.13 manual_automaton_test.py \
   --line 'bgp 65000' --line 'ipv4-family unicast'
 ```
 
-Device-моки содержат обычные декларации runtime-параметров. В
-`device_grouped.json` переходы ещё не восстановлены; для глобального поиска
-его можно передать с `--flat`. Для полноценного grouped-разбора нужен отдельный
-подготовленный документ с восстановленными `switch_to_view`.
-Документационные моки предназначены для matcher и внешнего семантического pipeline.
+Device mocks contain standard runtime parameter declarations. Transitions in
+`device_grouped.json` have not yet been recovered; pass it with `--flat` for global
+search. Full grouped parsing requires a separate prepared document with recovered
+`switch_to_view` values. Documentation mocks are intended for the matcher and an
+external semantic pipeline.
 
-Для своего файла замените `--line` на `--config config.txt`. В плоском
-режиме строка `#` требует отдельного формата, которого в этой выборке нет.
-Пример одного готового grouped-документа, CLI и Python API описаны в
-[руководстве парсера](../../../docs/reference/automaton-parser.md).
+For your own file, replace `--line` with `--config config.txt`. In flat mode, a `#`
+line requires its own format, which is absent from this sample. An example of one
+prepared grouped document, the CLI, and the Python API are described in the
+[parser guide](../../../docs/reference/automaton-parser.md).

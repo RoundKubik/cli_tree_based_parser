@@ -12,6 +12,7 @@ from vrp_parser_automaton import (
     BlankLine,
     CommandLineParser,
     ConfigurationParser,
+    ErrorCode,
     ErrorLine,
     MatchStatus,
     ParsedCommand,
@@ -71,6 +72,8 @@ def test_parameters_from_another_view_do_not_change_validation_or_slot_ids():
     result = parser.parse("set abc")
     assert isinstance(result, ErrorLine)
     assert {f.type_id for f in result.error.failures} == {"integer"}
+    assert result.error.code == ErrorCode.VALIDATION_ERROR
+    assert [match.view for match in result.error.catalog_matches] == ["child"]
     allowed = parser.parse("set abc", view="child")
     assert isinstance(allowed, ParsedCommand)
     assert allowed.parameters[0].slot_id == "p:4"
@@ -313,3 +316,92 @@ def test_line_and_file_api_read_one_grouped_document(tmp_path):
     parser = CommandLineParser.from_json_file(source)
     assert parser.child_view(parser.parse("enter")) == "child"
     assert parser.child_view(parser.parse("child-only", view="child")) == "child"
+
+
+def test_context_diagnostics_keep_all_valid_formats_without_switching_views():
+    data = hierarchy()
+    data["views"]["child"].append({"format": "set INTEGER<1-9>"})
+    data["views"]["leaf"].append({"format": "set <value>"})
+    parser = CommandLineParser(data)
+
+    result = parser.parse("set 5")
+
+    assert isinstance(result, ErrorLine)
+    assert result.view == "root"
+    assert result.error.code == ErrorCode.UNKNOWN_COMMAND
+    matches = result.error.catalog_matches
+    assert [(match.view, match.format) for match in matches] == [
+        ("child", "set INTEGER<1-9>"),
+        ("leaf", "set <value>"),
+    ]
+    for match in matches:
+        accepted = parser.parse("set 5", view=match.view)
+        assert accepted.primary_match.pattern_id == match.pattern_id
+    assert result.error.message.isascii()
+    assert "Parsing failed in view 'root'" in result.error.message
+    assert "Complete matches exist in other views" in result.error.message
+    # Diagnostics retain the generic match even though normal resolution ranks it lower.
+    assert len(parser.parse_flat("set 5").matches) == 1
+
+
+@pytest.mark.parametrize("line", ["set", "set 10", "set 5 extra", "absent"])
+def test_context_diagnostics_require_a_complete_match_with_valid_parameters(line):
+    data = hierarchy()
+    data["views"]["child"].append({"format": "set INTEGER<1-9>"})
+    result = ConfigurationParser(CommandLineParser(data)).parse(line).to_dict()
+
+    error = result["lines"][0]["error"]
+    assert error["catalog_matches"] == []
+    assert "No complete match with valid parameters" in error["message"]
+
+
+@pytest.mark.parametrize(
+    ("parent", "code"),
+    [
+        ("missing-parent", "parent_parse_error"),
+        ("unknown", "unresolved_transition"),
+        ("enter", "ambiguous_transition"),
+    ],
+)
+def test_unknown_context_keeps_its_origin_through_nested_successes_and_errors(
+    parent,
+    code,
+):
+    data = hierarchy()
+    data["views"]["root"][2]["switch_to_view"] = {"status": "unresolved"}
+    data["views"]["root"].append({"format": "enter", "switch_to_view": "leaf"})
+    parser = ConfigurationParser(CommandLineParser(data))
+
+    report = parser.parse(f"{parent}\n child-only\n  absent\n   leaf-only\nroot-only")
+
+    assert isinstance(report.lines[1], ParsedCommand)
+    assert isinstance(report.lines[2], ErrorLine)
+    assert isinstance(report.lines[3], ParsedCommand)
+    issue = report.lines[1].context_issue
+    assert issue.code == code and issue.source_line == 1
+    assert issue.message.isascii()
+    for line in report.lines[1:4]:
+        assert line.context_issue == issue
+        assert line.view is None
+    assert report.lines[4].view == "root"
+    assert report.lines[4].context_issue is None
+    payload = report.to_dict()
+    assert payload["lines"][2]["context_issue"]["source_line"] == 1
+    assert "view" not in payload["lines"][2]
+    assert "context_issue" not in payload["lines"][4]
+    assert parser.parse("root-only").lines[0].context_issue is None
+
+
+@pytest.mark.parametrize("grouped", [False, True])
+def test_flat_parsing_omits_context_diagnostics_even_after_errors(grouped):
+    data = hierarchy() if grouped else {"commands": ["root-only"]}
+    report = ConfigurationParser(CommandLineParser(data), contextual=False).parse(
+        "absent\n root-only"
+    )
+
+    assert isinstance(report.lines[0], ErrorLine)
+    assert report.lines[0].error.catalog_matches is None
+    for line in report.to_dict()["lines"]:
+        assert "context_issue" not in line and "view" not in line
+        if line["kind"] == "error":
+            assert "catalog_matches" not in line["error"]

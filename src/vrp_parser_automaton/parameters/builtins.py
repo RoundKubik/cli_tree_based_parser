@@ -8,6 +8,7 @@ from .recognizers import (
     BoundedDeclarationRecognizer,
     EnumDeclarationRecognizer,
     ExactDeclarationRecognizer,
+    NamedDeclarationRecognizer,
 )
 from .registry import ParameterTypeRegistry
 from .validators import (
@@ -19,6 +20,7 @@ from .validators import (
     IPv6AddressValidator,
     IPv6PrefixValidator,
     MacValidator,
+    PassValidator,
     TextValidator,
     TokenStringValidator,
 )
@@ -184,7 +186,15 @@ def builtin_parameter_types() -> tuple[ParameterType, ...]:
             TextValidator(),
         ),
     )
-    return (*bounded, *_date_time_types(token))
+    named = ParameterType(
+        "named",
+        ParameterFamily.GENERIC,
+        NamedDeclarationRecognizer(),
+        token,
+        PassValidator(),
+        fallback=True,
+    )
+    return (*bounded, *_date_time_types(token), named)
 
 
 def default_parameter_registry() -> ParameterTypeRegistry:

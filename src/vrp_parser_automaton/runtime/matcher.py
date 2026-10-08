@@ -36,3 +36,21 @@ class CommandMatcher:
                 candidates, self._automaton, span_offset=span_offset
             )
         return self._errors.create(text, diagnostics, span_offset=span_offset)
+
+    def accepting_patterns(self, text: str) -> tuple[int, ...]:
+        """Find all complete, valid patterns without ranking across views."""
+        candidates = CommandRecognition(
+            self._automaton,
+            self._parameter_types,
+            CommandText(text),
+            MatchDiagnostics(),
+        ).candidates()
+        return tuple(
+            sorted(
+                {
+                    candidate.pattern_index
+                    for candidate in candidates
+                    if not candidate.state.rejected
+                }
+            )
+        )

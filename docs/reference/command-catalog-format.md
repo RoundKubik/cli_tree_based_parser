@@ -1,136 +1,138 @@
-# Форматы каталогов команд: проект спецификации v1
+# Command catalog formats: draft specification v1
 
-Matcher принимает эти контейнеры через `compile_catalogs()`, проверяет совместимость
-типов параметров и сохраняет адреса исходных записей. Для двух grouped-каталогов
-команды начального view устройства ищутся только в начальном view документации.
-Для остальных view и flat-каталогов сохраняется глобальный поиск всех полных
-совпадений без оценки или выбора соответствий view. Для двух grouped-каталогов
-результат дополнительно содержит `hierarchy`: связи команд и view, варианты целей
-переходов и явно заданные переключения целевого каталога. Единственный кандидат
-не считается установленным соответствием. Эта спецификация относится к входам
-matcher. Runtime-парсер принимает один подготовленный документ с обычными
-декларациями параметров; при `type: grouped` известные переходы используются,
-а неразрешённые должны быть помечены явно.
-Он не читает документацию, типовые аннотации или JSON маппинга. Подробнее —
-[вход парсера](automaton-parser.md#входной-документ).
+The matcher accepts these containers through `compile_catalogs()`, checks parameter
+type compatibility, and preserves source record locations. For two grouped catalogs,
+commands from the device's entry view are searched only in the documentation's entry
+view. Other views and flat catalogs retain a global search for all full matches,
+without scoring or selecting view correspondences. For two grouped catalogs, the
+result also contains `hierarchy`: command and view relations, possible transition
+targets, and explicit transitions from the target catalog. A single candidate does
+not count as an established correspondence. This specification describes matcher
+inputs. The runtime parser accepts one prepared document with standard parameter
+declarations; for `type: grouped`, it uses known transitions, and unresolved
+transitions must be marked explicitly.
+It does not read documentation, type annotations, or mapping JSON. See
+[parser input](automaton-parser.md#input-document) for details.
 
-Офлайн-метод `prepare_catalogs()` принимает документацию с уже восстановленной
-иерархией: в этом режиме отсутствие документального `switch_to_view` трактуется
-как сохранение контекста. Он возвращает отдельный runtime-каталог и маппинг.
-Grouped-каталог сохраняет исходные view и все установленные переходы.
-Неразрешённые переходы получают явную метку в соответствующей команде.
-Правила восстановления и пример запуска описаны в
-[руководстве matcher](automaton-format-matcher.md#подготовить-каталог-для-парсера-и-итоговый-маппинг).
+The offline `prepare_catalogs()` method accepts documentation with a recovered
+hierarchy: in this mode, an omitted documentation `switch_to_view` means that the
+context is preserved. It returns a separate runtime catalog and mapping.
+A grouped catalog keeps its original views and all established transitions.
+Unresolved transitions receive an explicit marker on the corresponding command.
+Recovery rules and a usage example are described in the
+[matcher guide](automaton-format-matcher.md#prepare-a-parser-catalog-and-final-mapping).
 
-## Общие поля
+## Common fields
 
-| Поле | Значение |
+| Field | Value |
 |---|---|
-| `schema_version` | Обязательно: `1` |
-| `source` | Обязательно: `device` или `documentation` |
-| `type` | Обязательно: `flat` или `grouped` |
-| `commands` | Для `flat`: непустой массив объектов команд |
-| `views` | Для `grouped`: объект «название/id view → массив объектов команд» |
-| `entry_view` | Для `grouped`: начальный view, точная ссылка на ключ `views` |
-| `vendor` | Обязательно: производитель, например `Huawei` |
-| `device` | Обязательно: платформа/ОС, например `Huawei VRP` |
-| `model_type` | Обязательно: модель или семейство, например `CloudEngine` |
-| `software_version` | Необязательно: выпуск ПО, например `v300r024c00` |
-| `metadata` | Необязательно: объект дополнительных сведений |
+| `schema_version` | Required: `1` |
+| `source` | Required: `device` or `documentation` |
+| `type` | Required: `flat` or `grouped` |
+| `commands` | For `flat`: a nonempty array of command objects |
+| `views` | For `grouped`: an object mapping view names/IDs to arrays of command objects |
+| `entry_view` | For `grouped`: the initial view, an exact reference to a `views` key |
+| `vendor` | Required: manufacturer, such as `Huawei` |
+| `device` | Required: platform/OS, such as `Huawei VRP` |
+| `model_type` | Required: model or family, such as `CloudEngine` |
+| `software_version` | Optional: software release, such as `v300r024c00` |
+| `metadata` | Optional: an object containing additional information |
 
-`source` определяет происхождение и профиль параметров, `type` — организацию
-каталога. `commands` и `views` взаимоисключающие. У `flat` нет `entry_view`.
-В сгруппированном каталоге должна быть хотя бы одна команда; отдельный view
-может содержать пустой массив. Неизвестные переключения в исходном device-каталоге
-можно обозначать отсутствием `switch_to_view`. В подготовленных документах для
-этого нужна явная метка; отдельный общий `hierarchy_status` не требуется.
+`source` identifies the origin and parameter profile; `type` defines the catalog
+layout. `commands` and `views` are mutually exclusive. A `flat` catalog has no
+`entry_view`. A grouped catalog must contain at least one command; an individual
+view may contain an empty array. Unknown transitions in the original device
+catalog may be represented by omitting `switch_to_view`. Prepared documents require
+an explicit marker instead; a separate global `hierarchy_status` is not needed.
 
-`vendor`, `device` и `model_type` — непустые строки, обязательные для всех четырёх
-вариантов v1. Они описывают весь каталог и сохраняются при его обработке.
+`vendor`, `device`, and `model_type` are nonempty strings required in all four v1
+variants. They describe the entire catalog and are preserved during processing.
 
-## Команда и переключение view
+## Commands and view transitions
 
-| Поле | Значение |
+| Field | Value |
 |---|---|
-| `format` | Обязательно: непустая исходная строка формата без перевода строки |
-| `parameter_types` | Обязательно для `documentation`: массив типов именованных параметров; у `device` отсутствует |
-| `switch_to_view` | Только для `grouped`: строка, `null` или `{"status": "unresolved"}`; поле можно опустить |
-| `creates`, `requires` | Необязательно: массивы объектов семантики внешнего pipeline |
-| `metadata` | Необязательно: объект дополнительных сведений |
+| `format` | Required: a nonempty original format string without a line break |
+| `parameter_types` | Required for `documentation`: an array of named parameter types; absent for `device` |
+| `switch_to_view` | Only for `grouped`: a string, `null`, or `{"status": "unresolved"}`; may be omitted |
+| `creates`, `requires` | Optional: arrays of semantic objects from an external pipeline |
+| `metadata` | Optional: an object containing additional information |
 
-**Поля `id` во входных записях нет.** Внутренние идентификаторы будут формироваться
-программно с сохранением связи с исходной записью и её view. Одинаковые форматы
-в разных view не объединяются по смыслу. Существующие `pattern_id` и `slot_id`
-остаются внутренними средствами связи результатов matcher и парсера.
+**Input records have no `id` field.** Internal identifiers are generated
+programmatically, preserving the link to the source record and its view. Identical
+formats in different views are not treated as semantically identical. Existing
+`pattern_id` and `slot_id` values remain internal links between matcher and parser
+results.
 
-Для `switch_to_view` используются следующие представления:
+`switch_to_view` uses the following representations:
 
-| Представление | Смысл |
+| Representation | Meaning |
 |---|---|
-| `"switch_to_view": "BGP view"` | Команда входит в указанный view |
-| `"switch_to_view": null` | Известно, что команда сохраняет текущий контекст |
-| `"switch_to_view": {"status": "unresolved"}` | Единый переход не установлен; это не сохранение контекста |
-| Поле отсутствует | Неизвестность в исходном device-входе matcher; сохранение контекста в подготовленной документации и runtime-каталоге |
+| `"switch_to_view": "BGP view"` | The command enters the specified view |
+| `"switch_to_view": null` | The command is known to preserve the current context |
+| `"switch_to_view": {"status": "unresolved"}` | No single transition has been established; this does not mean that the context is preserved |
+| Field omitted | Unknown in the matcher's original device input; context preservation in prepared documentation and runtime catalogs |
 
-`compile_catalogs()` собирает свидетельства без предположения о полноте: для него
-отсутствующее поле остаётся неизвестным и в документации. `prepare_catalogs()`
-принимает подготовленную документацию, поэтому её пропуски означают сохранение
-контекста. Явный `unresolved` остаётся неизвестным в обоих режимах.
+`compile_catalogs()` collects evidence without assuming completeness: an omitted
+field remains unknown even in documentation. `prepare_catalogs()` accepts prepared
+documentation, so its omissions mean context preservation. An explicit `unresolved`
+remains unknown in both modes.
 
-Строка должна точно совпадать с ключом `views`, включая регистр. Например,
-`BGP view` и `BGP View` — разные ссылки. Запись `"BGP view или bgp"` недопустима,
-если такого ключа нет. Не каждый view обязан быть целью перехода.
+A string must exactly match a `views` key, including case. For example, `BGP view`
+and `BGP View` are different references. A value such as `"BGP view or bgp"` is
+invalid unless that exact key exists. Not every view must be a transition target.
 
-При извлечении сохраняется название цели из исходного описания: `ACL view`
-нельзя уточнять до `Advanced ACL view` по имени или типу параметра. Если
-применяется нормализация регистра и пробелов, она одинакова для ключей и ссылок.
-Цель без известных команд представляется пустой группой; это не подтверждает
-полноту иерархии.
+Extraction preserves the target name from the original description: `ACL view`
+must not be narrowed to `Advanced ACL view` based on a parameter's name or type.
+If case and whitespace are normalized, the same normalization applies to both keys
+and references. A target with no known commands is represented by an empty group;
+this does not establish hierarchy completeness.
 
-Строка описывает один целевой view для всего формата. Если цель зависит от
-значения параметра и единого перехода нет, используйте `{"status": "unresolved"}`.
-Объединять возможные цели под одним названием ради получения строки нельзя.
-Условные переходы пока не исполняются; найденные документальные варианты и их
-bindings сохраняются в маппинге. Явные команды выхода этим полем не описываются.
-Возврат из блока конфигурации определяется отдельными правилами обработки блоков;
-`entry_view` сам по себе не задаёт правило отступов.
+A string describes one target view for the entire format. If the target depends on
+a parameter value and no single transition exists, use `{"status": "unresolved"}`.
+Do not merge possible targets under one name just to obtain a string.
+Conditional transitions are not executed yet; discovered documentation alternatives
+and their bindings are preserved in the mapping. This field does not describe
+explicit exit commands. Returning from a configuration block follows separate block
+handling rules; `entry_view` alone does not define indentation rules.
 
-Это правила офлайн-каталогов с ещё неизвестными переходами. Готовый runtime-вход
-парсера имеет более простой контракт: отсутствие `switch_to_view` означает
-сохранение текущего view. Для явного `unresolved` только вложенный блок разбирается
-без ограничения по view. Остальная иерархия сохраняется; сам парсер неизвестные
-цели не вычисляет. Ручная правка заменяет метку на исходный device view ID или
-`null`, не меняя формат, порядок записей и идентификаторы параметров.
+These rules apply to offline catalogs with transitions that are still unknown.
+The prepared runtime parser input has a simpler contract: omitting `switch_to_view`
+means preserving the current view. For an explicit `unresolved`, only the child
+block is parsed without view restrictions. The rest of the hierarchy is preserved;
+the parser does not infer unknown targets. A manual correction replaces the marker
+with an original device view ID or `null`, without changing the format, record
+order, or parameter identifiers.
 
-В device-форматах используются типизированные параметры: `INTEGER<2000-2999>`.
-В документации сохраняются имена: `<acl-number>`. Текущий документальный профиль
-matcher считает `INTEGER<2000-2999>` литералом, поэтому подменять им имя нельзя.
+Device formats use typed parameters: `INTEGER<2000-2999>`. Documentation preserves
+names: `<acl-number>`. The matcher's current documentation profile treats
+`INTEGER<2000-2999>` as a literal, so it must not replace a parameter name.
 
-Типы параметров документации задаются отдельно в `parameter_types`. Каждая запись
-содержит `parameter_name` — имя без угловых скобок, и `parameter_type` — одно из
-значений: `string`, `integer`, `ipv4-address`, `ipv6-address`.
-Для каждого уникального имени из `format` нужна ровно одна запись; лишние имена
-и дубли запрещены. У команды без параметров массив пустой: `[]`. Если одно имя
-встречается в формате несколько раз, его тип применяется ко всем вхождениям,
-но их `slot_id` остаются разными. Неизвестный тип нельзя молча заменять на `string`.
-Длины строк и диапазоны чисел этим полем пока не задаются. Исходный `format`
-с именованными placeholders сохраняется без изменений.
+Documentation parameter types are specified separately in `parameter_types`.
+Each entry contains `parameter_name`, the name without angle brackets, and
+`parameter_type`, one of `string`, `integer`, `ipv4-address`, or `ipv6-address`.
+Every unique parameter name in `format` requires exactly one entry; extra names
+and duplicates are forbidden. Commands without parameters use an empty array: `[]`.
+If a name appears multiple times in the format, its type applies to every occurrence,
+but the occurrences retain distinct `slot_id` values. Unknown types must not be
+silently replaced with `string`. This field does not yet specify string lengths or
+numeric ranges. The original `format` with named placeholders is preserved unchanged.
 
-Matcher сопоставляет `INTEGER` с `integer`, `STRING`/`TEXT` с `string`,
-`X.X.X.X` с `ipv4-address`, `X:X::X:X` с `ipv6-address`. Известные разные типы
-отсекают связь параметров. Типы устройства вне этой мапы не запрещают совпадение.
-Проверка применяется на всех этапах, включая пересечения и незавершённые трассы.
-На runtime-валидацию значений поле `parameter_types` не влияет.
+The matcher maps `INTEGER` to `integer`, `STRING`/`TEXT` to `string`, `X.X.X.X` to
+`ipv4-address`, and `X:X::X:X` to `ipv6-address`. Different known types reject a
+parameter correspondence. Device types outside this mapping do not prevent a match.
+This check applies at every stage, including intersections and incomplete traces.
+The `parameter_types` field does not affect runtime value validation.
 
-`creates` и `requires` сохраняются без вычисления. Отсутствующее поле означает
-«данных нет», пустой массив — «правил нет». Их внутреннюю структуру определяет
-внешний pipeline; `parameter_name` ссылается на имя из исходного формата.
+`creates` and `requires` are preserved without evaluation. An omitted field means
+"no data"; an empty array means "no rules". Their internal structure is defined by
+an external pipeline; `parameter_name` refers to a name in the original format.
 
-## Примеры
+## Examples
 
-Примеры иллюстрируют структуру данных, а не полную модель конкретного устройства.
+These examples illustrate the data structure, not a complete model of a specific device.
 
-### Устройство: плоский каталог
+### Device: flat catalog
 
 ```json
 {
@@ -146,7 +148,7 @@ Matcher сопоставляет `INTEGER` с `integer`, `STRING`/`TEXT` с `str
 }
 ```
 
-### Устройство: сгруппированный каталог
+### Device: grouped catalog
 
 ```json
 {
@@ -170,7 +172,7 @@ Matcher сопоставляет `INTEGER` с `integer`, `STRING`/`TEXT` с `str
 }
 ```
 
-### Документация: плоский каталог
+### Documentation: flat catalog
 
 ```json
 {
@@ -196,7 +198,7 @@ Matcher сопоставляет `INTEGER` с `integer`, `STRING`/`TEXT` с `str
 }
 ```
 
-### Документация: сгруппированный каталог с переходом
+### Documentation: grouped catalog with a transition
 
 ```json
 {
@@ -235,20 +237,20 @@ Matcher сопоставляет `INTEGER` с `integer`, `STRING`/`TEXT` с `str
 }
 ```
 
-## Валидация и совместимость
+## Validation and compatibility
 
-- Строгий JSON: без завершающих запятых, многоточий вне строк и повторных ключей.
-- Структура соответствует `type`; записи v1 — объекты, а не смесь объектов и строк.
-- `vendor`, `device` и `model_type` присутствуют и содержат непустые строки.
-- `format` проверяется грамматикой соответствующего `source`. Строки сохраняются
-  без переформатирования: позиции параметров участвуют в вычислении `slot_id`.
-- Для документации `parameter_types` покрывает все имена параметров без дублей;
-  типы принадлежат указанному списку из четырёх значений.
-- `entry_view` и все строковые `switch_to_view` ссылаются на существующие группы.
-  Опечатки структурных полей, например `switch_to_veiw`, должны выявляться.
-- Совпадение ссылок не доказывает правильность извлечённой семантики.
+- Strict JSON: no trailing commas, ellipses outside strings, or duplicate keys.
+- The structure matches `type`; v1 records are objects, not a mix of objects and strings.
+- `vendor`, `device`, and `model_type` are present and contain nonempty strings.
+- `format` is checked against the grammar for its `source`. Strings are preserved
+  without reformatting: parameter positions contribute to `slot_id` calculation.
+- For documentation, `parameter_types` covers all parameter names without duplicates;
+  types belong to the specified set of four values.
+- `entry_view` and all string `switch_to_view` values reference existing groups.
+  Misspelled structural fields, such as `switch_to_veiw`, must be detected.
+- Valid references do not prove that the extracted semantics are correct.
 
-Старый вход `{"commands": ["bgp INTEGER<1-40000>"]}` остаётся поддерживаемым.
-Для matcher доступен адаптер `compile_catalogs(device_catalog, documentation_catalog)`.
-Результат с bindings, адресами источников и графами частичных совпадений остаётся
-отдельным форматом: эта спека его не заменяет.
+The legacy input `{"commands": ["bgp INTEGER<1-40000>"]}` remains supported.
+The matcher provides the `compile_catalogs(device_catalog, documentation_catalog)`
+adapter. Results containing bindings, source locations, and partial-match graphs
+remain a separate format; this specification does not replace it.

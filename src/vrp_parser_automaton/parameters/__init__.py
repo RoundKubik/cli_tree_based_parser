@@ -20,6 +20,7 @@ from .recognizers import (
     BoundedDeclarationRecognizer,
     EnumDeclarationRecognizer,
     ExactDeclarationRecognizer,
+    NamedDeclarationRecognizer,
 )
 from .registry import ParameterTypeRegistry
 from .validators import (
@@ -31,6 +32,7 @@ from .validators import (
     IPv6AddressValidator,
     IPv6PrefixValidator,
     MacValidator,
+    PassValidator,
     TextValidator,
     TokenStringValidator,
 )
@@ -49,6 +51,7 @@ __all__ = [
     "IPv6AddressValidator",
     "IPv6PrefixValidator",
     "MacValidator",
+    "NamedDeclarationRecognizer",
     "ParameterDeclaration",
     "ParameterDeclarationError",
     "ParameterFamily",
@@ -61,6 +64,7 @@ __all__ = [
     "ParameterType",
     "ParameterTypeRegistry",
     "ParameterValidator",
+    "PassValidator",
     "RemainderReader",
     "SingleTokenReader",
     "TextValidator",

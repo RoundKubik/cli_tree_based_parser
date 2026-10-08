@@ -61,6 +61,13 @@ def _looks_like_ipv6(value: str) -> bool:
     return value.count(":") >= 2
 
 
+class PassValidator:
+    """Accept the reader's value unchanged, without validation or conversion."""
+
+    def probe(self, raw: str, declaration: ParameterDeclaration) -> ParameterResult:
+        return ParameterResult.success(raw)
+
+
 class IntegerValidator:
     def probe(self, raw: str, declaration: ParameterDeclaration) -> ParameterResult:
         if re.fullmatch(r"[+-]?[0-9]+", raw) is None:

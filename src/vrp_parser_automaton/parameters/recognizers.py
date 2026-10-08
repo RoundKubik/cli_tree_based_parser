@@ -26,7 +26,6 @@ class ExactDeclarationRecognizer:
     placeholder: str
     minimum: int | None = None
     maximum: int | None = None
-    metadata: tuple[tuple[str, str], ...] = ()
 
     def recognize(self, pattern: str, position: int) -> DeclarationRecognition | None:
         if not pattern.startswith(self.placeholder, position):
@@ -38,8 +37,19 @@ class ExactDeclarationRecognizer:
             end=end,
             minimum=self.minimum,
             maximum=self.maximum,
-            metadata=self.metadata,
         )
+
+
+class NamedDeclarationRecognizer:
+    """Recognize ``<name>``; the declaration source retains the name."""
+
+    _NAME = re.compile(r"<[A-Za-z0-9_][A-Za-z0-9_.:/-]*>")
+
+    def recognize(self, pattern: str, position: int) -> DeclarationRecognition | None:
+        match = self._NAME.match(pattern, position)
+        if match is None or not _is_boundary(pattern, match.end()):
+            return None
+        return DeclarationRecognition(end=match.end())
 
 
 @dataclass(frozen=True, slots=True)

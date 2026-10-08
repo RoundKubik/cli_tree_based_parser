@@ -23,6 +23,8 @@ from .parameters import (
 )
 from .results import (
     BlankLine,
+    CatalogMatch,
+    ContextIssue,
     ErrorLine,
     LineResult,
     MatchStatus,
@@ -92,10 +94,28 @@ class CommandLineParser:
 
     def child_view(self, command: ParsedCommand) -> str | None:
         """Use the input hierarchy; conflicting parses leave the context unknown."""
+        return self.child_context(command)[0]
+
+    def child_context(
+        self, command: ParsedCommand
+    ) -> tuple[str | None, ContextIssue | None]:
+        """Keep the cause of an unknown child view alongside the transition."""
         if command.view is None:
-            return None
+            return None, command.context_issue
         targets = {self._child_views[match.pattern_index] for match in command.matches}
-        return targets.pop() if len(targets) == 1 else None
+        if None in targets:
+            return None, ContextIssue(
+                "unresolved_transition",
+                "The parent command has an unresolved view transition.",
+                command.line_number,
+            )
+        if len(targets) > 1:
+            return None, ContextIssue(
+                "ambiguous_transition",
+                "The parent command matches formats with different view transitions.",
+                command.line_number,
+            )
+        return targets.pop(), None
 
     def _parse_at(self, line: str, line_number: int, view: str | None) -> LineResult:
         self._validate_input(line, line_number)
@@ -108,6 +128,8 @@ class CommandLineParser:
 
         outcome = matcher.match(command, span_offset=indent_end)
         if isinstance(outcome, ParseError):
+            if view is not None:
+                outcome = self._context_error(outcome, command, view)
             return ErrorLine(line_number, line, indent, outcome, view)
         result = self._parsed(line_number, line, indent, outcome)
         if not self.views:
@@ -118,6 +140,29 @@ class CommandLineParser:
             if len({self._pattern_views[m.pattern_index] for m in result.matches}) > 1
             else result.status,
             view=view,
+        )
+
+    def _context_error(self, error: ParseError, command: str, view: str) -> ParseError:
+        indices = self._matchers.for_view(None).accepting_patterns(command)
+        matches = tuple(
+            CatalogMatch(
+                other_view,
+                self._graph.patterns[index].pattern_id,
+                self._graph.patterns[index].original,
+            )
+            for index in indices
+            if (other_view := self._pattern_views[index]) is not None
+            and other_view != view
+        )
+        message = (
+            "Complete matches exist in other views; see catalog_matches."
+            if matches
+            else "No complete match with valid parameters was found in other views."
+        )
+        return replace(
+            error,
+            message=f"{error.message} Parsing failed in view {view!r}. {message}",
+            catalog_matches=matches,
         )
 
     @staticmethod

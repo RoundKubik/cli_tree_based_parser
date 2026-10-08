@@ -79,6 +79,15 @@ class PatternMatch:
 
 
 @dataclass(frozen=True, slots=True)
+class ContextIssue:
+    """Why a child block has no known view, with the originating line."""
+
+    code: Literal["parent_parse_error", "unresolved_transition", "ambiguous_transition"]
+    message: str
+    source_line: int
+
+
+@dataclass(frozen=True, slots=True)
 class ParsedCommand:
     """A successful line result, including unresolved ambiguity."""
 
@@ -89,6 +98,7 @@ class ParsedCommand:
     primary_match: PatternMatch
     alternative_matches: tuple[PatternMatch, ...] = ()
     view: str | None = None
+    context_issue: ContextIssue | None = None
     kind: Literal["command"] = field(default="command", init=False)
 
     @property
@@ -143,6 +153,15 @@ class ValidationFailure:
 
 
 @dataclass(frozen=True, slots=True)
+class CatalogMatch:
+    """A complete, valid match found outside the selected view for diagnostics."""
+
+    view: str
+    pattern_id: str
+    format: str
+
+
+@dataclass(frozen=True, slots=True)
 class ParseError:
     """Structured details for one erroneous configuration line."""
 
@@ -154,6 +173,7 @@ class ParseError:
     candidate_patterns: tuple[str, ...] = ()
     candidate_variations: tuple[str, ...] = ()
     suggestions: tuple[str, ...] = ()
+    catalog_matches: tuple[CatalogMatch, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,6 +185,7 @@ class ErrorLine:
     indent: str
     error: ParseError
     view: str | None = None
+    context_issue: ContextIssue | None = None
     kind: Literal["error"] = field(default="error", init=False)
 
     @property
@@ -215,6 +236,10 @@ class ParseReport:
         for line in converted["lines"]:
             if line.get("view") is None:
                 line.pop("view", None)
+            if line.get("context_issue") is None:
+                line.pop("context_issue", None)
+            if line["kind"] == "error" and line["error"]["catalog_matches"] is None:
+                line["error"].pop("catalog_matches")
         return converted
 
 
