@@ -439,8 +439,8 @@ The mapping is defined in `comparison/parameter_types.py`:
 If both types are known and differ, the parameters are not linked. Numeric ranges
 and string lengths are not compared. Documentation `text` normalizes to `string`.
 `ipv6-prefix` and `ipv6-address` remain different categories.
-An unmapped device type or an explicit documentation `unknown` allows matching
-without a type check; this does not establish semantic compatibility.
+An unmapped device type, missing annotation or explicit documentation `unknown`
+allows matching without a type check; this does not establish semantic compatibility.
 Formats containing such parameters cannot prove view coverage or whole-format
 transitions. They remain in the result with their available bindings. An unknown
 competitor blocks selection of another view as the unique target.
@@ -451,13 +451,14 @@ Its choices are checked by the runtime parser, not compared by the matcher.
 Consequently that binding alone cannot prove hierarchy coverage. An empty
 `ENUM{}` is an invalid declaration.
 
-In v1 catalogs, `parameter_types` is required for every documentation command,
-including `[]` for commands without parameters. Exactly one entry per unique name
-is required: unsupported types, duplicates, missing names, and extra names raise
-`FormatError`. Documentation-to-documentation comparison uses annotations from both
-sides. Legacy `compile()`/`compile_formats()` inputs may omit this field, retaining
-matching without type checks. A supplied array is validated. `compare(doc, device)`
-accepts only strings and does not use external annotations.
+`parameter_types` is optional in documentation commands for both v1 catalogs and
+`compile()`/`compile_formats()` inputs. A supplied array may be empty or cover only
+some names: missing annotations mean unknown types. Known types still filter their
+own parameter correspondences. Unsupported types, malformed entries, duplicates,
+and references to absent parameters raise `FormatError`.
+Documentation-to-documentation comparison uses available annotations from both
+sides. Input records are not rewritten to insert `unknown` entries.
+`compare(doc, device)` accepts only strings and does not use external annotations.
 
 The check applies during structural matching and automaton traversal. If structure
 matches but types do not, search continues with branch reordering and then
@@ -466,7 +467,8 @@ paths. During prefix search, an incompatible parameter stops the shared trace.
 
 `slot_id`, original declarations, and device `type_id` are preserved. For example,
 `TEXT` is compared as `string`, but its result `type_id` remains `text`.
-In documentation slots, `type_id` contains the annotation from `parameter_types`.
+In documentation slots, `type_id` contains the annotation from `parameter_types`,
+or `null` when it was not supplied. `null` and `unknown` both mean no known type.
 Identical strings with different annotations are not merged in caches.
 
 After `prepare_catalogs()`, checked entries in `hierarchy.view_links` also expose

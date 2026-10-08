@@ -2,8 +2,8 @@
 
 from copy import deepcopy
 
+import pytest
 from test_format_matcher_catalogs import catalog, command, document
-from test_format_matcher_parameter_types import document as typed_document
 
 from scripts.corpus_pipeline.experiment import compatible_documentation
 from scripts.corpus_pipeline.hierarchy_diagnostics import hierarchy_diagnostics
@@ -16,7 +16,7 @@ def test_compatible_selection_retains_original_locations_and_empty_target_groups
         "views": {
             "Root": [
                 {"format": "enter", "parameter_types": [], "switch_to_view": "Child"},
-                {"format": "bad <id>", "parameter_types": []},
+                {"format": "untyped <id>", "parameter_types": []},
                 {
                     "format": "good <id>",
                     "parameter_types": [
@@ -37,16 +37,21 @@ def test_compatible_selection_retains_original_locations_and_empty_target_groups
     original = deepcopy(document)
     selected, audit = compatible_documentation(document)
     assert document == original
-    assert audit["origins"] == {"Root": [0, 2], "Child": []}
+    assert audit["origins"] == {"Root": [0, 1, 2], "Child": []}
     assert [(e["view"], e["index"]) for e in audit["excluded"]] == [
-        ("Root", 1),
         ("Child", 0),
     ]
     assert selected["views"]["Child"] == []
     assert selected["views"]["Root"][0]["switch_to_view"] == "Child"
 
 
-def test_hierarchy_report_distinguishes_ambiguity_partial_coverage_and_unknown_types():
+@pytest.mark.parametrize(
+    "annotations",
+    [None, [], [{"parameter_name": "id", "parameter_type": "unknown"}]],
+)
+def test_hierarchy_report_distinguishes_ambiguity_partial_coverage_and_unknown_types(
+    annotations,
+):
     device = catalog(
         "device",
         views={
@@ -56,6 +61,9 @@ def test_hierarchy_report_distinguishes_ambiguity_partial_coverage_and_unknown_t
             "other": [command("value X.X.X.X")],
         },
     )
+    record = {"format": "value <id>"}
+    if annotations is not None:
+        record["parameter_types"] = annotations
     docs = catalog(
         "documentation",
         views={
@@ -65,7 +73,7 @@ def test_hierarchy_report_distinguishes_ambiguity_partial_coverage_and_unknown_t
             ],
             "A": [document("rule <id>")],
             "B": [document("rule <id>"), document("absent")],
-            "C": [typed_document("value <id>", id="unknown")],
+            "C": [record],
         },
     )
     report = hierarchy_diagnostics(FormatMatcher().prepare_catalogs(device, docs), docs)

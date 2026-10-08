@@ -19,7 +19,7 @@ from .source import read_json, write_json
 
 
 def compatible_documentation(document):
-    """Keep the strict matcher contract; record every excluded source occurrence."""
+    """Keep the matcher contract; record every excluded source occurrence."""
     selected = deepcopy(document)
     exclusions, origins = [], {}
     for view, commands in document["views"].items():

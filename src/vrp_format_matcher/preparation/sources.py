@@ -101,13 +101,6 @@ class CommandCatalog:
                     raise FormatError(
                         f"{location}: v1 command IDs are generated internally"
                     )
-                if (
-                    source["source"] == "documentation"
-                    and "parameter_types" not in record
-                ):
-                    raise FormatError(
-                        f"{location}: documentation requires parameter_types"
-                    )
                 if source["source"] == "device" and "parameter_types" in record:
                     raise FormatError(f"{location}: device types belong in the format")
                 if "switch_to_view" in record:

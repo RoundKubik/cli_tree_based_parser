@@ -39,7 +39,7 @@ class DocumentParameterRecognizer:
 
 
 def declared_types(document: Mapping[str, Any]) -> dict[str, str]:
-    """Legacy inputs may omit types; an explicit list must be well formed."""
+    """Omitted types remain unknown; supplied entries must be well formed."""
     if "parameter_types" not in document:
         return {}
     records = document["parameter_types"]

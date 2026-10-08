@@ -12,7 +12,8 @@ not count as an established correspondence. This specification describes matcher
 inputs. The runtime parser accepts one prepared document with standard parameter
 declarations; for `type: grouped`, it uses known transitions, and unresolved
 transitions must be marked explicitly.
-It does not read documentation, type annotations, or mapping JSON. See
+It uses optional type annotations from that document and does not load a separate
+documentation catalog or mapping JSON. See
 [parser input](automaton-parser.md#input-document) for details.
 
 The offline `prepare_catalogs()` method accepts documentation with a recovered
@@ -60,7 +61,7 @@ variants. They describe the entire catalog and are preserved during processing.
 | Field | Value |
 |---|---|
 | `format` | Required: a nonempty original format string without a line break |
-| `parameter_types` | Required for `documentation`: an array of named parameter types; absent for `device` |
+| `parameter_types` | Optional for `documentation`: an array of named parameter types; absent for `device` |
 | `switch_to_view` | Only for `grouped`: a string, `null`, or `{"status": "unresolved"}`; may be omitted |
 | `creates`, `requires` | Optional: arrays of semantic objects from an external pipeline |
 | `metadata` | Optional: an object containing additional information |
@@ -120,8 +121,10 @@ Each entry contains `parameter_name`, the name without angle brackets, and
 `parameter_type`: `string`, `integer`, `ipv4-address`, `ipv6-address`, `ipv6-prefix`,
 `text`, `hex`, `mac`, `passwordex`, `date-slash`, `date-iso`, `month-day`, `date-us`,
 `datetime-slash`, `time-seconds`, `time`, or `unknown`.
-Every unique parameter name in `format` requires exactly one entry; extra names
-and duplicates are forbidden. Commands without parameters use an empty array: `[]`.
+The field may be omitted or cover only some parameter names. An omitted annotation
+means an unknown type, just like explicit `unknown`; an empty array is also valid.
+Extra names and duplicates are forbidden. Commands without parameters may omit the
+field or use an empty array: `[]`.
 If a name appears multiple times in the format, its type applies to every occurrence,
 but the occurrences retain distinct `slot_id` values. Use `unknown` when the source
 does not establish a supported category; do not silently replace it with `string`.
@@ -261,8 +264,9 @@ These examples illustrate the data structure, not a complete model of a specific
 - `vendor`, `device`, and `model_type` are present and contain nonempty strings.
 - `format` is checked against the grammar for its `source`. Strings are preserved
   without reformatting: parameter positions contribute to `slot_id` calculation.
-- For documentation, `parameter_types` covers all parameter names without duplicates;
-  types belong to the supported set above, including explicit `unknown`.
+- For documentation, supplied `parameter_types` entries reference existing parameter
+  names without duplicates; types belong to the supported set above, including
+  explicit `unknown`. Missing annotations are treated as unknown types.
 - `entry_view` and all string `switch_to_view` values reference existing groups.
   Misspelled structural fields, such as `switch_to_veiw`, must be detected.
 - Valid references do not prove that the extracted semantics are correct.

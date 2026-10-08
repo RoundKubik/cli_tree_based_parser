@@ -2,6 +2,10 @@
 
 from collections import Counter
 
+from vrp_format_matcher.documents.parameters import declared_types
+
+from .source import pattern_parameters
+
 
 def hierarchy_diagnostics(prepared, documentation):
     hierarchy = prepared.mapping.hierarchy
@@ -33,10 +37,13 @@ def hierarchy_diagnostics(prepared, documentation):
     unresolved_switches = {}
     for view, commands in documentation.get("views", {}).items():
         for index, command in enumerate(commands):
+            types = declared_types(command)
             names = tuple(
-                p["parameter_name"]
-                for p in command["parameter_types"]
-                if p["parameter_type"] == "unknown"
+                dict.fromkeys(
+                    node.declaration.name
+                    for node in pattern_parameters(command["format"])
+                    if types.get(node.declaration.name, "unknown") == "unknown"
+                )
             )
             if names:
                 record = unknown.setdefault(

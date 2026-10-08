@@ -102,8 +102,8 @@ An `enum` annotation alone is insufficient because it supplies no choices.
 
 Missing annotations and `unknown` preserve the unvalidated named behavior. Duplicate
 names, references to absent parameters, malformed lists, and unsupported types fail
-at construction. Unlike the strict matcher input, runtime annotations may cover only
-some parameters. Original formats, `pattern_id`, `slot_id`, and repetition coordinates
+at construction. Both the parser and matcher accept annotations covering only some
+parameters. Original formats, `pattern_id`, `slot_id`, and repetition coordinates
 are preserved, so existing offline mappings remain addressable.
 
 Specialized declarations take precedence: `<hh:mm>` is still validated as a time.
@@ -132,7 +132,8 @@ including `All views`. The checked-in `documentation_grouped.json` is a CloudEng
 v300r024c00 structural export with 282 views and 36,750 view/format records.
 Entries contain only `format`; the script does not infer `switch_to_view`,
 `parameter_types`, or command semantics. Prepare transitions before contextual
-parsing and supply parameter type annotations before using the strict matcher input.
+parsing. Parameter annotations improve type filtering in the matcher but may be
+incomplete or absent.
 The export itself does not establish a recovered hierarchy.
 
 ## Running the parser

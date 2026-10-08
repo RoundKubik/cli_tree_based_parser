@@ -49,11 +49,11 @@ class DocumentSource:
                 for node in parameters(ast)
                 if isinstance(node.declaration, NamedParameter)
             }
-            missing, extra = names - types.keys(), types.keys() - names
-            if missing or extra:
+            extra = types.keys() - names
+            if extra:
                 raise FormatError(
-                    f"parameter_types must cover format parameters exactly: "
-                    f"missing={sorted(missing)}, extra={sorted(extra)}"
+                    "parameter_types reference absent format parameters: "
+                    f"{sorted(extra)}"
                 )
         return DocumentFormat(
             document_id=document_id,

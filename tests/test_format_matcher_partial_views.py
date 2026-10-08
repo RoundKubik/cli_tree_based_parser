@@ -279,20 +279,29 @@ def test_unknown_device_type_blocks_uniqueness_but_keeps_bindings():
     assert result.catalog["views"]["r"][0]["switch_to_view"] == {"status": "unresolved"}
 
 
-def test_unknown_reference_type_keeps_the_format_without_proving_a_transition():
+@pytest.mark.parametrize(
+    "annotations",
+    [None, [], [{"parameter_name": "id", "parameter_type": "unknown"}]],
+)
+def test_unknown_reference_type_keeps_the_format_without_proving_a_transition(
+    annotations,
+):
     device = catalog(
         "device", views={"r": [command("enter")], "c": [command("rule INTEGER<1-9>")]}
     )
+    record = {"format": "rule <id>"}
+    if annotations is not None:
+        record["parameter_types"] = annotations
     docs = catalog(
         "documentation",
         views={
             "R": [{**document("enter"), "switch_to_view": "C"}],
-            "C": [typed_document("rule <id>", id="unknown")],
+            "C": [record],
         },
     )
     result = FormatMatcher().prepare_catalogs(device, docs)
     (pair,) = list(result.mapping.devices.values())[-1].mappings
-    assert pair.bindings[0].document.type_id == "unknown"
+    assert pair.bindings[0].document.type_id == ("unknown" if annotations else None)
     assert pair.bindings[0].device.slot_id == pair.bindings[0].document.slot_id == "p:5"
     saved = result.mapping.to_dict()
     assert saved["hierarchy"]["view_links"][-1]["coverage"] == "unknown"

@@ -445,8 +445,11 @@ The optional repeatable `--global-view` argument declares shared scopes in the
 grouped mock only. It does not infer a scope from its spelling, add runtime copies
 or change the flat output. Each declared scope must exist in the source corpus.
 
-The matcher experiment first checks the original annotations against the strict
-matcher contract. If any fail, it writes `input_validation.json` and stops. An
+The matcher experiment first validates supplied annotations. Missing annotations
+are accepted as unknown types and reported in `hierarchy_report.json` for grouped
+catalogs. Malformed entries, unsupported types, duplicate names and references to
+absent parameters still fail validation. If any fail, it writes
+`input_validation.json` and stops. An
 explicit `--compatible-only` run selects a separate documentation subset; it never
 changes types or fills missing annotations. `documentation_selection.json` records
 every excluded occurrence and maps the selected view/index back to the original.

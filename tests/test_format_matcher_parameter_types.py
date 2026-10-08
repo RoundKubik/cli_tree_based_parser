@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from dataclasses import asdict
 
 import pytest
@@ -128,10 +129,9 @@ def test_legacy_document_without_types_keeps_type_independent_matching():
         [{"parameter_name": "<x>", "parameter_type": "integer"}],
         [{"parameter_name": "extra", "parameter_type": "integer"}],
         [{"parameter_name": "x", "parameter_type": "integer"}] * 2,
-        [],
     ],
 )
-def test_invalid_or_incomplete_annotations_are_rejected(types):
+def test_malformed_or_invalid_annotations_are_rejected(types):
     with pytest.raises(FormatError, match="parameter|unsupported|duplicate"):
         FormatMatcher().compile_formats(
             ["c INTEGER<1-10>"], [{"format": "c <x>", "parameter_types": types}]
@@ -149,16 +149,85 @@ def test_empty_types_for_keywords_and_one_type_for_repeated_name():
     assert {b.document.slot_id for b in repeated.bindings} == {"p:2", "p:10"}
 
 
-def test_catalog_type_annotations_are_required_only_for_documentation():
-    device = catalog("device", [{"format": "c INTEGER<1-10>"}])
-    missing = catalog("documentation", [{"format": "c <id>"}])
-    with pytest.raises(FormatError, match="requires parameter_types"):
-        FormatMatcher().compile_catalogs(device, missing)
+def test_device_catalog_types_still_belong_in_the_format():
     with pytest.raises(FormatError, match="device types belong in the format"):
         FormatMatcher().compile_catalogs(
             catalog("device", [document("c INTEGER<1-10>")]),
             catalog("documentation", [document("c <id>", id="integer")]),
         )
+
+
+@pytest.mark.parametrize("grouped", [False, True])
+@pytest.mark.parametrize("annotations", [None, []])
+def test_catalogs_accept_absent_or_empty_types_without_losing_bindings(
+    grouped, annotations
+):
+    records = [{"format": "c <id>"}, {"format": "enable"}]
+    if annotations is not None:
+        records[0]["parameter_types"] = annotations
+    formats = ["c INTEGER<1-10>", "c X.X.X.X", "enable"]
+    commands = [{"format": pattern} for pattern in formats]
+    device = catalog("device", commands, {"root": commands} if grouped else None)
+    docs = catalog("documentation", records, {"R": records} if grouped else None)
+    original = deepcopy((device, docs))
+
+    result = FormatMatcher().compile_catalogs(device, docs)
+
+    assert (device, docs) == original
+    assert len(result.pairs) == 3
+    for pair in result.pairs[:2]:
+        assert pair.status == "equivalent"
+        assert pair.bindings[0].document.type_id is None
+        assert pair.bindings[0].document.name == "id"
+        assert (
+            pair.bindings[0].document.slot_id
+            == pair.bindings[0].device.slot_id
+            == "p:2"
+        )
+    assert result.pairs[2].bindings == ()
+
+
+def test_partial_types_keep_known_type_filtering_and_every_compatible_slot():
+    record = document("c <id> <value>", id="integer")
+    formats = [
+        "c INTEGER<1-10> STRING<1-20>",
+        "c INTEGER<1-10> X.X.X.X",
+        "c STRING<1-20> INTEGER<1-10>",
+    ]
+    matcher = FormatMatcher()
+    result = matcher.compile_catalogs(
+        catalog("device", [{"format": pattern} for pattern in formats]),
+        catalog("documentation", [record]),
+    )
+    assert [pair.device_format for pair in result.pairs] == formats[:2]
+    assert list(result.devices.values())[-1].status == "unmatched"
+    assert result.devices == matcher.compile_formats(formats, [record]).devices
+    explicit = matcher.compile_formats(
+        formats, [document(record["format"], id="integer", value="unknown")]
+    )
+    for pair, known_unknown in zip(result.pairs, explicit.pairs, strict=True):
+        assert pair.status == known_unknown.status == "equivalent"
+        assert [binding.document.type_id for binding in pair.bindings] == [
+            "integer",
+            None,
+        ]
+        assert [(b.document.slot_id, b.device.slot_id) for b in pair.bindings] == [
+            (b.document.slot_id, b.device.slot_id) for b in known_unknown.bindings
+        ]
+
+
+def test_doc_to_doc_accepts_partial_types_on_both_sides():
+    device = catalog("documentation", [document("c <x> <y>", x="integer")])
+    docs = catalog("documentation", [document("c <id> <value>", id="integer")])
+
+    (pair,) = FormatMatcher().compile_catalogs(device, docs).pairs
+
+    assert pair.status == "equivalent"
+    assert [(b.device.name, b.document.name) for b in pair.bindings] == [
+        ("x", "id"),
+        ("y", "value"),
+    ]
+    assert pair.bindings[1].device.type_id is pair.bindings[1].document.type_id is None
 
 
 @pytest.mark.parametrize("reverse", [False, True])
