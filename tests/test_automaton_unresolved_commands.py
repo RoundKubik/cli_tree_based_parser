@@ -2,9 +2,12 @@
 
 from dataclasses import asdict
 
+import pytest
+
 from vrp_parser_automaton import (
     CommandLineParser,
     ConfigurationParser,
+    ErrorCode,
     ErrorLine,
     MatchStatus,
     ParsedCommand,
@@ -114,3 +117,86 @@ def test_unique_foreign_entry_does_not_apply_its_declared_transition():
     assert report.lines[1].context_issue == report.lines[0].context_issue
     assert type(report.lines[2]) is ParsedCommand and report.lines[2].view == "root"
     assert report.summary.unresolved == 2
+
+
+@pytest.mark.parametrize("view", ["root", "selected"])
+@pytest.mark.parametrize("prefix", ["set ", ""])
+def test_current_view_generic_match_cannot_turn_validation_error_into_fallback(
+    view, prefix
+):
+    views = {"root": [{"format": "root-only"}]}
+    views[view] = [
+        {"format": prefix + "INTEGER<1-9>"},
+        {"format": prefix + "STRING<1-20>"},
+    ]
+    parser = CommandLineParser(
+        {"type": "grouped", "entry_view": "root", "views": views}
+    )
+    line = "  " + prefix + "10"
+    result = parser.parse(line, view=view)
+    flat = parser.parse_flat(line)
+
+    assert isinstance(result, ErrorLine)
+    assert result.view == view and result.context_issue is None
+    assert result.error.code == ErrorCode.VALIDATION_ERROR
+    assert result.error.failures == flat.error.failures
+    assert result.error.candidate_patterns == flat.error.candidate_patterns
+    assert "No complete match with valid parameters was found in other views" in (
+        result.error.message
+    )
+
+
+@pytest.mark.parametrize("foreign_type", ["STRING<1-20>", "TEXT<1-40>"])
+def test_current_view_matches_are_excluded_before_ranking_foreign_candidates(
+    foreign_type,
+):
+    parser = CommandLineParser(
+        {
+            "type": "grouped",
+            "entry_view": "root",
+            "views": {
+                "root": [
+                    {"format": "set INTEGER<1-9>"},
+                    {"format": "set STRING<1-20>"},
+                ],
+                "other": [{"format": "set " + foreign_type}],
+            },
+        }
+    )
+    result = parser.parse("  set 10", line_number=7)
+    expected = parser.parse("  set 10", view="other").primary_match
+
+    assert isinstance(result, UnresolvedCommand)
+    assert result.matches == (expected,)
+    assert result.status == MatchStatus.UNIQUE
+    assert result.context_issue.code == "outside_view"
+    assert result.context_issue.source_line == 7
+    assert result.parameters[0].slot_id == "p:4"
+    assert parser.child_view(result) is None
+    # Reusing the parser must not restrict explicit flat searches.
+    assert isinstance(parser.parse_flat("set 10"), ErrorLine)
+    assert parser.parse("set 5").primary_match.pattern_index == 0
+
+
+def test_unknown_context_still_searches_formats_from_the_parent_view():
+    parser = CommandLineParser(
+        {
+            "type": "grouped",
+            "entry_view": "root",
+            "views": {
+                "root": [
+                    {"format": "enter", "switch_to_view": {"status": "unresolved"}},
+                    {"format": "set INTEGER<1-9>"},
+                    {"format": "set STRING<1-20>"},
+                ]
+            },
+        }
+    )
+    report = ConfigurationParser(parser).parse("enter\n set 10\nset 10")
+    unknown, known = report.lines[1:]
+
+    assert isinstance(unknown, UnresolvedCommand)
+    assert unknown.context_issue.code == "unresolved_transition"
+    assert unknown.primary_match.pattern_index == 2
+    assert isinstance(known, ErrorLine)
+    assert known.error.code == ErrorCode.VALIDATION_ERROR

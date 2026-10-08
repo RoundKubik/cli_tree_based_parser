@@ -235,7 +235,7 @@ def test_named_parameters_keep_distinct_slots_and_repeat_coordinates() -> None:
     assert first.iterations != repeated.iterations
 
 
-def test_named_parameters_read_one_token_without_inferred_type_validation() -> None:
+def test_named_parameters_apply_declared_type_validation() -> None:
     parser = CommandLineParser(
         {
             "commands": [
@@ -249,6 +249,7 @@ def test_named_parameters_read_one_token_without_inferred_type_validation() -> N
         }
     )
 
-    assert isinstance(parser.parse("acl arbitrary-value"), ParsedCommand)
+    assert parser.parse("acl 001").parameters[0].normalized == 1
+    assert isinstance(parser.parse("acl arbitrary-value"), ErrorLine)
     assert isinstance(parser.parse("acl"), ErrorLine)
     assert isinstance(parser.parse("acl two values"), ErrorLine)

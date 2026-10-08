@@ -175,8 +175,10 @@ Types use parser built-in IDs: `string`, `integer`, `ipv4-address`, `ipv6-addres
 `month-day`, `date-us`, `datetime-slash`, `time-seconds`, and `time`.
 Unknown/union types use `unknown` with an issue, not a guessed `string`. The matcher
 accepts the same type set; `text` compares as `string`. `unknown` preserves the format
-and possible bindings, but cannot prove hierarchy. The runtime parser still ignores
-`parameter_types`; this change does not add annotation-based value validation.
+and possible bindings, but cannot prove hierarchy. The runtime parser also uses known
+`parameter_types` to validate named values without imposing undocumented numeric
+ranges or lengths. `unknown` keeps the unvalidated named behavior; `text` reads the
+remainder of the line. See the [parser contract](../../docs/reference/automaton-parser.md).
 
 Assembly completes omitted names with `unknown`, except when the source explicitly
 declares a string. Quoted strings are still strings; supporting their runtime reader

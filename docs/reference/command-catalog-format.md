@@ -135,7 +135,11 @@ The matcher maps built-in device declarations to these categories, comparing bot
 Different known types reject a parameter correspondence. Unmapped device types and
 explicit documentation `unknown` do not prevent a match, but supply no type proof.
 This check applies at every stage, including intersections and incomplete traces.
-The `parameter_types` field does not affect runtime value validation.
+The runtime parser also uses `parameter_types` to read and validate named parameters
+with the corresponding built-in validators, without numeric ranges or length bounds.
+`text` reads the remainder; `string` reads one token. Missing annotations and `unknown`
+retain the unvalidated named behavior. Explicit device declarations retain their
+original validators and bounds. See [runtime annotations](automaton-parser.md#input-document).
 
 `creates` and `requires` are preserved without evaluation. An omitted field means
 "no data"; an empty array means "no rules". Their internal structure is defined by

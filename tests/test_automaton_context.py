@@ -231,13 +231,13 @@ def test_external_mapping_keeps_global_ids_and_runtime_slot_locations():
 
 
 @pytest.mark.parametrize("source", ["device", "documentation", "external"])
-def test_annotations_never_change_pattern_syntax_or_validation(source):
+def test_annotations_preserve_explicit_device_syntax_and_ignore_semantics(source):
     data = {
         "source": source,
         "metadata": {"ignored": True},
         "commands": [
             {
-                "format": "set INTEGER<1-9>",
+                "format": "set INTEGER<1-9> <id>",
                 "parameter_types": [
                     {"parameter_name": "id", "parameter_type": "string"}
                 ],
@@ -247,10 +247,11 @@ def test_annotations_never_change_pattern_syntax_or_validation(source):
         ],
     }
     parser = CommandLineParser(data)
-    result = parser.parse("set 5")
+    result = parser.parse("set 5 label")
     assert isinstance(result, ParsedCommand)
     assert result.parameters[0].normalized == 5
-    assert isinstance(parser.parse("set not-an-integer"), ErrorLine)
+    assert isinstance(parser.parse("set not-an-integer label"), ErrorLine)
+    assert isinstance(parser.parse("set 10 label"), ErrorLine)
 
 
 def test_json_only_adds_a_known_view_and_keeps_existing_null_parameter_values():

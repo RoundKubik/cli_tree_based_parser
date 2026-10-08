@@ -24,6 +24,19 @@ class ViewMatchers:
         self._matchers: dict[str | None, CommandMatcher] = {
             None: CommandMatcher(graph, registry)
         }
+        self._outside_matchers: dict[str, CommandMatcher] = {}
+
+    def outside_view(self, view: str) -> CommandMatcher:
+        """Reuse the global graph, excluding only the selected view's entry points."""
+        if view not in self._starts:
+            raise ValueError(f"unknown view: {view!r}")
+        if view not in self._outside_matchers:
+            self._outside_matchers[view] = CommandMatcher(
+                self._graph,
+                self._registry,
+                excluded_starts=frozenset(self._starts[view]),
+            )
+        return self._outside_matchers[view]
 
     def for_view(self, view: str | None) -> CommandMatcher:
         if view not in self._matchers:

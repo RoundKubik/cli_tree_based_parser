@@ -48,7 +48,10 @@ class CommandLineParser:
         commands = tuple(command.format for command in catalog.commands)
         source_registry = parameter_types or default_parameter_registry()
         self._parameter_types = source_registry.clone().freeze()
-        self._graph = PatternCompiler(self._parameter_types).compile(commands)
+        self._graph = PatternCompiler(self._parameter_types).compile(
+            commands,
+            annotations=tuple(command.parameter_types for command in catalog.commands),
+        )
         self._entry_view = catalog.entry_view
         self._views = catalog.views
         self._pattern_views = tuple(command.view for command in catalog.commands)
@@ -142,7 +145,7 @@ class CommandLineParser:
         outcome = matcher.match(command, span_offset=indent_end, valid_only=valid_only)
         if isinstance(outcome, ParseError):
             if view is not None:
-                fallback = self._matchers.for_view(None).match(
+                fallback = self._matchers.outside_view(view).match(
                     command, span_offset=indent_end, valid_only=True
                 )
                 if isinstance(fallback, ResolvedMatch):

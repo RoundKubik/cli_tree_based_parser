@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from hashlib import sha256
 
@@ -12,6 +13,7 @@ from vrp_parser_automaton.parameters import (
     ParameterRegistryError,
     ParameterTypeRegistry,
 )
+from vrp_parser_automaton.parameters.annotations import AnnotatedDeclarations
 from vrp_parser_automaton.patterns import (
     PatternLanguageError,
     PatternParser,
@@ -47,8 +49,11 @@ class PatternFailure:
 class PatternSources:
     commands: tuple[str, ...]
     parameter_types: ParameterTypeRegistry
+    annotations: tuple[Mapping[str, str], ...] = ()
 
     def parsed(self) -> tuple[PatternSource, ...]:
+        if self.annotations and len(self.annotations) != len(self.commands):
+            raise ValueError("Parameter annotations must align with command formats")
         parser = PatternParser(self.parameter_types)
         policy = RuntimePatternPolicy()
         patterns = []
@@ -56,7 +61,13 @@ class PatternSources:
         occurrences: dict[str, int] = defaultdict(int)
         for index, original in enumerate(self.commands):
             try:
-                ast = parser.parse(original)
+                types = self.annotations[index] if self.annotations else {}
+                if types:
+                    declarations = AnnotatedDeclarations(self.parameter_types, types)
+                    ast = PatternParser(declarations).parse(original)
+                    declarations.validate()
+                else:
+                    ast = parser.parse(original)
                 policy.validate(ast, original)
             except (
                 PatternLanguageError,

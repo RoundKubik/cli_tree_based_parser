@@ -22,6 +22,7 @@ class CommandRecognition:
     parameter_types: ParameterTypeRegistry
     command: CommandText
     diagnostics: MatchDiagnostics
+    excluded_starts: frozenset[int] = frozenset()
 
     def candidates(self) -> tuple[Candidate, ...]:
         pending = PendingConfigurations()
@@ -50,7 +51,11 @@ class CommandRecognition:
         first = self.command.token(0)
         assert first is not None
         literals = self.automaton.literal_starts.get(ascii_lower(first.raw), ())
-        return tuple(dict.fromkeys((*literals, *self.automaton.parameter_starts)))
+        return tuple(
+            start
+            for start in dict.fromkeys((*literals, *self.automaton.parameter_starts))
+            if start not in self.excluded_starts
+        )
 
     def _accept(
         self, current: Configuration, pattern_index: int, candidates: list[Candidate]

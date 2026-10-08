@@ -64,20 +64,56 @@ with unknown transitions without these markers does not replace preparation.
 
 Supported declarations include `INTEGER<…>`, `STRING<…>`, `TEXT<…>`, IP addresses,
 and other registered types, as well as named parameters `<parameter-name>` in both
-flat and grouped catalogs. `NamedDeclarationRecognizer` recognizes `<name>`,
-`SingleTokenReader` reads one token, and `PassValidator` returns it without validation
-or conversion. The result retains `type_id="named"`, `declaration="<name>"`, `raw`,
-`normalized`, `span`, `slot_id`, and `iterations`. The name is available as
+flat and grouped catalogs. Without a type annotation, `NamedDeclarationRecognizer`
+recognizes `<name>`, `SingleTokenReader` reads one token, and `PassValidator` returns
+it without validation or conversion. The result retains `type_id="named"`,
+`declaration="<name>"`, `raw`, `normalized`, `span`, `slot_id`, and `iterations`.
+The name is available as
 `value.declaration[1:-1]`; the result has no extra `metadata` or `parameter_name` fields.
+
+Optional `parameter_types` on each command selects the existing type validators:
+
+```json
+{
+  "commands": [
+    {
+      "format": "acl <acl-number>",
+      "parameter_types": [
+        {"parameter_name": "acl-number", "parameter_type": "integer"}
+      ]
+    }
+  ]
+}
+```
+
+`acl 001` now yields `type_id="integer"`, `raw="001"`, and `normalized=1`;
+`acl invalid` fails validation. Annotations apply in both flat and grouped catalogs,
+including matches from unknown or foreign views. They are local to each command:
+the same name may have a different type in another command or view.
+
+Supported built-in annotations are `integer`, `string`, `text`, `ipv4-address`,
+`ipv6-address`, `ipv6-prefix`, `hex`, `mac`, `passwordex`, `date-slash`, `date-iso`,
+`month-day`, `date-us`, `datetime-slash`, `time-seconds`, and `time`. Registered custom
+value types can also be selected. The type controls reading, validation, dispatch
+priority, and normalization, without inventing numeric bounds or string lengths.
+`text` reads the rest of the line and must be terminal and non-repeated, like `TEXT`.
+`string` reads one non-whitespace token; quoting does not make it a multiword value.
+An `enum` annotation alone is insufficient because it supplies no choices.
+
+Missing annotations and `unknown` preserve the unvalidated named behavior. Duplicate
+names, references to absent parameters, malformed lists, and unsupported types fail
+at construction. Unlike the strict matcher input, runtime annotations may cover only
+some parameters. Original formats, `pattern_id`, `slot_id`, and repetition coordinates
+are preserved, so existing offline mappings remain addressable.
 
 Specialized declarations take precedence: `<hh:mm>` is still validated as a time.
 `TEXT<…>` reads the rest of the line, while numeric and other types are validated as
-before. `<text>` alone does not imply reading the rest of the line.
+before, including their declared bounds. `<text>` alone, without an annotation,
+does not imply reading the rest of the line.
 
 `vendor`, `device`, `model_type`, `source`, `schema_version`, `metadata`, and other
 descriptive fields can remain in the input file. The parser does not use them to
-select a grammar, check documentation semantics, or evaluate `parameter_types`,
-`creates`, or `requires`.
+select a grammar, check documentation semantics, or evaluate `creates` or `requires`.
 The strict [catalog specification v1](command-catalog-format.md) applies to the matcher;
 its header requirements do not apply to the runtime parser.
 
@@ -264,7 +300,9 @@ One error does not stop parsing subsequent lines.
 ### Context diagnostics
 
 When a command does not match in the selected view, the parser searches the global
-automaton using its entry index. A complete match with valid parameters produces an
+automaton using its entry index, excluding that view's formats before recognition
+and ranking. A valid generic format from the same view cannot turn its validation
+error into an outside-view match. A complete valid match in another view produces an
 `UnresolvedCommand`, with the best match in `primary_match` and equally ranked
 alternatives in `alternative_matches`. Existing specificity rules rank the valid
 matches; source order selects the representative among ties. A rejected format in
@@ -278,8 +316,8 @@ unconfirmed context. For dispatch, test this subclass before `ParsedCommand` whe
 the two cases need different handling. It uses the matched source pattern IDs;
 external mapping lookups can still retrieve their original source views.
 
-If no complete valid match exists anywhere, the result remains `ErrorLine` with the
-original scoped `unknown_command`, `syntax_error`, or `validation_error`, and scoped
+If no complete valid match exists in another view, the result remains `ErrorLine`
+with the original scoped `unknown_command`, `syntax_error`, or `validation_error`, and scoped
 suggestions. The compatibility field `error.catalog_matches` is empty in this case.
 This does not prove that a format is missing: the input may have a syntax or value
 error. Ordinary flat errors continue to omit that field.

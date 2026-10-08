@@ -16,10 +16,15 @@ from .resolution import MatchResolver, ResolvedMatch
 
 class CommandMatcher:
     def __init__(
-        self, automaton: CommandAutomaton, parameter_types: ParameterTypeRegistry
+        self,
+        automaton: CommandAutomaton,
+        parameter_types: ParameterTypeRegistry,
+        *,
+        excluded_starts: frozenset[int] = frozenset(),
     ) -> None:
         self._automaton = automaton
         self._parameter_types = parameter_types
+        self._excluded_starts = excluded_starts
         self._resolver = MatchResolver()
         self._errors = CommandErrorFactory(CommandSuggester(automaton, parameter_types))
 
@@ -32,6 +37,7 @@ class CommandMatcher:
             self._parameter_types,
             CommandText(text),
             diagnostics,
+            excluded_starts=self._excluded_starts,
         ).candidates()
         if valid_only:
             # A rejected format in one view must not hide a valid fallback in

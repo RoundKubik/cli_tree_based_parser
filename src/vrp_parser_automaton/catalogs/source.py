@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from vrp_parser_automaton.errors import PatternDocumentError
@@ -14,6 +14,27 @@ class CatalogCommand:
     format: str
     view: str | None
     child_view: str | None
+    parameter_types: Mapping[str, str] = field(default_factory=dict)
+
+
+def parameter_annotations(value: Any) -> dict[str, str]:
+    """Validate the optional per-command type list without requiring full coverage."""
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        raise PatternDocumentError("parameter_types must be an array")
+    result: dict[str, str] = {}
+    for annotation in value:
+        if not isinstance(annotation, Mapping):
+            raise PatternDocumentError("parameter_types entries must be objects")
+        name = annotation.get("parameter_name")
+        type_id = annotation.get("parameter_type")
+        if not isinstance(name, str) or not name.strip():
+            raise PatternDocumentError("parameter_name must be a nonempty string")
+        if not isinstance(type_id, str) or not type_id.strip():
+            raise PatternDocumentError("parameter_type must be a nonempty string")
+        if name in result:
+            raise PatternDocumentError(f"Duplicate parameter type annotation: {name!r}")
+        result[name] = type_id
+    return result
 
 
 @dataclass(frozen=True)
@@ -79,7 +100,12 @@ class PatternCatalog:
                         "switch_to_view must reference an existing view, be null "
                         'or be {"status": "unresolved"}'
                     )
-                commands.append(CatalogCommand(pattern, view, child_view))
+                annotations = parameter_annotations(
+                    record.get("parameter_types", ())
+                    if isinstance(record, Mapping)
+                    else ()
+                )
+                commands.append(CatalogCommand(pattern, view, child_view, annotations))
         if not commands:
             raise PatternDocumentError("commands cannot be empty")
         return cls(
