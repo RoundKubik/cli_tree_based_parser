@@ -12,12 +12,12 @@ from vrp_parser_automaton import (
     BlankLine,
     CommandLineParser,
     ConfigurationParser,
-    ErrorCode,
     ErrorLine,
     MatchStatus,
     ParsedCommand,
     PatternDocumentError,
     SeparatorLine,
+    UnresolvedCommand,
 )
 
 
@@ -44,13 +44,16 @@ def hierarchy():
     }
 
 
-def test_grouped_parsing_limits_recognition_and_suggestions_to_the_requested_view():
+def test_grouped_parsing_prefers_requested_view_and_marks_foreign_matches():
     parser = CommandLineParser(hierarchy())
     assert parser.parse("same").primary_match.pattern_index == 4
     assert parser.parse("same", view="child").primary_match.pattern_index == 7
     outside = parser.parse("child-only")
-    assert isinstance(outside, ErrorLine) and outside.view == "root"
-    assert "child-only" not in outside.error.suggestions
+    assert isinstance(outside, UnresolvedCommand) and outside.view is None
+    assert (
+        outside.primary_match == parser.parse("child-only", view="child").primary_match
+    )
+    assert outside.context_issue.code == "outside_view"
     with pytest.raises(ValueError, match="unknown view"):
         parser.parse("same", view="missing")
     # Source context matters even if the two formats have identical token languages.
@@ -60,7 +63,8 @@ def test_grouped_parsing_limits_recognition_and_suggestions_to_the_requested_vie
     assert parser.child_view(flat) is None
 
 
-def test_parameters_from_another_view_do_not_change_validation_or_slot_ids():
+@pytest.mark.parametrize("value", ["abc", "10"])
+def test_valid_parameters_from_another_view_keep_captures_and_slot_ids(value):
     data = catalog(
         "device",
         views={
@@ -69,14 +73,15 @@ def test_parameters_from_another_view_do_not_change_validation_or_slot_ids():
         },
     )
     parser = CommandLineParser(data)
-    result = parser.parse("set abc")
-    assert isinstance(result, ErrorLine)
-    assert {f.type_id for f in result.error.failures} == {"integer"}
-    assert result.error.code == ErrorCode.VALIDATION_ERROR
-    assert [match.view for match in result.error.catalog_matches] == ["child"]
-    allowed = parser.parse("set abc", view="child")
+    result = parser.parse(f"set {value}")
+    assert isinstance(result, UnresolvedCommand)
+    assert result.context_issue.code == "outside_view"
+    assert result.parameters[0].type_id == "string"
+    allowed = parser.parse(f"set {value}", view="child")
     assert isinstance(allowed, ParsedCommand)
     assert allowed.parameters[0].slot_id == "p:4"
+    assert result.primary_match == allowed.primary_match
+    assert parser.child_view(result) is None
 
 
 def test_nested_blocks_dedents_separators_blanks_and_new_sessions():
@@ -126,7 +131,8 @@ def test_explicit_unknown_transition_only_disables_context_in_its_child_block():
     ]
     assert report.lines[1].status == MatchStatus.AMBIGUOUS
     assert parser.child_view(report.lines[0]) is None
-    assert isinstance(parser.parse("child-only"), ErrorLine)
+    assert isinstance(parser.parse("child-only"), UnresolvedCommand)
+    assert all(isinstance(line, UnresolvedCommand) for line in report.lines[1:3])
 
 
 def test_manual_resolution_restores_context_without_a_mapping_file():
@@ -140,13 +146,16 @@ def test_manual_resolution_restores_context_without_a_mapping_file():
     assert report.lines[1].status == MatchStatus.UNIQUE
 
 
-def test_error_in_a_known_view_does_not_silently_retry_other_views():
+def test_foreign_match_does_not_change_the_context_of_siblings():
     report = ConfigurationParser(CommandLineParser(hierarchy())).parse(
         "enter\n leaf-only\n  root-only\n child-only"
     )
-    assert isinstance(report.lines[1], ErrorLine)
-    assert report.lines[1].view == "child"
+    assert isinstance(report.lines[1], UnresolvedCommand)
+    assert report.lines[1].view is None
+    assert report.lines[1].context_issue.code == "outside_view"
+    assert isinstance(report.lines[2], UnresolvedCommand)
     assert report.lines[2].view is None
+    assert report.lines[2].context_issue == report.lines[1].context_issue
     assert report.lines[3].view == "child"
 
 
@@ -318,7 +327,7 @@ def test_line_and_file_api_read_one_grouped_document(tmp_path):
     assert parser.child_view(parser.parse("child-only", view="child")) == "child"
 
 
-def test_context_diagnostics_keep_all_valid_formats_without_switching_views():
+def test_context_fallback_keeps_best_valid_formats_without_switching_views():
     data = hierarchy()
     data["views"]["child"].append({"format": "set INTEGER<1-9>"})
     data["views"]["leaf"].append({"format": "set <value>"})
@@ -326,22 +335,14 @@ def test_context_diagnostics_keep_all_valid_formats_without_switching_views():
 
     result = parser.parse("set 5")
 
-    assert isinstance(result, ErrorLine)
-    assert result.view == "root"
-    assert result.error.code == ErrorCode.UNKNOWN_COMMAND
-    matches = result.error.catalog_matches
-    assert [(match.view, match.format) for match in matches] == [
-        ("child", "set INTEGER<1-9>"),
-        ("leaf", "set <value>"),
-    ]
-    for match in matches:
-        accepted = parser.parse("set 5", view=match.view)
-        assert accepted.primary_match.pattern_id == match.pattern_id
-    assert result.error.message.isascii()
-    assert "Parsing failed in view 'root'" in result.error.message
-    assert "Complete matches exist in other views" in result.error.message
-    # Diagnostics retain the generic match even though normal resolution ranks it lower.
-    assert len(parser.parse_flat("set 5").matches) == 1
+    assert isinstance(result, UnresolvedCommand)
+    assert result.view is None
+    assert result.primary_match == parser.parse("set 5", view="child").primary_match
+    assert result.alternative_matches == ()
+    assert result.context_issue.message.isascii()
+    assert "Parsing failed in view 'root'" in result.context_issue.message
+    assert parser.child_view(result) is None
+    assert result.matches == parser.parse_flat("set 5").matches
 
 
 @pytest.mark.parametrize("line", ["set", "set 10", "set 5 extra", "absent"])
@@ -374,9 +375,9 @@ def test_unknown_context_keeps_its_origin_through_nested_successes_and_errors(
 
     report = parser.parse(f"{parent}\n child-only\n  absent\n   leaf-only\nroot-only")
 
-    assert isinstance(report.lines[1], ParsedCommand)
+    assert isinstance(report.lines[1], UnresolvedCommand)
     assert isinstance(report.lines[2], ErrorLine)
-    assert isinstance(report.lines[3], ParsedCommand)
+    assert isinstance(report.lines[3], UnresolvedCommand)
     issue = report.lines[1].context_issue
     assert issue.code == code and issue.source_line == 1
     assert issue.message.isascii()

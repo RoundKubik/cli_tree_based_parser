@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from vrp_format_matcher.models import PreparedMapping, PreparedPair
 
@@ -15,16 +15,31 @@ from .models import DocumentTransition
 
 @dataclass(frozen=True)
 class RecoveredViews:
-    views: dict[str, str]
+    references: dict[str, tuple[str, ...]]
     transitions: dict[str, str | None]
     unresolved: tuple[str, ...]
+    coverage: dict[tuple[str, str], str] = field(default_factory=dict)
+
+    @property
+    def views(self) -> dict[str, str]:
+        """Keep the public single-reference index for unambiguous source scopes."""
+        return {v: refs[0] for v, refs in self.references.items() if len(refs) == 1}
+
+    @property
+    def targets(self) -> dict[str, str]:
+        by_document: dict[str, list[str]] = defaultdict(list)
+        for view, references in self.references.items():
+            for reference in references:
+                by_document[reference].append(view)
+        return {ref: views[0] for ref, views in by_document.items() if len(views) == 1}
 
 
 class HierarchyRecovery:
-    """The reference hierarchy is complete; omitted reference switches mean stay.
+    """Reference records have known effects; the command inventory may be partial.
 
-    This is a structural reconstruction under the full-coverage criterion, not
-    proof of device behaviour. Partial bindings never establish a transition.
+    Omitted reference switches mean stay; explicit unknowns remain unknown.
+    Sample coverage is structural evidence, not proof of device behaviour.
+    Partial bindings never establish a whole-format transition.
     Explicit target transitions remain authoritative, including unmatched ones.
     """
 
@@ -41,6 +56,7 @@ class HierarchyRecovery:
         self._mapping = mapping
         self._languages = languages
         self._hierarchy = mapping.hierarchy
+        self._shared = tuple(documentation.sources.info.get("shared_views", ()))
         self._declared = dict(mapping.hierarchy.declared_transitions)
         if device.sources.info["source"] == "documentation":
             # Both documentation inputs are prepared hierarchies in this API.
@@ -63,49 +79,51 @@ class HierarchyRecovery:
                 self._pairs[identifier, view].append(pair)
 
     def recover(self) -> RecoveredViews:
-        views = ViewCoverage(
+        assessment = ViewCoverage(
             self._device, self._documentation, self._mapping, self._languages
-        ).unique_pairs()
+        ).assess()
+        references = assessment.references
         root = self._hierarchy.device_entry_view
         reference_root = self._hierarchy.documentation_entry_view
         # An entry view is an explicit anchor, even if its inventory differs.
-        views = {
-            left: right
-            for left, right in views.items()
-            if left != root and right != reference_root
-        }
         anchored, rejected = self._follow_declared({root: reference_root})
-        views = {v: d for v, d in views.items() if v not in rejected}
-        views.update(anchored)
-        views, _ = self._follow_declared(views, frozenset(anchored))
-
-        by_document: dict[str, list[str]] = defaultdict(list)
-        for left, right in views.items():
-            by_document[right].append(left)
+        references = {v: refs for v, refs in references.items() if v not in rejected}
+        references.update({v: (ref,) for v, ref in anchored.items()})
+        # Only a single reference can propagate an already declared device edge.
+        # An inferred edge is never reused as independent evidence for a view.
+        followed, rejected = self._follow_declared(
+            {v: refs[0] for v, refs in references.items() if len(refs) == 1},
+            frozenset(anchored),
+        )
+        references = {v: refs for v, refs in references.items() if v not in rejected}
+        references.update({v: (ref,) for v, ref in followed.items()})
+        targets = RecoveredViews(references, {}, ()).targets
         transitions = dict(self._declared)
         unresolved = []
         for identifier, location in self._device.sources.entries.items():
             if identifier in transitions:
                 continue
-            reference = views.get(location.view or "")
-            if reference is not None:
-                effects = self._effects(identifier, reference)
-                if len(effects) == 1:
-                    target = next(iter(effects))
-                    if target is None or target == reference:
-                        transitions[identifier] = None
-                        continue
-                    candidates = by_document.get(target, [])
-                    if len(candidates) == 1:
-                        transitions[identifier] = candidates[0]
+            refs = references.get(location.view or "", ())
+            effects = [self._effects(identifier, ref) for ref in refs]
+            if effects and all(len(effect) == 1 for effect in effects):
+                documented = {next(iter(effect)) for effect in effects}
+                if all(target is None or target in targets for target in documented):
+                    resolved = {
+                        targets[t] if t is not None else None for t in documented
+                    }
+                    if len(resolved) == 1:
+                        transitions[identifier] = next(iter(resolved))
                         continue
             unresolved.append(identifier)
-        return RecoveredViews(views, transitions, tuple(unresolved))
+        return RecoveredViews(
+            references, transitions, tuple(unresolved), assessment.checks
+        )
 
     def _effects(self, identifier: str, view: str) -> set[str | None]:
         pairs = tuple(
             pair
-            for pair in self._pairs.get((identifier, view), ())
+            for scope in dict.fromkeys((view, *self._shared))
+            for pair in self._pairs.get((identifier, scope), ())
             if pair.stage != "prefix"
         )
         if not pairs or not self._languages.known(identifier):

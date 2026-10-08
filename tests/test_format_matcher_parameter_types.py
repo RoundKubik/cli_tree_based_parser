@@ -60,18 +60,49 @@ def test_supported_categories_filter_bindings_but_preserve_original_types(
 @pytest.mark.parametrize(
     "declaration,type_id", [("H-H-H", "mac"), ("HEX<0-ff>", "hex")]
 )
-def test_unmapped_device_type_is_not_assumed_to_be_string(
+def test_supported_mac_and_hex_exclude_other_known_categories(
     doc_type, declaration, type_id
 ):
-    pair = (
-        FormatMatcher()
-        .compile_formats(
-            ["c " + declaration], [document("c <address>", address=doc_type)]
-        )
-        .pairs[0]
+    result = FormatMatcher().compile_formats(
+        ["c " + declaration], [document("c <address>", address=doc_type)]
     )
-    assert pair.stage == "exact"
-    assert pair.bindings[0].device.type_id == type_id
+    assert result.pairs == ()
+
+
+@pytest.mark.parametrize(
+    "declaration,type_id",
+    [
+        ("TEXT<1-100>", "text"),
+        ("X:X::X:X/M", "ipv6-prefix"),
+        ("H-H-H", "mac"),
+        ("HEX<0-ff>", "hex"),
+        ("PASSWORDEX<1-10>", "passwordex"),
+        ("YYYY/MM/DD", "date-slash"),
+        ("YYYY-MM-DD", "date-iso"),
+        ("MM-DD", "month-day"),
+        ("MM-DD-YYYY", "date-us"),
+        ("YYYY/MM/DD,HH:MM:SS", "datetime-slash"),
+        ("HH:MM:SS", "time-seconds"),
+        ("<hh:mm>", "time"),
+    ],
+)
+def test_extended_types_preserve_annotations_and_slots(declaration, type_id):
+    result = FormatMatcher().compile_formats(
+        ["c " + declaration], [document("c <value>", value=type_id)]
+    )
+    (pair,) = result.pairs
+    assert pair.status == "equivalent"
+    assert pair.bindings[0].document.type_id == type_id
+    assert pair.bindings[0].device.slot_id == "p:2"
+
+
+def test_ipv6_prefix_and_address_are_distinct_categories():
+    result = FormatMatcher().compile_formats(
+        ["c X:X::X:X", "c X:X::X:X/M"],
+        [document("c <value>", value="ipv6-prefix")],
+    )
+    assert len(result.pairs) == 1
+    assert result.pairs[0].device_format == "c X:X::X:X/M"
 
 
 def test_legacy_document_without_types_keeps_type_independent_matching():

@@ -1,0 +1,317 @@
+{
+  "type": "object",
+  "properties": {
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "format_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "switch_to_view": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "switch_evidence": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "parameter_types": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "parameter_name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "parameter_type": {
+                  "enum": [
+                    "date-iso",
+                    "date-slash",
+                    "date-us",
+                    "datetime-slash",
+                    "hex",
+                    "integer",
+                    "ipv4-address",
+                    "ipv6-address",
+                    "ipv6-prefix",
+                    "mac",
+                    "month-day",
+                    "passwordex",
+                    "string",
+                    "text",
+                    "time",
+                    "time-seconds",
+                    "unknown"
+                  ]
+                }
+              },
+              "required": [
+                "parameter_name",
+                "parameter_type"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "creates": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "entity"
+                    },
+                    "entity_type": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "parameter_name": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "entity_type",
+                    "parameter_name"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "entity"
+                    },
+                    "entity_type": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "parameter_comb": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "minItems": 2
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "entity_type",
+                    "parameter_comb"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "entity"
+                    },
+                    "entity_type": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "entity_type"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "command"
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "format": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "context": {
+                      "enum": [
+                        "system",
+                        "current",
+                        "unresolved"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "name",
+                    "format",
+                    "context"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "requires": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "entity"
+                    },
+                    "entity_type": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "parameter_name": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "entity_type",
+                    "parameter_name"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "entity"
+                    },
+                    "entity_type": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "parameter_comb": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "minItems": 2
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "entity_type",
+                    "parameter_comb"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "entity"
+                    },
+                    "entity_type": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "entity_type"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "command"
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "format": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "context": {
+                      "enum": [
+                        "system",
+                        "current",
+                        "unresolved"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "name",
+                    "format",
+                    "context"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "enum": [
+                    "switch_to_view",
+                    "parameter_types",
+                    "creates",
+                    "requires"
+                  ]
+                },
+                "message": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "field",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "format_index",
+          "description",
+          "switch_to_view",
+          "switch_evidence",
+          "parameter_types",
+          "creates",
+          "requires",
+          "issues"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "commands"
+  ],
+  "additionalProperties": false
+}

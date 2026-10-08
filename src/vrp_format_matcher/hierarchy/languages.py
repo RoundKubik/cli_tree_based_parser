@@ -48,6 +48,10 @@ class FormatCoverage:
     def known(self, identifier: str) -> bool:
         return self._known[self._ids[identifier]]
 
+    def identity(self, identifier: str) -> int:
+        """Internal typed structure identity, independent of names and source slots."""
+        return self._ids[identifier]
+
     def covers(self, subject: str, alternatives: Iterable[str]) -> bool | None:
         """True proves coverage; False finds an exception; None lacks data or budget."""
         source = self._ids[subject]

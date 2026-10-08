@@ -144,15 +144,13 @@ python3.13 manual_format_matcher_test.py \
 ```
 
 This mode calls `prepare_catalogs()` and treats the documentation hierarchy as
-complete: an omitted documentation transition means context preservation.
-For the current mock, 11 view pairs are established; 19 commands have an unknown
-context effect: two ACL entry commands, entry into the missing device RIP view, and
-commands from two ACL groups that could not be distinguished. The prepared catalog
-remains `grouped`: these 19 records contain `"switch_to_view": {"status": "unresolved"}`,
-while the other transitions are preserved. The final mapping contains 166 pairs
-after restricting established contexts. Documentation → documentation produces a
-`grouped` catalog, 13 view correspondences, and 167 pairs. This is structural recovery,
-without confirmation on a real device.
+prepared: an omitted documentation transition means context preservation, but the
+command inventory may be incomplete. View recovery requires one device view to
+cover the available documentation sample; additional device commands are allowed.
+The prepared catalog remains `grouped`, and unresolved command effects receive
+`"switch_to_view": {"status": "unresolved"}`. The summary reports the current view,
+transition and pair counts. This is structural recovery without confirmation on
+a real device; see the [recovery rules](../../../docs/reference/automaton-format-matcher.md).
 
 ## Running the parser on mocks
 

@@ -35,6 +35,7 @@ from .results import (
     PatternMatch,
     SeparatorLine,
     TextSpan,
+    UnresolvedCommand,
     ValidationFailure,
     VariationStep,
 )
@@ -70,6 +71,7 @@ __all__ = [
     "PatternIssue",
     "PatternMatch",
     "TextSpan",
+    "UnresolvedCommand",
     "ValidationFailure",
     "VariationStep",
     "default_parameter_registry",

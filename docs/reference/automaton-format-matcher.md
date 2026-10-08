@@ -14,14 +14,18 @@ including parameter-dependent targets without a single transition, must be marke
 explicitly with `"switch_to_view": {"status": "unresolved"}`.
 In the original grouped device input, an omitted field still means unknown.
 For documentation → documentation, both inputs are treated as prepared hierarchies.
+The reference may contain only a sample of commands: prepared transition annotations
+do not require a complete command inventory.
 
 ```python
 prepared = FormatMatcher().prepare_catalogs(device, documentation)
 Path("runtime_catalog.json").write_text(
-    json.dumps(prepared.catalog, ensure_ascii=False), encoding="utf-8",
+    json.dumps(prepared.catalog, ensure_ascii=False),
+    encoding="utf-8",
 )
 Path("mapping.json").write_text(
-    json.dumps(prepared.mapping.to_dict(), ensure_ascii=False), encoding="utf-8",
+    json.dumps(prepared.mapping.to_dict(), ensure_ascii=False),
+    encoding="utf-8",
 )
 print(prepared.catalog["type"], len(prepared.unresolved))
 ```
@@ -35,14 +39,17 @@ not be confirmed.
 Processing order:
 
 1. Match formats and check parameter type categories.
-2. Find mutual view coverage: each format is fully covered by the language of formats
-   on the other side. Existing `equivalent`, `device_subset`, and `document_subset`
-   proofs are used first. If no individual format provides coverage, check inclusion
-   in the union of automata for suitable formats **from the same view**. This check
-   runs in both directions; prefixes do not prove coverage of complete commands.
-3. Select only a correspondence that is unique in both directions. A competing view
-   fully included in another set also blocks selection. Empty groups alone do not
-   establish correspondence. View names, weights, and match counts are not used.
+2. Require a device view to cover every local format in the documentation sample.
+   Extra device commands are allowed. Existing `equivalent` and `document_subset`
+   proofs are used first; otherwise check inclusion in the union of suitable device
+   formats **from the same view**. Prefix matches do not prove full coverage.
+   Explicit `shared_views` and copies of their typed formats are excluded from view
+   identification. The entry pair is an anchor, not a competing candidate.
+3. Select a target only when exactly one device view covers that sample and no
+   competitor has unknown coverage. Several documentation groups may refer to the
+   same device group; all their mappings are retained. Empty or shared-only samples
+   supply no identity. View names, weights and match counts are not used. Missing
+   coverage retains the existing partial evidence without promoting a target.
 4. Propagate explicitly known transitions from the entry view pair. They distinguish
    identical command sets in documentation → documentation and when device transitions
    are already known. Conflicting paths are not selected by traversal order. Relations
@@ -52,16 +59,21 @@ Processing order:
    applicable full pairs have one documented effect, and the target is unambiguous.
    Coverage may be collective: several documentation records with the same effect
    can cover the entire format together. A conflict, even with a partial or still
-   unresolved match, prevents a format-wide `switch_to_view`.
+   unresolved match, prevents a format-wide `switch_to_view`. When a device scope
+   has several documentation references, each must establish a whole-format effect
+   and those effects must resolve to the same runtime destination. Missing evidence
+   in one reference does not imply a stay.
 6. Restrict the final pairs to established views. Full pairs and their bindings are
    reused; if restriction removes a full match, run prefix fallback within the
    allowed view.
 
 For example, `c { a | b } <id>` is covered by `c a <first>` and `c b <second>` when
 parameter types agree. Both original pairs, their bindings, and their applicability
-scopes are preserved. The collective check additionally proves that no commands
-remain uncovered. Coverage is not confirmed if a branch, an allowed omission of an
-optional part, or a `{}*` permutation is missing.
+scopes are preserved. For transition transfer the collective check must prove that
+no device commands remain uncovered: a missing branch, optional omission or `{}*`
+permutation prevents assigning an effect to the entire device format. Such extra
+device routes do not prevent identification of the containing view from a smaller
+documentation sample.
 
 The union does not copy graphs or enumerate routes: traversal keeps the source
 automaton ID and its current states with repetition registers. States from different
@@ -78,7 +90,24 @@ context effect.
 This recovers a hierarchy using the agreed structural criterion; it does not confirm
 device behavior. Numeric ranges and string lengths are still not compared.
 In JSON, `hierarchy.resolved_views` contains device-view → documentation-view
-relations; unresolved views retain global candidates.
+relations with a single reference. When several documentation groups map to one
+device view, `hierarchy.targets` retains each resolved target and `view_links`
+retains the corresponding pair references. No documentation group is selected by
+order. Unresolved views retain their positive candidates.
+
+For example, a sample containing `server enable` and an IPv4 `source-ip` format
+can identify an IPv4 server scope even when the device has additional commands.
+Removing `source-ip` may leave both IPv4 and IPv6 scopes possible. Resolving one
+scope never assigns another by elimination. If syntax differs between releases,
+even one-sided full coverage can fail; partial matches remain available, but are
+not silently discarded to manufacture uniqueness.
+
+The optional grouped-catalog field `"shared_views": ["common-scope-id"]` declares
+shared scopes explicitly. Names are local references and have no built-in meaning.
+Shared formats remain available to scoped matching and effect checks; declarations
+do not add or reorder command records. This field does not implement parser global
+inheritance: a runtime producer must still place commands in their usable views,
+as the documentation recovery pipeline does. Without the field, scopes are ordinary.
 
 The prepared grouped catalog preserves **original device view IDs**, groups, and
 known transitions. Documentation names are not copied into the device catalog.
@@ -128,17 +157,20 @@ from pathlib import Path
 from vrp_format_matcher import FormatMatcher
 
 formats = ["vlan { INTEGER<1-4096> [ to INTEGER<1-4096> ] } &<1-10>"]
-documents = [{
-    "id": "vlan-range",
-    "format": "vlan { <first> [ to <last> ] } &<1-10>",
-    "parameter_types": [
-        {"parameter_name": "first", "parameter_type": "integer"},
-        {"parameter_name": "last", "parameter_type": "integer"},
-    ],
-}]
+documents = [
+    {
+        "id": "vlan-range",
+        "format": "vlan { <first> [ to <last> ] } &<1-10>",
+        "parameter_types": [
+            {"parameter_name": "first", "parameter_type": "integer"},
+            {"parameter_name": "last", "parameter_type": "integer"},
+        ],
+    }
+]
 result = FormatMatcher().compile_formats(formats, documents)
 Path("mapping.json").write_text(
-    json.dumps(result.to_dict(), ensure_ascii=False), encoding="utf-8",
+    json.dumps(result.to_dict(), ensure_ascii=False),
+    encoding="utf-8",
 )
 ```
 
@@ -166,7 +198,8 @@ data = result.to_dict()
 
 Matching considers structure, type compatibility, and the **entry view pair**.
 If both catalogs have `type="grouped"`, a command from `device.entry_view` searches
-for documentation only within `documentation.entry_view`. These groups may have
+for documentation within `documentation.entry_view` and declared `shared_views`.
+These groups may have
 different names; the initial pair is defined by `entry_view`, not names such as
 `system`/`System view` or the order of groups in JSON.
 
@@ -180,7 +213,7 @@ documentation, GRPC server view: acl <acl-number>
 
 With `documentation.entry_view="System view"`, the intersection with the first record
 is selected. The exact gRPC match does not participate in the search. If nothing is
-found in the entry view, or it is empty, the search does not expand to other views.
+found in these scopes, the search does not expand to other concrete views.
 
 Context correspondence is still unknown for other device views, so the entire
 documentation catalog is searched. Search is also global if at least one catalog is
@@ -211,7 +244,8 @@ locations. Input v1 records do not contain `id`.
 pair = result.pairs[0]
 location = data["documents"][pair.document_id]["source"]
 records = (
-    documentation["commands"] if location["view"] is None
+    documentation["commands"]
+    if location["view"] is None
     else documentation["views"][location["view"]]
 )
 source_command = records[location["index"]]
@@ -393,10 +427,29 @@ The mapping is defined in `comparison/parameter_types.py`:
 | `TEXT<min-max>` | `string` |
 | `X.X.X.X` | `ipv4-address` |
 | `X:X::X:X` | `ipv6-address` |
+| `X:X::X:X/M` | `ipv6-prefix` |
+| `HEX<min-max>` | `hex` |
+| `H-H-H` | `mac` |
+| `PASSWORDEX<min-max>` | `passwordex` |
+| `YYYY/MM/DD`, `YYYY-MM-DD` | `date-slash`, `date-iso` |
+| `MM-DD`, `MM-DD-YYYY` | `month-day`, `date-us` |
+| `YYYY/MM/DD,HH:MM:SS` | `datetime-slash` |
+| `HH:MM:SS`, `<hh:mm>` | `time-seconds`, `time` |
 
 If both types are known and differ, the parameters are not linked. Numeric ranges
-and string lengths are not compared. An unknown device type allows matching without
-a type check; this does not establish semantic compatibility.
+and string lengths are not compared. Documentation `text` normalizes to `string`.
+`ipv6-prefix` and `ipv6-address` remain different categories.
+An unmapped device type or an explicit documentation `unknown` allows matching
+without a type check; this does not establish semantic compatibility.
+Formats containing such parameters cannot prove view coverage or whole-format
+transitions. They remain in the result with their available bindings. An unknown
+competitor blocks selection of another view as the unique target.
+
+`ENUM{...}` currently falls into this unmapped category: a nonempty enumeration
+can bind to a documented `string`, with its original `enum` slot type retained.
+Its choices are checked by the runtime parser, not compared by the matcher.
+Consequently that binding alone cannot prove hierarchy coverage. An empty
+`ENUM{}` is an invalid declaration.
 
 In v1 catalogs, `parameter_types` is required for every documentation command,
 including `[]` for commands without parameters. Exactly one entry per unique name
@@ -415,6 +468,14 @@ paths. During prefix search, an incompatible parameter stops the shared trace.
 `TEXT` is compared as `string`, but its result `type_id` remains `text`.
 In documentation slots, `type_id` contains the annotation from `parameter_types`.
 Identical strings with different annotations are not merged in caches.
+
+After `prepare_catalogs()`, checked entries in `hierarchy.view_links` also expose
+`coverage`: `covered` means that the device view covers the local documentation
+sample, `partial` means that it does not, and `unknown` means that types or analysis
+limits prevented a conclusion. These are not confidence scores. Multiple covered
+views remain alternatives. A candidate may have no completed bindings when its
+comparison exceeded a limit. `compile_catalogs()` does not run these proofs and
+therefore omits `coverage`.
 
 ## Result schema
 
@@ -538,8 +599,12 @@ for match in parsed.matches:
         for binding in pair["bindings"]:
             slot = document["slots"][binding["document"]]
             for value in values_by_slot[binding["device"]]:
-                print(pair["document_id"], slot["name"],
-                      value.normalized, value.iterations)
+                print(
+                    pair["document_id"],
+                    slot["name"],
+                    value.normalized,
+                    value.iterations,
+                )
 ```
 
 The result is `first=10` and `last=20` in iteration 0, and `first=30` in iteration 1.

@@ -1,0 +1,53 @@
+[
+  {
+    "name": "acl_grpc",
+    "lines": [
+      "acl 2018", " description sample", "#",
+      "grpc", " grpc server", "  acl 2018", "  source-ip 192.0.2.1 vpn-instance blue",
+      "  server enable", " grpc server ipv6", "  acl 2018",
+      "  source-ip 2001:db8::1 vpn-instance blue", "  server enable", "#",
+      "vlan 10", " description sample"
+    ],
+    "views": {
+      "1": "System view", "2": "ACL view", "4": "System view",
+      "5": "GRPC view", "6": "GRPC server view", "7": "GRPC server view",
+      "8": "GRPC server view", "9": "GRPC view", "10": "GRPC IPv6 server view",
+      "11": "GRPC IPv6 server view", "12": "GRPC IPv6 server view",
+      "14": "System view", "15": "VLAN view"
+    }
+  },
+  {
+    "name": "bgp_families",
+    "lines": [
+      "bgp 65000", " ipv4-family unicast", "  peer 192.0.2.2 enable",
+      " ipv6-family unicast", "  peer 192.0.2.2 enable"
+    ],
+    "views": {
+      "1": "System view", "2": "BGP view",
+      "3": "BGP-IPv4 unicast address family view", "4": "BGP view",
+      "5": "BGP-IPv6 unicast address family view"
+    }
+  },
+  {
+    "name": "interface_fallback",
+    "lines": [
+      "interface 10GE1/0/1", " description sample", " shutdown",
+      " port link-type trunk", " port trunk allow-pass vlan 10 to 20 30", "#", "vlan 20"
+    ],
+    "views": {"1": "System view", "7": "System view"}
+  },
+  {
+    "name": "vpn_families",
+    "lines": [
+      "ip vpn-instance blue", " ipv4-family", "  route-distinguisher 65000:1",
+      "  vpn-target 65000:1 export-extcommunity", " ipv6-family",
+      "  route-distinguisher 65000:2", "#", "vlan 30"
+    ],
+    "views": {
+      "1": "System view", "2": "VPN instance view",
+      "3": "VPN instance IPv4 address family view",
+      "4": "VPN instance IPv4 address family view", "5": "VPN instance view",
+      "8": "System view"
+    }
+  }
+]

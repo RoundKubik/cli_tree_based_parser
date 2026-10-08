@@ -2,8 +2,9 @@
 
 The matcher accepts these containers through `compile_catalogs()`, checks parameter
 type compatibility, and preserves source record locations. For two grouped catalogs,
-commands from the device's entry view are searched only in the documentation's entry
-view. Other views and flat catalogs retain a global search for all full matches,
+commands from the device's entry view are searched in the documentation's entry
+view and explicitly shared scopes. Other views and flat catalogs retain a global
+search for all full matches,
 without scoring or selecting view correspondences. For two grouped catalogs, the
 result also contains `hierarchy`: command and view relations, possible transition
 targets, and explicit transitions from the target catalog. A single candidate does
@@ -32,6 +33,7 @@ Recovery rules and a usage example are described in the
 | `commands` | For `flat`: a nonempty array of command objects |
 | `views` | For `grouped`: an object mapping view names/IDs to arrays of command objects |
 | `entry_view` | For `grouped`: the initial view, an exact reference to a `views` key |
+| `shared_views` | Optional for `grouped`: distinct existing view keys declaring shared commands; cannot include `entry_view` |
 | `vendor` | Required: manufacturer, such as `Huawei` |
 | `device` | Required: platform/OS, such as `Huawei VRP` |
 | `model_type` | Required: model or family, such as `CloudEngine` |
@@ -40,10 +42,15 @@ Recovery rules and a usage example are described in the
 
 `source` identifies the origin and parameter profile; `type` defines the catalog
 layout. `commands` and `views` are mutually exclusive. A `flat` catalog has no
-`entry_view`. A grouped catalog must contain at least one command; an individual
+`entry_view` or `shared_views`. A grouped catalog must contain at least one command; an individual
 view may contain an empty array. Unknown transitions in the original device
 catalog may be represented by omitting `switch_to_view`. Prepared documents require
 an explicit marker instead; a separate global `hierarchy_status` is not needed.
+
+Shared scopes and copies of their typed formats do not identify concrete device
+views. They remain available to scoped matching. No scope name is special without
+this declaration. The field does not change parser inheritance or add command
+copies. An absent field means no scopes have been declared shared.
 
 `vendor`, `device`, and `model_type` are nonempty strings required in all four v1
 variants. They describe the entire catalog and are preserved during processing.
@@ -110,17 +117,23 @@ names: `<acl-number>`. The matcher's current documentation profile treats
 
 Documentation parameter types are specified separately in `parameter_types`.
 Each entry contains `parameter_name`, the name without angle brackets, and
-`parameter_type`, one of `string`, `integer`, `ipv4-address`, or `ipv6-address`.
+`parameter_type`: `string`, `integer`, `ipv4-address`, `ipv6-address`, `ipv6-prefix`,
+`text`, `hex`, `mac`, `passwordex`, `date-slash`, `date-iso`, `month-day`, `date-us`,
+`datetime-slash`, `time-seconds`, `time`, or `unknown`.
 Every unique parameter name in `format` requires exactly one entry; extra names
 and duplicates are forbidden. Commands without parameters use an empty array: `[]`.
 If a name appears multiple times in the format, its type applies to every occurrence,
-but the occurrences retain distinct `slot_id` values. Unknown types must not be
-silently replaced with `string`. This field does not yet specify string lengths or
+but the occurrences retain distinct `slot_id` values. Use `unknown` when the source
+does not establish a supported category; do not silently replace it with `string`.
+Such a parameter can receive bindings, but cannot prove view coverage or a transition.
+This field does not yet specify string lengths or
 numeric ranges. The original `format` with named placeholders is preserved unchanged.
 
-The matcher maps `INTEGER` to `integer`, `STRING`/`TEXT` to `string`, `X.X.X.X` to
-`ipv4-address`, and `X:X::X:X` to `ipv6-address`. Different known types reject a
-parameter correspondence. Device types outside this mapping do not prevent a match.
+The matcher maps built-in device declarations to these categories, comparing both
+`TEXT` and documentation `text` as `string`. See the
+[declaration table](automaton-format-matcher.md#parameter-type-compatibility).
+Different known types reject a parameter correspondence. Unmapped device types and
+explicit documentation `unknown` do not prevent a match, but supply no type proof.
 This check applies at every stage, including intersections and incomplete traces.
 The `parameter_types` field does not affect runtime value validation.
 
@@ -245,7 +258,7 @@ These examples illustrate the data structure, not a complete model of a specific
 - `format` is checked against the grammar for its `source`. Strings are preserved
   without reformatting: parameter positions contribute to `slot_id` calculation.
 - For documentation, `parameter_types` covers all parameter names without duplicates;
-  types belong to the specified set of four values.
+  types belong to the supported set above, including explicit `unknown`.
 - `entry_view` and all string `switch_to_view` values reference existing groups.
   Misspelled structural fields, such as `switch_to_veiw`, must be detected.
 - Valid references do not prove that the extracted semantics are correct.

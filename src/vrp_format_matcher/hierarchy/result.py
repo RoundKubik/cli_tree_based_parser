@@ -32,6 +32,9 @@ class HierarchyData:
                     "device_view": view.device_view,
                     "documentation_view": view.documentation_view,
                     "mappings": dict(mappings),
+                    **(
+                        {"coverage": view.coverage} if view.coverage is not None else {}
+                    ),
                 }
             )
 

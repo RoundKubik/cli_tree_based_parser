@@ -102,3 +102,32 @@ def test_invalid_pattern_document_returns_two(
 
     assert exit_code == 2
     assert payload["status"] == "error"
+
+
+def test_unresolved_context_retains_matches_and_has_a_separate_summary_count(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    patterns = tmp_path / "patterns.json"
+    config = tmp_path / "config.cfg"
+    patterns.write_text(
+        json.dumps(
+            {
+                "type": "grouped",
+                "entry_view": "root",
+                "views": {
+                    "root": [{"format": "root-only"}],
+                    "child": [{"format": "set INTEGER<1-9>"}],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    config.write_text("set 5\n", encoding="utf-8")
+    exit_code = main(["parse", "--patterns", str(patterns), "--config", str(config)])
+    payload = _stdout_json(capsys)
+    assert exit_code == 0
+    assert payload["summary"]["commands"] == 1
+    assert payload["summary"]["unresolved"] == 1
+    assert payload["summary"]["errors"] == 0
+    assert payload["lines"][0]["kind"] == "unresolved_command"
+    assert payload["lines"][0]["primary_match"]["parameters"][0]["raw"] == "5"

@@ -245,7 +245,7 @@ def test_interface_targets_remain_unresolved_without_a_parameter_selection_rule(
 
 
 @pytest.mark.parametrize("subset", [False, True])
-def test_identical_or_subset_views_do_not_resolve_a_broad_acl_view(subset):
+def test_only_competitors_covering_the_documented_sample_block_uniqueness(subset):
     device = catalog(
         "device",
         views={
@@ -267,17 +267,20 @@ def test_identical_or_subset_views_do_not_resolve_a_broad_acl_view(subset):
     assert prepared.catalog["type"] == "grouped"
     assert prepared.catalog["entry_view"] == device["entry_view"]
     assert list(prepared.catalog["views"]) == list(device["views"])
-    assert prepared.catalog["views"]["v0"][0]["switch_to_view"] == {
-        "status": "unresolved"
-    }
-    assert prepared.mapping.hierarchy.targets["ACL"].status == "unresolved"
-    assert next(iter(prepared.mapping.devices)) in prepared.unresolved
+    assert prepared.catalog["views"]["v0"][0]["switch_to_view"] == (
+        "v1" if subset else {"status": "unresolved"}
+    )
+    assert prepared.mapping.hierarchy.targets["ACL"].status == (
+        "resolved" if subset else "unresolved"
+    )
+    assert (next(iter(prepared.mapping.devices)) in prepared.unresolved) is not subset
     parser = CommandLineParser(prepared.catalog)
     assert tuple(p.pattern_id for p in parser.automaton.patterns) == tuple(
         prepared.mapping.devices
     )
     parsed = ConfigurationParser(parser).parse("acl 1\n rule 2").lines[1]
-    assert isinstance(parsed, ParsedCommand) and parsed.view is None
+    assert isinstance(parsed, ParsedCommand)
+    assert parsed.view == ("v1" if subset else None)
 
 
 def test_types_distinguish_views_and_names_have_no_effect():

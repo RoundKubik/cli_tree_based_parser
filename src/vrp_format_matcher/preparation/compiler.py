@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import replace
@@ -106,7 +105,7 @@ class FormatMatcher:
         *,
         on_progress: Callable[[PreparationProgress], None] | None = None,
     ) -> PreparedCatalog:
-        """Recover against a complete reference hierarchy and produce runtime input.
+        """Recover from a prepared reference hierarchy with a partial inventory.
 
         Unknown transitions are marked in place; established views remain usable.
         The mapping keeps source locations in the original catalogs.
@@ -125,20 +124,21 @@ class FormatMatcher:
             pipeline.coverage(),
         ).recover()
         final = pipeline.refine(
-            prepared, ViewScope.recovered(device, documentation, recovery.views)
+            prepared, ViewScope.recovered(device, documentation, recovery.references)
         )
         hierarchy = HierarchyAnalysis(
-            device_catalog, documentation_catalog, final, complete_documentation=True
+            device_catalog,
+            documentation_catalog,
+            final,
+            complete_documentation=True,
+            coverage=recovery.coverage,
         ).resolve()
         targets = dict(hierarchy.targets)
-        by_document: dict[str, list[str]] = defaultdict(list)
-        for view, reference in recovery.views.items():
-            by_document[reference].append(view)
+        recovered_targets = recovery.targets
         for reference, target in targets.items():
-            candidates = by_document[reference]
-            if len(candidates) == 1:
+            if reference in recovered_targets:
                 targets[reference] = ViewTarget(
-                    "resolved", target.candidates, candidates[0]
+                    "resolved", target.candidates, recovered_targets[reference]
                 )
         final = replace(
             final,

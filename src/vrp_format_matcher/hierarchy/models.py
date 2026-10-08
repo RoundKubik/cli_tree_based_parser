@@ -51,6 +51,7 @@ class ViewLink:
     device_view: str
     documentation_view: str
     commands: tuple[CommandLink, ...]
+    coverage: str | None = None
 
 
 @dataclass(frozen=True)

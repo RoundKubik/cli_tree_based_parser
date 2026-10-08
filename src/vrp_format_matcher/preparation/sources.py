@@ -44,8 +44,10 @@ class CommandCatalog:
 
         groups: Mapping[str | None, Any]
         if source.get("type") == "flat":
-            if "views" in source or "entry_view" in source:
-                raise FormatError("flat catalog cannot contain views or entry_view")
+            if any(key in source for key in ("views", "entry_view", "shared_views")):
+                raise FormatError(
+                    "flat catalog cannot contain views, entry_view or shared_views"
+                )
             groups = {None: source.get("commands")}
         elif source.get("type") == "grouped":
             if "commands" in source:
@@ -58,6 +60,17 @@ class CommandCatalog:
             entry_view = source.get("entry_view")
             if not isinstance(entry_view, str) or entry_view not in views:
                 raise FormatError("catalog entry_view must reference an existing view")
+            shared = source.get("shared_views", [])
+            if (
+                not isinstance(shared, list)
+                or not all(isinstance(name, str) and name in views for name in shared)
+                or len(set(shared)) != len(shared)
+                or entry_view in shared
+            ):
+                raise FormatError(
+                    "catalog shared_views must list distinct existing views "
+                    "other than entry_view"
+                )
             groups = views
         else:
             raise FormatError("catalog type must be flat or grouped")
@@ -124,9 +137,12 @@ class TargetParameterRecognizer:
         self._typed = default_parameter_registry()
 
     def recognize(self, source: str, position: int) -> RecognizedParameter | None:
-        return self._named.recognize(source, position) or self._typed.recognize(
-            source, position
-        )
+        declaration = self._typed.recognize(source, position)
+        # Exact built-ins such as <hh:mm> take precedence in device syntax,
+        # matching the runtime parser. Other angle brackets keep their names.
+        if declaration is not None and declaration.type_id != "named":
+            return declaration
+        return self._named.recognize(source, position)
 
 
 @dataclass(frozen=True)

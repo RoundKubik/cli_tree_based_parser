@@ -62,19 +62,30 @@ def test_mutual_union_coverage_recovers_views(devices, documents):
 
 
 @pytest.mark.parametrize(
-    "devices,documents",
+    "devices,documents,covered",
     [
-        (["c { a | b | d }"], ["c a", "c b"]),
-        (["c a", "c b"], ["c { a | b | d }"]),
-        (["c [ a | b ] *"], ["c a", "c b", "c a b", "c b a"]),
-        (["c { a | b } *"], ["c a", "c b", "c a b"]),
-        (["c { a | b } { x | y }"], ["c a x", "c b y"]),
+        (["c { a | b | d }"], ["c a", "c b"], True),
+        (["c a", "c b"], ["c { a | b | d }"], False),
+        (["c [ a | b ] *"], ["c a", "c b", "c a b", "c b a"], True),
+        (["c { a | b } *"], ["c a", "c b", "c a b"], True),
+        (["c { a | b } { x | y }"], ["c a x", "c b y"], True),
     ],
 )
-def test_missing_words_or_one_way_coverage_do_not_establish_view(devices, documents):
+def test_sample_coverage_does_not_prove_effects_of_extra_device_branches(
+    devices, documents, covered
+):
     prepared = FormatMatcher().prepare_catalogs(*catalogs(devices, documents))
     assert prepared.catalog["type"] == "grouped" and prepared.unresolved
-    assert prepared.mapping.hierarchy.targets["Child"].status == "unresolved"
+    assert prepared.mapping.hierarchy.targets["Child"].status == (
+        "resolved" if covered else "unresolved"
+    )
+    assert prepared.catalog["views"]["root"][0]["switch_to_view"] == (
+        "child" if covered else {"status": "unresolved"}
+    )
+    assert all(
+        command["switch_to_view"] == {"status": "unresolved"}
+        for command in prepared.catalog["views"]["child"]
+    )
 
 
 def test_formats_from_different_documentation_views_are_never_unioned():

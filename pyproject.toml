@@ -12,7 +12,9 @@ authors = [{ name = "Huawei VRP parser contributors" }]
 dependencies = []
 
 [project.optional-dependencies]
+corpus = ["jsonschema>=4.23"]
 dev = [
+  "jsonschema>=4.23",
   "mypy>=1.15",
   "pytest>=8.3",
   "pytest-cov>=6.0",
@@ -30,7 +32,7 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 testpaths = ["tests"]
 
 [tool.ruff]

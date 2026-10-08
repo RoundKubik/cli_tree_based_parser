@@ -36,6 +36,8 @@ The detailed documentation is split into a short navigation tree:
 - [command catalogue format specification (draft)](docs/reference/command-catalog-format.md)
   — flat/grouped matcher inputs, parameter types and view references.
   The parser uses one prepared runtime document and does not recover hierarchy.
+- [documentation corpus extraction](scripts/corpus_pipeline/README.md)
+  — reusable LLM prompt and JSON Schema, Codex extraction, and NE40E mock formats.
 - [CloudEngine mock catalogues](data/mocks/cloudengine_150/README.md)
   — flat/grouped device fixtures with 150 entries and documentation fixtures with
   151 entries and a restored view hierarchy.
@@ -152,9 +154,7 @@ elif isinstance(line, ErrorLine):
 
 # A complete configuration. One bad line does not stop later lines.
 configuration_parser = ConfigurationParser(line_parser)
-report = configuration_parser.parse(
-    "interface Vlanif100\nunknown command\n"
-)
+report = configuration_parser.parse("interface Vlanif100\nunknown command\n")
 print(report.summary)
 print(report.to_dict())
 ```
@@ -168,9 +168,7 @@ a custom parameter type may still place its own mutable object in
 For an in-memory pattern document, construct the line parser directly:
 
 ```python
-line_parser = CommandLineParser(
-    {"commands": ["interface STRING<1-63>"]}
-)
+line_parser = CommandLineParser({"commands": ["interface STRING<1-63>"]})
 ```
 
 `CommandLineParser.from_json(source)` accepts JSON text, while

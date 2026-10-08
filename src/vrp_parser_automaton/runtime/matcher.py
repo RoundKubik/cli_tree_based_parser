@@ -23,7 +23,9 @@ class CommandMatcher:
         self._resolver = MatchResolver()
         self._errors = CommandErrorFactory(CommandSuggester(automaton, parameter_types))
 
-    def match(self, text: str, *, span_offset: int = 0) -> ResolvedMatch | ParseError:
+    def match(
+        self, text: str, *, span_offset: int = 0, valid_only: bool = False
+    ) -> ResolvedMatch | ParseError:
         diagnostics = MatchDiagnostics()
         candidates = CommandRecognition(
             self._automaton,
@@ -31,26 +33,14 @@ class CommandMatcher:
             CommandText(text),
             diagnostics,
         ).candidates()
+        if valid_only:
+            # A rejected format in one view must not hide a valid fallback in
+            # another. Keep invalid candidates only to explain total failure.
+            valid = tuple(item for item in candidates if not item.state.rejected)
+            if valid:
+                candidates = valid
         if candidates:
             return self._resolver.resolve(
                 candidates, self._automaton, span_offset=span_offset
             )
         return self._errors.create(text, diagnostics, span_offset=span_offset)
-
-    def accepting_patterns(self, text: str) -> tuple[int, ...]:
-        """Find all complete, valid patterns without ranking across views."""
-        candidates = CommandRecognition(
-            self._automaton,
-            self._parameter_types,
-            CommandText(text),
-            MatchDiagnostics(),
-        ).candidates()
-        return tuple(
-            sorted(
-                {
-                    candidate.pattern_index
-                    for candidate in candidates
-                    if not candidate.state.rejected
-                }
-            )
-        )

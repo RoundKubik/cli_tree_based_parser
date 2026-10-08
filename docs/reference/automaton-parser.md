@@ -152,15 +152,16 @@ in `bgp`. A transition does not carry over to the next command at the same inden
 this handles a configuration file, not an interactive session.
 
 `quit` and `return` have no built-in exit semantics; a group named `global` has no
-special meaning. View names come from the input document. Errors in known views do
-not trigger a parsing retry in the other groups.
+special meaning. View names come from the input document. If a known view has no
+valid match, the parser searches other groups and marks a complete fallback match
+as `UnresolvedCommand` rather than assigning its source view to the configuration.
 
 Ambiguous results are preserved. If parse alternatives specify different transitions,
-the parser does not choose one: the child block is parsed flat with `view=None`
+the parser does not choose one: the child block is searched globally with `view=None`
 (the JSON omits `view`). The same applies to a block following a failed entry command
 or an explicit `{"status": "unresolved"}`. Even a unique syntactic match in such a
-block does not establish the view. The parser does not recover hierarchies, infer
-candidates, or execute parameter-dependent conditional transitions.
+block does not establish the view. The parser does not recover hierarchies, select
+a target view, or execute parameter-dependent conditional transitions.
 
 ## Python API
 
@@ -218,9 +219,12 @@ The `parameter_types=` argument still accepts a custom type registry.
 ## Results and subsequent processing
 
 ```python
-from vrp_parser_automaton import ErrorLine, ParsedCommand
+from vrp_parser_automaton import ErrorLine, ParsedCommand, UnresolvedCommand
 
 for line in report.lines:
+    if isinstance(line, UnresolvedCommand):
+        print("Unconfirmed context:", line.context_issue.message)
+        # Its captures remain available through the ParsedCommand interface.
     if isinstance(line, ParsedCommand):
         print(line.line_number, line.view, line.status)
         for match in line.matches:
@@ -247,24 +251,38 @@ to lines. The relation format is described in the
 [matcher documentation](automaton-format-matcher.md#linking-json-to-parser-results).
 
 A line has a `view` only when the context is known. In Python, an absent context is
-`None`; in JSON, the key is omitted. `kind` is one of `command`, `error`, `blank`, or
-`separator`. Separators count toward `summary.total`, but not `commands`, `blank`,
-or `errors`. `summary.errors` and `has_errors` report line errors.
+`None`; in JSON, the key is omitted. `kind` is one of `command`, `unresolved_command`,
+`error`, `blank`, or `separator`. Separators count toward `summary.total`, but not
+`commands`, `blank`, or `errors`. `summary.errors` and `has_errors` report line errors.
+`summary.commands` includes `UnresolvedCommand` instances because their syntax was
+recognized. `summary.unresolved` counts this subset, and `has_unresolved` indicates
+whether it is nonempty. JSON omits a zero `unresolved` count to preserve the flat
+report shape. A file with unresolved commands but no errors retains CLI exit code 0;
+check `has_unresolved` or the JSON count when confirmed context is required.
 One error does not stop parsing subsequent lines.
 
 ### Context diagnostics
 
-The existing error codes remain `unknown_command`, `syntax_error`, and
-`validation_error`. For a failure in a known view, `error.catalog_matches` lists
-complete matches with valid parameters in other views. Each entry contains `view`,
-`pattern_id`, and `format`. An empty list means that the diagnostic search found
-no such match; it does not prove that the intended format is missing from the
-catalog, since the input may contain a syntax or value error.
+When a command does not match in the selected view, the parser searches the global
+automaton using its entry index. A complete match with valid parameters produces an
+`UnresolvedCommand`, with the best match in `primary_match` and equally ranked
+alternatives in `alternative_matches`. Existing specificity rules rank the valid
+matches; source order selects the representative among ties. A rejected format in
+one view cannot suppress a valid fallback from another view. Prefixes, suggestions
+and failed parameter validations do not become successful matches.
 
-This search uses the global automaton's entry index only after a scoped parse fails.
-It preserves all accepting formats before ranking across views. Diagnostic matches
-do not replace the failed result or change its code, selected view, or scoped suggestions.
-They do not switch context or establish a missing transition.
+`UnresolvedCommand` subclasses `ParsedCommand`: `parsed` is true and the usual
+parameters, spans, slot IDs and repetition coordinates are available. Its `kind`
+is `unresolved_command`, its `view` is `None`, and `context_issue` explains the
+unconfirmed context. For dispatch, test this subclass before `ParsedCommand` when
+the two cases need different handling. It uses the matched source pattern IDs;
+external mapping lookups can still retrieve their original source views.
+
+If no complete valid match exists anywhere, the result remains `ErrorLine` with the
+original scoped `unknown_command`, `syntax_error`, or `validation_error`, and scoped
+suggestions. The compatibility field `error.catalog_matches` is empty in this case.
+This does not prove that a format is missing: the input may have a syntax or value
+error. Ordinary flat errors continue to omit that field.
 
 When a child block has an unknown view, its command and error results carry
 `context_issue` with a `code`, an English `message`, and `source_line` pointing to the
@@ -275,15 +293,18 @@ command that made the context unknown:
 | `parent_parse_error` | The parent command could not be parsed |
 | `unresolved_transition` | A parent match declares an unresolved transition |
 | `ambiguous_transition` | Parent matches specify different known target views |
+| `outside_view` | A command failed in the selected view but matched in other views |
 
 The cause is preserved through deeper nesting, including successful flat fallback
 parses and further errors. Leaving the affected block restores the known context.
-A successful fallback still counts as a parsed command; `context_issue` records the
-context uncertainty separately. An omitted or null `switch_to_view` still means
+A successful fallback uses `UnresolvedCommand` and still counts as a parsed command.
+Even a single foreign match does not establish a view or apply its `switch_to_view`:
+its child block retains the original context issue. An omitted or null `switch_to_view` still means
 stay: the parser cannot infer that this declaration was incorrect.
 
 Ordinary flat catalogs and explicit `contextual=False`/`parse_flat()` calls omit
-these diagnostic fields from JSON. Known-context successes omit `context_issue` too.
+these diagnostic fields from JSON and keep `ParsedCommand` for successful matches.
+Known-context successes omit `context_issue` too.
 
 ## Construction and execution
 

@@ -34,15 +34,19 @@ class ViewScope:
         cls,
         device: CommandCatalog,
         documentation: CommandCatalog,
-        views: dict[str, str],
+        views: dict[str, str] | dict[str, tuple[str, ...]],
     ) -> ViewScope:
         by_view: dict[str, set[int]] = defaultdict(set)
         for index, location in enumerate(documentation.locations):
             assert location.view is not None
             by_view[location.view].add(index)
-        allowed = {
-            view: frozenset(by_view[reference]) for view, reference in views.items()
-        }
+        shared = set().union(
+            *(by_view[view] for view in documentation.info.get("shared_views", ()))
+        )
+        allowed = {}
+        for view, references in views.items():
+            names = (references,) if isinstance(references, str) else references
+            allowed[view] = frozenset(shared).union(*(by_view[name] for name in names))
         return cls(
             scopes={
                 index: allowed[location.view]

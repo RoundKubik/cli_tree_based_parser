@@ -80,9 +80,14 @@ class PatternMatch:
 
 @dataclass(frozen=True, slots=True)
 class ContextIssue:
-    """Why a child block has no known view, with the originating line."""
+    """Why a command or child block has no confirmed view."""
 
-    code: Literal["parent_parse_error", "unresolved_transition", "ambiguous_transition"]
+    code: Literal[
+        "parent_parse_error",
+        "unresolved_transition",
+        "ambiguous_transition",
+        "outside_view",
+    ]
     message: str
     source_line: int
 
@@ -99,7 +104,9 @@ class ParsedCommand:
     alternative_matches: tuple[PatternMatch, ...] = ()
     view: str | None = None
     context_issue: ContextIssue | None = None
-    kind: Literal["command"] = field(default="command", init=False)
+    kind: Literal["command", "unresolved_command"] = field(
+        default="command", init=False
+    )
 
     @property
     def parsed(self) -> Literal[True]:
@@ -118,6 +125,33 @@ class ParsedCommand:
         """Parameters captured by the representative match."""
 
         return self.primary_match.parameters
+
+
+@dataclass(frozen=True, slots=True)
+class UnresolvedCommand(ParsedCommand):
+    """Complete syntax matches whose configuration context is not confirmed.
+
+    This remains a ParsedCommand for callers consuming captures. Its distinct
+    kind and context_issue prevent it from appearing as a confirmed view match.
+    """
+
+    kind: Literal["unresolved_command"] = field(
+        default="unresolved_command", init=False
+    )
+
+    @classmethod
+    def from_command(
+        cls, command: ParsedCommand, issue: ContextIssue
+    ) -> UnresolvedCommand:
+        return cls(
+            line_number=command.line_number,
+            raw=command.raw,
+            indent=command.indent,
+            status=command.status,
+            primary_match=command.primary_match,
+            alternative_matches=command.alternative_matches,
+            context_issue=issue,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,7 +235,9 @@ class SeparatorLine:
     kind: Literal["separator"] = field(default="separator", init=False)
 
 
-type LineResult = BlankLine | ParsedCommand | ErrorLine | SeparatorLine
+type LineResult = (
+    BlankLine | ParsedCommand | UnresolvedCommand | ErrorLine | SeparatorLine
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,6 +249,7 @@ class ParseSummary:
     commands: int
     ambiguous: int
     errors: int
+    unresolved: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,6 +262,10 @@ class ParseReport:
     @property
     def has_errors(self) -> bool:
         return self.summary.errors > 0
+
+    @property
+    def has_unresolved(self) -> bool:
+        return self.summary.unresolved > 0
 
     def to_dict(self) -> Mapping[str, Any]:
         """Return a JSON-compatible tree of ordinary Python values."""
@@ -240,6 +281,8 @@ class ParseReport:
                 line.pop("context_issue", None)
             if line["kind"] == "error" and line["error"]["catalog_matches"] is None:
                 line["error"].pop("catalog_matches")
+        if not self.summary.unresolved:
+            converted["summary"].pop("unresolved")
         return converted
 
 
@@ -250,6 +293,7 @@ class ParseReportFactory:
         blank = sum(isinstance(line, BlankLine) for line in lines)
         errors = sum(isinstance(line, ErrorLine) for line in lines)
         commands = sum(isinstance(line, ParsedCommand) for line in lines)
+        unresolved = sum(isinstance(line, UnresolvedCommand) for line in lines)
         ambiguous = sum(
             isinstance(line, ParsedCommand) and line.status is MatchStatus.AMBIGUOUS
             for line in lines
@@ -262,5 +306,6 @@ class ParseReportFactory:
                 commands=commands,
                 ambiguous=ambiguous,
                 errors=errors,
+                unresolved=unresolved,
             ),
         )

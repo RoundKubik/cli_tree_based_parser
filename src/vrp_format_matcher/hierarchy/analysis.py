@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from vrp_format_matcher.models import FormatError, PreparedMapping, PreparedPair
@@ -26,6 +26,7 @@ class HierarchyAnalysis:
     documentation_catalog: Mapping[str, Any]
     mapping: PreparedMapping
     complete_documentation: bool = False
+    coverage: Mapping[tuple[str, str], str] = field(default_factory=dict)
 
     def resolve(self) -> PreparedHierarchy:
         evidence = self.collect()
@@ -74,10 +75,13 @@ class HierarchyAnalysis:
                 link = CommandLink(pair, left, right, transition)
                 commands.append(link)
                 views[left.view, right.view].append(link)
+        # A checked candidate remains visible even without a completed binding.
+        for scopes in self.coverage:
+            views.setdefault(scopes, [])
         return HierarchyEvidence(
             tuple(commands),
             tuple(
-                ViewLink(left, right, tuple(links))
+                ViewLink(left, right, tuple(links), self.coverage.get((left, right)))
                 for (left, right), links in views.items()
             ),
         )

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from vrp_parser_automaton.results import (
@@ -48,14 +48,12 @@ class ContextSession:
             if previous is not None and depth > previous.parent_indent:
                 frames.append(previous)
             frame = frames[-1]
-            result = (
-                self._parser.parse(raw, number, view=frame.view)
-                if frame.view is not None
-                else self._parser.parse_flat(raw, number)
-            )
+            if frame.view is not None:
+                result = self._parser.parse(raw, number, view=frame.view)
+            else:
+                assert frame.issue is not None
+                result = self._parser.parse_unresolved(raw, number, frame.issue)
             assert isinstance(result, (ParsedCommand, ErrorLine))
-            if frame.issue is not None:
-                result = replace(result, context_issue=frame.issue)
             results.append(result)
             previous = self._child_frame(depth, result)
         return tuple(results)

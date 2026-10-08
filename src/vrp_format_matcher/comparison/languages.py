@@ -12,7 +12,7 @@ from vrp_format_matcher.comparison.execution import (
     ProgramStep,
 )
 from vrp_format_matcher.comparison.parameter_types import (
-    DOCUMENT_PARAMETER_TYPES,
+    KNOWN_PARAMETER_TYPES,
     compatible_types,
     normalized_type,
 )
@@ -56,7 +56,7 @@ class LanguageStates:
         if step.parameter_type is not None:
             return ("P:" + step.parameter_type,)
         # Unknown types may overlap any supported category or an unmodelled one.
-        return tuple("P:" + name for name in sorted(DOCUMENT_PARAMETER_TYPES)) + (
+        return tuple("P:" + name for name in sorted(KNOWN_PARAMETER_TYPES)) + (
             "P:other",
         )
 
