@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 from test_format_matcher_catalogs import catalog, command, document
@@ -548,7 +550,7 @@ def test_cycles_and_empty_views_are_resolved_from_existing_edges():
     assert not prepared.unresolved
 
 
-def test_manual_preparation_writes_separate_catalog_and_mapping(tmp_path):
+def test_cli_preparation_writes_separate_catalog_and_mapping(tmp_path):
     device, docs = example()
     paths = [
         tmp_path / name
@@ -559,7 +561,8 @@ def test_manual_preparation_writes_separate_catalog_and_mapping(tmp_path):
     completed = subprocess.run(
         [
             sys.executable,
-            "manual_format_matcher_test.py",
+            "-m",
+            "vrp_format_matcher",
             "--context-mode",
             "hierarchy",
             "--patterns",
@@ -572,6 +575,10 @@ def test_manual_preparation_writes_separate_catalog_and_mapping(tmp_path):
             str(paths[3]),
             "--summary",
         ],
+        env={
+            **os.environ,
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src"),
+        },
         capture_output=True,
         text=True,
         check=True,

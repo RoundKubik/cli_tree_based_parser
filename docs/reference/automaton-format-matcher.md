@@ -21,7 +21,10 @@ from vrp_format_matcher import FormatMatcher
 device = json.loads(Path("device_grouped.json").read_text())
 documentation = json.loads(Path("documentation_grouped.json").read_text())
 mapping = FormatMatcher().compile_catalogs(device, documentation)
-Path("mapping.json").write_text(json.dumps(mapping.to_dict(), ensure_ascii=False))
+Path("mapping.json").write_text(
+    json.dumps(mapping.to_dict(), ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
 ```
 
 The parser then consumes **the same original device catalog**, without a recovery
@@ -31,7 +34,7 @@ target catalog plus the same mapping. It does not recover transitions or emit a
 Flat or mixed inputs retain global matching; documentation-to-documentation works too.
 
 ```bash
-python3.13 manual_format_matcher_test.py \
+PYTHONPATH=src python3.13 -m vrp_format_matcher \
   --patterns device_grouped.json --documents documentation_grouped.json \
   --save mapping.json --summary
 ```
@@ -61,7 +64,7 @@ documents = [
 ]
 result = FormatMatcher().compile_formats(formats, documents)
 Path("mapping.json").write_text(
-    json.dumps(result.to_dict(), ensure_ascii=False),
+    json.dumps(result.to_dict(), ensure_ascii=False, indent=2) + "\n",
     encoding="utf-8",
 )
 ```
@@ -641,32 +644,39 @@ rather than stopping at the first accepting state. No bindings exist beyond that
 boundary. Your postprocessing decides whether predicates apply to such a partial
 correspondence.
 
-## Manual execution
+## Command-line interface
 
 ```bash
-python3.13 manual_format_matcher_test.py --case stages --save mapping.json
-python3.13 manual_format_matcher_test.py --case set --save mapping.json
-python3.13 manual_format_matcher_test.py --case wide-optional-set --save mapping.json
-python3.13 manual_format_matcher_test.py --patterns device.json --documents docs.json --save mapping.json
-python3.13 manual_format_matcher_test.py --patterns device.json --documents docs.json --summary --save mapping.json
-python3.13 manual_format_matcher_test.py --patterns data/mocks/cloudengine_150/device_grouped.json --documents data/mocks/cloudengine_150/documentation_grouped.json --summary --save mapping.json
+PYTHONPATH=src python3.13 -m vrp_format_matcher \
+  --patterns device.json --documents docs.json --save mapping.json --summary
+
+PYTHONPATH=src python3.13 -m vrp_format_matcher \
+  --patterns data/mocks/cloudengine_150/device_grouped.json \
+  --documents data/mocks/cloudengine_150/documentation_grouped.json \
+  --save mapping.json --summary
 ```
 
-`device.json` is an object with a `commands` array. `docs.json` is an array of
-`{"id": "...", "format": "..."}` objects. `--summary` shortens the output.
-Both files can be v1 catalogs: the script then calls `compile_catalogs` automatically.
-You cannot mix a legacy-format file with a v1 catalog. `--target-syntax` is used only
-for legacy inputs; v1 catalogs determine syntax through `source`.
+Both files may be v1 flat or grouped catalogs; the CLI calls `compile_catalogs`.
+`--summary` hides individual correspondence details but keeps the counts.
+Legacy inputs are also supported: `device.json` is an object with a `commands`
+array of strings, and `docs.json` is an array of `{"format": "..."}` records
+with optional IDs. You cannot mix legacy inputs with v1 catalogs. `--target-syntax`
+is used only for legacy inputs; v1 catalogs determine syntax through `source`.
 Passes are selected automatically; there are no `best`/`all` switches.
+Both `--patterns` and `--documents` are required. `--save` writes indented JSON.
+The CLI exits with `0` after a completed run, including unmatched formats, and `2`
+for invalid arguments, input, or file errors. Progress goes to stderr; the summary
+and optional correspondence details go to stdout. After installation, the same
+arguments are accepted by `vrp-format-matcher`.
 
 ```bash
-python3.13 benchmark_format_matcher.py --corpus /path/to/cmd_corpus --skip-invalid --report /tmp/report.json
+python3.13 scripts/benchmark_format_matcher.py --corpus /path/to/cmd_corpus --skip-invalid --report /tmp/report.json
 ```
 
 The benchmark excludes `display`, matches the corpus against itself, and checks
 every slot of each source format. Duplicates are retained. Invalid formats are
 reported explicitly; without `--skip-invalid`, the run stops. Corpus reading and
-JSON writing remain in scripts, outside the package.
+benchmark reporting remain in the standalone benchmark utility.
 
 Code is split by responsibility: `preparation/compiler.py` is the public API;
 `preparation/indexes.py` contains indexes; `preparation/pipeline.py` searches for all
@@ -693,7 +703,7 @@ Path("runtime_catalog.json").write_text(
     encoding="utf-8",
 )
 Path("mapping.json").write_text(
-    json.dumps(prepared.mapping.to_dict(), ensure_ascii=False),
+    json.dumps(prepared.mapping.to_dict(), ensure_ascii=False, indent=2) + "\n",
     encoding="utf-8",
 )
 print(prepared.catalog["type"], len(prepared.unresolved))
@@ -809,11 +819,11 @@ A flat target catalog is supported and remains flat. Recovering a grouped device
 catalog requires grouped documentation.
 
 ```bash
-python3.13 manual_format_matcher_test.py \
+PYTHONPATH=src python3.13 -m vrp_format_matcher \
   --context-mode hierarchy \
   --patterns device_grouped.json --documents documentation_grouped.json \
   --save-catalog runtime_catalog.json --save mapping.json --summary
 ```
 
-Without `--save-catalog`, the script retains its previous `compile_catalogs()` mode:
+Without `--save-catalog`, the CLI calls `compile_catalogs()`:
 matching and candidate collection without runtime catalog preparation.

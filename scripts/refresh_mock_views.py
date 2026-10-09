@@ -148,7 +148,9 @@ def example_switches(
                     in known.get(prompt, set())
                 }
                 if prompt == next_prompt or text.split()[:1] in (
-                    ["undo"], ["quit"], ["return"]
+                    ["undo"],
+                    ["quit"],
+                    ["return"],
                 ):
                     continue
                 destinations = {
@@ -246,9 +248,7 @@ def refresh(corpus: Path, directory: Path) -> dict[str, int]:
             if page["CLIs"][metadata["format_index"]] != command["format"]:
                 raise ValueError(f"source format changed: {filename}")
             parent = metadata.get("parent_view", name)
-            source_views = {
-                view_key(view): view for view in page["ParentView"]
-            }
+            source_views = {view_key(view): view for view in page["ParentView"]}
             if view_key(parent) not in source_views:
                 raise ValueError(f"source parent view changed: {filename}: {parent}")
             metadata["parent_view"] = source_views[view_key(parent)]
@@ -300,7 +300,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", type=Path, required=True)
     parser.add_argument(
-        "--catalog-dir", type=Path, default=Path(__file__).resolve().parent
+        "--catalog-dir",
+        type=Path,
+        default=Path(__file__).resolve().parents[1] / "data/mocks/cloudengine_150",
     )
     args = parser.parse_args()
     print(json.dumps(refresh(args.corpus, args.catalog_dir), indent=2))

@@ -461,7 +461,7 @@ changes types or fills missing annotations. `documentation_selection.json` recor
 every excluded occurrence and maps the selected view/index back to the original.
 All mapping references then address `documentation_compatible.json`.
 
-Successful matching writes the public compact `mapping.json`, all bindings and
+Successful matching writes `mapping.json` with two-space indentation, all bindings and
 scope automata, plus `runtime_catalog.json`. `hierarchy_report.json` distinguishes
 resolved targets, multiple fully covering targets, partial coverage, unknown
 coverage (types or limits), and missing evidence. It also lists unknown parameter

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -146,18 +147,31 @@ def test_reordered_sets_and_nested_repeats_map_without_expanding():
     )
 
 
-def test_manual_script_saves_plain_offline_mapping(tmp_path):
+def test_cli_saves_plain_offline_mapping(tmp_path):
     output = tmp_path / "mapping.json"
+    patterns = tmp_path / "device.json"
+    documents = tmp_path / "docs.json"
+    patterns.write_text(
+        json.dumps({"commands": ["command INTEGER<1-100> [ to INTEGER<1-100> ]"]})
+    )
+    documents.write_text(json.dumps([{"format": "command { <a> | <b> to <c> }"}]))
     result = subprocess.run(
         [
             sys.executable,
-            "manual_format_matcher_test.py",
-            "--case",
-            "conditional",
+            "-m",
+            "vrp_format_matcher",
+            "--patterns",
+            str(patterns),
+            "--documents",
+            str(documents),
             "--save",
             str(output),
         ],
         cwd=Path(__file__).resolve().parents[1],
+        env={
+            **os.environ,
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src"),
+        },
         capture_output=True,
         text=True,
         check=True,

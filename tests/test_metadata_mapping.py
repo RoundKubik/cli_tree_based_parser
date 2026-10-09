@@ -335,7 +335,7 @@ def test_manual_script_prepares_then_loads_artifact(tmp_path: Path) -> None:
     first = subprocess.run(
         [
             sys.executable,
-            "manual_metadata_test.py",
+            "examples/legacy/metadata_mapping.py",
             "--case",
             "conditional",
             "--save",
@@ -351,7 +351,7 @@ def test_manual_script_prepares_then_loads_artifact(tmp_path: Path) -> None:
     second = subprocess.run(
         [
             sys.executable,
-            "manual_metadata_test.py",
+            "examples/legacy/metadata_mapping.py",
             "--load",
             str(artifact),
             "--line",

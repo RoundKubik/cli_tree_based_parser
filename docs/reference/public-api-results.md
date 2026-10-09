@@ -6,8 +6,7 @@ This document describes the production entities from:
 - `src/vrp_parser/results.py`;
 - `src/vrp_parser/serialization.py`;
 - `src/vrp_parser/cli.py`;
-- `src/vrp_parser/__init__.py` and `src/vrp_parser/__main__.py`;
-- the `manual_test.py` manual test harness.
+- `src/vrp_parser/__init__.py` and `src/vrp_parser/__main__.py`.
 
 All string positions are zero-based, and ranges use the half-open
 `[start, end)` convention: the character at index `end` is not included.
@@ -686,24 +685,3 @@ exit code through `SystemExit`.
 `src/vrp_parser/__init__.py` exports only user-facing parsers, result/error
 values, and the parameter-registry extension API. In particular, the old
 `VRPParser` facade and `parse_line()` method are not part of the API.
-
-## `manual_test.py`
-
-The manual test harness is not part of the library API, but it demonstrates
-the actual formats.
-
-| Entity | Purpose |
-| --- | --- |
-| `PATTERN_DOCUMENT` | A small catalog intended for manual editing. |
-| `main()` | Attempts to create line/configuration parsers from the current scratchpad catalog, processes hard-coded input, and prints the result. An invalid experimental pattern lets the compilation exception propagate. |
-
-Run it with:
-
-```bash
-python3 manual_test.py
-```
-
-The harness does not process command-line arguments. For a different
-scenario, edit the pattern document and the input text passed to `parse()` in
-the file itself. A successful exit code is not guaranteed for intentionally
-invalid content.

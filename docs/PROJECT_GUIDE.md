@@ -1,9 +1,8 @@
 # Complete Guide to the Huawei VRP Parser
 
 This guide describes the original `vrp_parser` package and its flat command
-graph. For the current automaton implementation, grouped catalogues, view
-transitions supplied in one input document, see
-[the automaton parser usage guide](reference/automaton-parser.md).
+graph. For the current automaton implementation, flat/grouped catalogs, and
+system/non-system scopes, see [the automaton parser usage guide](reference/automaton-parser.md).
 
 ## Project Purpose
 
@@ -76,17 +75,6 @@ print(report.to_dict())
 
 `CommandLineParser` compiles the catalogue once. `ConfigurationParser` reuses
 it for every line and does not create a new graph.
-
-### Manual Test Harness
-
-```bash
-python3 manual_test.py
-```
-
-The harness is an editable scratchpad rather than a mandatory smoke test. It
-contains a small `PATTERN_DOCUMENT` and hard-coded input inside `main()`. If an
-intentionally forbidden pattern is added, the constructor raises
-`PatternCompilationError` as expected.
 
 ## Command Catalogue Format
 

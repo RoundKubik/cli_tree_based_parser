@@ -173,7 +173,7 @@ def test_corpus_reader_reports_invalid_formats_and_benchmark_checks_all_slots(tm
     completed = subprocess.run(
         [
             sys.executable,
-            "benchmark_format_matcher.py",
+            "scripts/benchmark_format_matcher.py",
             "--corpus",
             str(tmp_path),
             "--skip-invalid",

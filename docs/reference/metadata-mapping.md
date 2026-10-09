@@ -1,4 +1,7 @@
-# Offline format and metadata matching
+# Original parser: offline metadata matching
+
+This is the original metadata API. For the current offline format matcher, use
+[vrp_format_matcher](automaton-format-matcher.md).
 
 The `vrp_parser.metadata` package compares documentation and device formats,
 precompiles parameter correspondences, and applies prepared rules to
@@ -37,15 +40,15 @@ simpler than objects, for example when comparing AST structure.
 From the project root, without installing the package:
 
 ```bash
-python3.13 manual_metadata_test.py
-python3.13 manual_metadata_test.py --case conditional
-python3.13 manual_metadata_test.py --case ambiguous
-python3.13 manual_metadata_test.py --case overlap
-python3.13 manual_metadata_test.py --case prefix
-python3.13 manual_metadata_test.py --case set
-python3.13 manual_metadata_test.py --case wide-set
-python3.13 manual_metadata_test.py --case wide-optional-set
-python3.13 manual_metadata_test.py --case large-repeat
+python3.13 examples/legacy/metadata_mapping.py
+python3.13 examples/legacy/metadata_mapping.py --case conditional
+python3.13 examples/legacy/metadata_mapping.py --case ambiguous
+python3.13 examples/legacy/metadata_mapping.py --case overlap
+python3.13 examples/legacy/metadata_mapping.py --case prefix
+python3.13 examples/legacy/metadata_mapping.py --case set
+python3.13 examples/legacy/metadata_mapping.py --case wide-set
+python3.13 examples/legacy/metadata_mapping.py --case wide-optional-set
+python3.13 examples/legacy/metadata_mapping.py --case large-repeat
 ```
 
 Edit patterns, metadata, and input lines in the script's `CASES` dictionary.
@@ -66,16 +69,16 @@ intersections report state counts.
 
 ```bash
 # Custom data: commands JSON and an array of documentation records.
-python3.13 manual_metadata_test.py \
+python3.13 examples/legacy/metadata_mapping.py \
   --patterns device.json --documents documents.json \
   --line 'port trunk allow-pass vlan 10 to 20 30'
 
 # Preparation happens only here.
-python3.13 manual_metadata_test.py --case vlan --save /tmp/vlan-mapping.json
+python3.13 examples/legacy/metadata_mapping.py --case vlan --save /tmp/vlan-mapping.json
 
 # Load the prepared binding automaton. Documentation formats are not parsed.
 # The artifact supplies device formats for the ordinary parser.
-python3.13 manual_metadata_test.py --load /tmp/vlan-mapping.json \
+python3.13 examples/legacy/metadata_mapping.py --load /tmp/vlan-mapping.json \
   --line 'port trunk allow-pass vlan 10 to 20 30'
 ```
 

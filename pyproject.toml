@@ -23,6 +23,8 @@ dev = [
 
 [project.scripts]
 vrp-parser = "vrp_parser.cli:main"
+vrp-parser-automaton = "vrp_parser_automaton.cli:main"
+vrp-format-matcher = "vrp_format_matcher.cli:main"
 
 [tool.setuptools]
 package-dir = { "" = "src" }

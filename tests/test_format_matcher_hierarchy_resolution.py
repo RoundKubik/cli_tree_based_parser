@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from dataclasses import replace
@@ -332,7 +333,7 @@ def test_flat_or_mixed_inputs_do_not_create_hierarchy(device_grouped, doc_groupe
     assert result.hierarchy is None and "hierarchy" not in result.to_dict()
 
 
-def test_manual_script_saves_the_hierarchy_with_existing_catalog_arguments(tmp_path):
+def test_cli_saves_the_hierarchy_with_existing_catalog_arguments(tmp_path):
     device, docs = grouped_catalogs()
     patterns = tmp_path / "device.json"
     documents = tmp_path / "docs.json"
@@ -342,7 +343,8 @@ def test_manual_script_saves_the_hierarchy_with_existing_catalog_arguments(tmp_p
     completed = subprocess.run(
         [
             sys.executable,
-            "manual_format_matcher_test.py",
+            "-m",
+            "vrp_format_matcher",
             "--context-mode",
             "hierarchy",
             "--patterns",
@@ -354,6 +356,10 @@ def test_manual_script_saves_the_hierarchy_with_existing_catalog_arguments(tmp_p
             str(output),
         ],
         cwd=Path(__file__).resolve().parents[1],
+        env={
+            **os.environ,
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src"),
+        },
         capture_output=True,
         text=True,
         check=True,

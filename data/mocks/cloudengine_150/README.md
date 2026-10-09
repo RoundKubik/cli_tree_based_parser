@@ -59,7 +59,7 @@ Their contents, counts, and names are not required to match.
 
 ## Recovered hierarchy
 
-[refresh_switches.py](refresh_switches.py) preserves the explicit target from
+[refresh_mock_views.py](../../../scripts/refresh_mock_views.py) preserves the explicit target from
 `FuncDef`. Parameter names, types, and ranges do not refine this target. The name is
 lowercased and whitespace is normalized; the original sentence is retained in
 `metadata.switch_to_view_source`.
@@ -102,7 +102,7 @@ omit the transition field; an unconfirmed `null` is not added.
 Recalculate transitions for the same sample:
 
 ```bash
-PYTHONPATH=src python3 data/mocks/cloudengine_150/refresh_switches.py --corpus /path/to/cmd_corpus
+PYTHONPATH=src python3 scripts/refresh_mock_views.py --corpus /path/to/cmd_corpus
 ```
 
 The script updates both documentation JSON files, retaining the current sample,
@@ -121,54 +121,40 @@ documentation → documentation correspondences. The runtime parser was checked 
 
 The matcher accepts both catalogs directly:
 `FormatMatcher().compile_catalogs(device, documentation)`. In JSON, `source.view`
-and `source.index` point to the original device or documentation record. For two
-grouped catalogs, commands in `device.entry_view` search for documentation only in
-`documentation.entry_view`. Search remains global for other views and flat catalogs;
-their matches do not yet establish context correspondence. Each format retains all
-full documentation correspondences, including intersections alongside exact matches.
-There are no heuristic view scores; `source.view` identifies the original context
-of each discovered pair. For grouped → grouped, `hierarchy` is added automatically
-to the result JSON: view relations, documentation effects, and possible device target
-views. Candidates are not selected by name or match count; even one candidate remains
-`unresolved` unless the entry view pair establishes the target. Explicit input
-`switch_to_view` values, if present, are retained separately. External code uses the
-mapping after parsing; the runtime parser does not load it.
-
-To recover the device hierarchy and obtain a separate parser input:
+and `source.index` point to the original record. For two grouped catalogs, commands
+in `device.entry_view` search only `documentation.entry_view`; the remaining groups
+search together, excluding system. Flat or mixed inputs use global matching.
+Nested view identity is not inferred. The default result has no hierarchy section.
 
 ```bash
-python3.13 manual_format_matcher_test.py \
+PYTHONPATH=src python3.13 -m vrp_format_matcher \
   --patterns data/mocks/cloudengine_150/device_grouped.json \
   --documents data/mocks/cloudengine_150/documentation_grouped.json \
-  --save-catalog /tmp/runtime_catalog.json --save /tmp/mapping.json --summary
+  --save /tmp/mapping.json --summary
 ```
 
-This mode calls `prepare_catalogs()` and treats the documentation hierarchy as
-prepared: an omitted documentation transition means context preservation, but the
-command inventory may be incomplete. View recovery requires one device view to
-cover the available documentation sample; additional device commands are allowed.
-The prepared catalog remains `grouped`, and unresolved command effects receive
-`"switch_to_view": {"status": "unresolved"}`. The summary reports the current view,
-transition and pair counts. This is structural recovery without confirmation on
-a real device; see the [recovery rules](../../../docs/reference/automaton-format-matcher.md).
+The parser consumes the same original catalog; external code uses the mapping after
+parsing. To run the optional hierarchy experiment, add `--context-mode hierarchy`
+and `--save-catalog /tmp/runtime_catalog.json`. This calls `prepare_catalogs()` and
+preserves unresolved transitions in the prepared catalog. See the
+[recovery rules](../../../docs/reference/automaton-format-matcher.md).
 
 ## Running the parser on mocks
 
 From the repository root, with Python 3.13+, no package installation required:
 
 ```bash
-python3.13 manual_automaton_test.py \
+PYTHONPATH=src python3.13 -m vrp_parser_automaton parse \
   --patterns data/mocks/cloudengine_150/device_flat.json \
-  --line 'bgp 65000' --line 'ipv4-family unicast'
+  --config config.txt > /tmp/parsed.json
 ```
 
-Device mocks contain standard runtime parameter declarations. Transitions in
-`device_grouped.json` have not yet been recovered; pass it with `--flat` for global
-search. Full grouped parsing requires a separate prepared document with recovered
-`switch_to_view` values. Documentation mocks are intended for the matcher and an
-external semantic pipeline.
+Device mocks contain typed placeholders. Documentation mocks use named placeholders
+with optional type annotations. Either can be passed directly to the parser.
+With `device_grouped.json` or `documentation_grouped.json`, unindented lines search
+`entry_view` and indented lines search all other groups. Transitions are ignored in
+this default mode. Add `--flat` to search every group regardless of indentation.
 
-For your own file, replace `--line` with `--config config.txt`. In flat mode, a `#`
-line requires its own format, which is absent from this sample. An example of one
-prepared grouped document, the CLI, and the Python API are described in the
+Only the optional `--context-mode hierarchy` uses recovered transitions. Its input
+must already contain the intended hierarchy. See the
 [parser guide](../../../docs/reference/automaton-parser.md).

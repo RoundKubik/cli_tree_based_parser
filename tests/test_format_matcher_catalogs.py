@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import re
 import subprocess
 import sys
@@ -231,7 +232,7 @@ def test_device_catalog_cannot_be_used_as_documentation():
         FormatMatcher().compile_catalogs(source, source)
 
 
-def test_manual_script_accepts_catalog_files(tmp_path):
+def test_cli_accepts_catalog_files(tmp_path):
     device = tmp_path / "device.json"
     docs = tmp_path / "docs.json"
     output = tmp_path / "mapping.json"
@@ -240,7 +241,8 @@ def test_manual_script_accepts_catalog_files(tmp_path):
     subprocess.run(
         [
             sys.executable,
-            "manual_format_matcher_test.py",
+            "-m",
+            "vrp_format_matcher",
             "--patterns",
             str(device),
             "--documents",
@@ -250,6 +252,10 @@ def test_manual_script_accepts_catalog_files(tmp_path):
             str(output),
         ],
         cwd=Path(__file__).resolve().parents[1],
+        env={
+            **os.environ,
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src"),
+        },
         capture_output=True,
         text=True,
         check=True,

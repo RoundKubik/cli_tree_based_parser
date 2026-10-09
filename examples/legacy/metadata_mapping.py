@@ -1,4 +1,4 @@
-"""Editable format-mapping examples. Run: python3.13 manual_metadata_test.py."""
+"""Examples for the original vrp_parser.metadata API, separate from the matcher."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from vrp_parser import CommandLineParser, ParsedCommand  # noqa: E402
 from vrp_parser.metadata import MetadataCompiler, PreparedMetadata  # noqa: E402

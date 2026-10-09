@@ -10,7 +10,7 @@ Keep the original device catalog, original documentation catalog and `mapping.js
 together. Generate the mapping once:
 
 ```bash
-python3.13 manual_format_matcher_test.py \
+PYTHONPATH=src python3.13 -m vrp_format_matcher \
   --patterns device_grouped.json \
   --documents documentation_grouped.json \
   --save mapping.json --summary
@@ -31,6 +31,24 @@ The grouped default isolates system from non-system in both components. It does 
 prove a particular nested view. A unique parse may still have multiple documentation
 matches. `primary_match` is the first successful source pattern, not the most credible
 semantic interpretation. No shared/global scope exceptions are applied.
+
+An input command does not need an ID or index field. For lookup without using
+`source.index`, take the mapped record's `source.view` and `document_format`:
+
+```python
+document = mapping["documents"][pair["document_id"]]
+view = document["source"]["view"]
+records = documentation["commands"] if view is None else documentation["views"][view]
+candidates = [
+    record for record in records
+    if record["format"] == document["document_format"]
+]
+```
+
+This is exact string lookup, not another format matching pass. If the same format
+occurs more than once within that view, retain all records or establish a unique
+`(view, format)` key when preparing the documentation. The runnable example below
+uses the stored source index to preserve individual duplicate records.
 
 ## Captures and applicability
 

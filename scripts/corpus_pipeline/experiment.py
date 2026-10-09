@@ -154,11 +154,8 @@ def match_catalogs(args):
             relations[pair.status] += 1
             bindings += len(pair.bindings)
     write_json(args.output_dir / "runtime_catalog.json", prepared.catalog)
-    # Save the public compact JSON, retaining every binding and applicability graph.
-    data = mapping.to_dict()
-    (args.output_dir / "mapping.json").write_text(
-        json.dumps(data, ensure_ascii=False), encoding="utf-8"
-    )
+    # Keep every binding and applicability graph in an indented JSON document.
+    write_json(args.output_dir / "mapping.json", mapping.to_dict())
     hierarchy = mapping.hierarchy
     return {
         "status": "completed",

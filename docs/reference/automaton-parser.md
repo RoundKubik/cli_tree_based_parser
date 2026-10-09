@@ -115,16 +115,16 @@ its header requirements do not apply to the runtime parser.
 
 ### Exporting documentation formats by view
 
-The test script `manual_group_formats_by_view.py` reads corpus pages and groups
+The export utility `scripts/group_formats_by_view.py` reads corpus pages and groups
 their `CLIs` by the original `ParentView` names:
 
 ```bash
-python3.13 manual_group_formats_by_view.py \
+python3.13 scripts/group_formats_by_view.py \
   --corpus /path/to/cmd_corpus --output documentation_grouped.json
 ```
 
 It sorts and deduplicates formats within each view and preserves source view names,
-including `All views`. The checked-in `documentation_grouped.json` is a CloudEngine
+including `All views`. The checked-in [CloudEngine export](../../data/examples/cloudengine_grouped.json) is a
 v300r024c00 structural export with 282 views and 36,750 view/format records.
 Entries contain only `format`; the script does not infer `switch_to_view`,
 `parameter_types`, or command semantics. Prepare transitions before contextual
@@ -143,17 +143,6 @@ bgp 65000
 #
 ```
 
-Run manually without installing the package:
-
-```bash
-python3.13 manual_automaton_test.py --patterns patterns.json --config config.txt
-```
-
-The script prints the format count, state count, and result JSON. Individual lines
-can be supplied using repeated `--line` options; together they form one configuration.
-`--line` and `--config` are mutually exclusive. If neither is supplied, the built-in
-lines for the selected `--case` are used.
-
 Validate a catalog and save plain JSON:
 
 ```bash
@@ -165,7 +154,7 @@ PYTHONPATH=src python3.13 -m vrp_parser_automaton parse \
 
 Module CLI exit codes: `0` means no line errors; `1` means the report contains line
 errors; `2` means an input reading or compilation error. An ambiguous successful
-parse is not an error. The manual script does not reflect line errors in its exit code.
+parse is not an error.
 
 The `--flat` flag disables view restrictions while retaining the same catalog.
 In flat mode, `#` is an ordinary line and needs its own format.
@@ -435,30 +424,12 @@ Transition objects operate on a specific instruction and configuration. Mutable
 queues, the compiler workspace, and candidate sets are scoped to a single run.
 The automaton and execution states themselves are immutable.
 
-## Manual checks
-
-From the repository root, without installing the package:
+## Verification
 
 ```bash
-python3.13 manual_automaton_test.py
-python3.13 manual_automaton_test.py --case wide-set
-python3.13 manual_automaton_test.py --case large-repeat
-python3.13 manual_automaton_test.py --case optional-chain
-python3.13 manual_automaton_test.py --patterns data/commands.json --line 'display clock'
+PYTHONPATH=src python3.13 -m vrp_parser_automaton check-patterns data/commands.json
+python3.13 -m pytest tests/automaton tests/test_system_scopes.py
 ```
-
-The script prints the state count and full result JSON. Its first example is the
-previously discussed `ip route-static` with typed parameters. Examples also include
-intentionally invalid lines, such as a repeated `tag` or a repeated set branch.
-
-| Example | States |
-|---|---:|
-| Complex `ip route-static` from the script | 56 |
-| Optional set of 24 branches with parameters | 53 |
-| Parameter repeated with `&<1-100000>` | 6 |
-| 40 independent optional groups with a prefix and suffix | 123 |
-
-Entire current catalog: 7,269 patterns, 45,222 states.
 
 Tests in `tests/automaton/` cover the ported API contracts, parameters, diagnostics,
 CLI, and catalog, along with automaton structure, independence from the original
@@ -468,5 +439,4 @@ Format matching is handled by a separate package,
 [`vrp_format_matcher`](automaton-format-matcher.md). It uses the same AST compiler
 and control transitions for general language comparison. Identical structures are
 linked directly through their original AST nodes. Results include parameter
-correspondences, statuses, and matching scopes; grouped catalogs also include
-prepared view information. The matcher does not evaluate predicates.
+correspondences, statuses, and original source view locations. The matcher does not evaluate predicates.

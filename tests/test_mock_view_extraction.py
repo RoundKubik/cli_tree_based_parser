@@ -9,10 +9,7 @@ import unittest
 from pathlib import Path
 
 EXTRACTOR = runpy.run_path(
-    str(
-        Path(__file__).resolve().parents[1]
-        / "data/mocks/cloudengine_150/refresh_switches.py"
-    )
+    str(Path(__file__).resolve().parents[1] / "scripts/refresh_mock_views.py")
 )
 
 
@@ -114,26 +111,32 @@ class MockViewExtractionTest(unittest.TestCase):
             for name, view, pattern, example in (
                 ("basic", "Basic ACL view", "rule <id>", "rule 10"),
                 (
-                    "advanced", "Advanced ACL view",
-                    "description <text>", "description test",
+                    "advanced",
+                    "Advanced ACL view",
+                    "description <text>",
+                    "description test",
                 ),
             ):
                 child_page = {
                     "CLIs": [pattern],
                     "ParentView": [view],
                     "FuncDef": "Sets a property.",
-                    "Examples": [[
-                        "<HUAWEI> system-view",
-                        "[~HUAWEI] acl number 2999",
-                        f"[*HUAWEI-acl] {example}",
-                    ]],
+                    "Examples": [
+                        [
+                            "<HUAWEI> system-view",
+                            "[~HUAWEI] acl number 2999",
+                            f"[*HUAWEI-acl] {example}",
+                        ]
+                    ],
                 }
                 filename = f"{name}.json"
                 (corpus / filename).write_text(json.dumps(child_page), encoding="utf-8")
-                grouped["views"][view] = [{
-                    "format": pattern,
-                    "metadata": {"corpus_file": filename, "format_index": 0},
-                }]
+                grouped["views"][view] = [
+                    {
+                        "format": pattern,
+                        "metadata": {"corpus_file": filename, "format_index": 0},
+                    }
+                ]
             flat = {"type": "flat", "metadata": {}, "commands": commands}
             for name, data in (("grouped", grouped), ("flat", flat)):
                 (root / f"documentation_{name}.json").write_text(
@@ -162,60 +165,79 @@ class MockViewExtractionTest(unittest.TestCase):
             )
 
     def test_examples_restore_transition_missing_from_funcdef(self) -> None:
-        commands = [{
-            "format": "service <name>",
-            "metadata": {"parent_view": "System view"},
-        }]
-        pages = {"setting.json": {
-            "ParentView": ["Service view"],
-            "CLIs": ["setting <value>"],
-            "Examples": [[
-                "<HUAWEI> system-view",
-                "[~HUAWEI] service example",
-                "[*HUAWEI-service-example] setting value",
-            ]],
-        }}
+        commands = [
+            {
+                "format": "service <name>",
+                "metadata": {"parent_view": "System view"},
+            }
+        ]
+        pages = {
+            "setting.json": {
+                "ParentView": ["Service view"],
+                "CLIs": ["setting <value>"],
+                "Examples": [
+                    [
+                        "<HUAWEI> system-view",
+                        "[~HUAWEI] service example",
+                        "[*HUAWEI-service-example] setting value",
+                    ]
+                ],
+            }
+        }
         observed = EXTRACTOR["example_switches"](commands, pages, "system view")
         self.assertEqual(set(observed[0]), {"service view"})
         self.assertEqual(observed[0]["service view"]["field"], "Examples")
 
     def test_same_command_in_unrelated_view_is_not_an_entry(self) -> None:
-        commands = [{
-            "format": "acl <number>",
-            "metadata": {"parent_view": view},
-        } for view in ("System view", "GRPC server view")]
-        pages = {"rule.json": {
-            "ParentView": ["Basic ACL view"],
-            "CLIs": ["rule <id>"],
-            "Examples": [[
-                "<HUAWEI> system-view",
-                "[~HUAWEI] acl 2999",
-                "[*HUAWEI-acl-2999] rule 10",
-            ]],
-        }}
+        commands = [
+            {
+                "format": "acl <number>",
+                "metadata": {"parent_view": view},
+            }
+            for view in ("System view", "GRPC server view")
+        ]
+        pages = {
+            "rule.json": {
+                "ParentView": ["Basic ACL view"],
+                "CLIs": ["rule <id>"],
+                "Examples": [
+                    [
+                        "<HUAWEI> system-view",
+                        "[~HUAWEI] acl 2999",
+                        "[*HUAWEI-acl-2999] rule 10",
+                    ]
+                ],
+            }
+        }
         observed = EXTRACTOR["example_switches"](commands, pages, "system view")
         self.assertEqual(set(observed), {0})
 
     def test_commit_marker_and_unrelated_examples_do_not_prove_a_switch(self) -> None:
-        commands = [{
-            "format": "setting <value>",
-            "metadata": {"parent_view": "System view"},
-        }]
+        commands = [
+            {
+                "format": "setting <value>",
+                "metadata": {"parent_view": "System view"},
+            }
+        ]
         for parent_views, last in (
             (["System view"], "[*HUAWEI] setting value"),
             (["Target view"], "[*HUAWEI-new] unrelated value"),
             (["First view", "Second view"], "[*HUAWEI-new] setting value"),
         ):
             with self.subTest(parent_views=parent_views, last=last):
-                pages = {"setting.json": {
-                    "ParentView": parent_views,
-                    "CLIs": ["setting <value>"],
-                    "Examples": [[
-                        "<HUAWEI> system-view",
-                        "[~HUAWEI] setting value",
-                        last,
-                    ]],
-                }}
+                pages = {
+                    "setting.json": {
+                        "ParentView": parent_views,
+                        "CLIs": ["setting <value>"],
+                        "Examples": [
+                            [
+                                "<HUAWEI> system-view",
+                                "[~HUAWEI] setting value",
+                                last,
+                            ]
+                        ],
+                    }
+                }
                 self.assertEqual(
                     EXTRACTOR["example_switches"](commands, pages, "system view"), {}
                 )
@@ -226,9 +248,8 @@ class MockViewExtractionTest(unittest.TestCase):
             {"system view": [{"switch_to_view": "empty view"}], "empty view": []},
             {"system view": [], "orphan view": [{"format": "setting"}]},
         ):
-            with self.subTest(views=views):
-                with self.assertRaises(ValueError):
-                    EXTRACTOR["validate_hierarchy"](views, "system view")
+            with self.subTest(views=views), self.assertRaises(ValueError):
+                EXTRACTOR["validate_hierarchy"](views, "system view")
 
     def test_checked_in_hierarchy_has_populated_reachable_views(self) -> None:
         root = Path(__file__).resolve().parents[1] / "data/mocks/cloudengine_150"
