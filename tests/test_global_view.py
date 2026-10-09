@@ -44,11 +44,32 @@ def test_global_commands_preserve_source_ids_and_local_alternatives():
     assert source == before
 
 
+def test_match_source_views_are_serialized_separately_from_line_context():
+    report = ConfigurationParser(CommandLineParser(grouped())).parse("local\n local")
+    for line, expected in zip(
+        report.lines, [("root", "everywhere"), ("child", "everywhere")], strict=True
+    ):
+        assert tuple(match.source_view for match in line.matches) == expected
+    root, nested = report.to_dict()["lines"]
+    assert root["view"] == "root"
+    assert root["primary_match"]["source_view"] == "root"
+    assert root["alternative_matches"][0]["source_view"] == "everywhere"
+    assert "view" not in nested
+    assert nested["primary_match"]["source_view"] == "child"
+    assert nested["alternative_matches"][0]["source_view"] == "everywhere"
+
+
 def test_global_commands_work_in_explicit_views_without_switching_to_global():
     parser = CommandLineParser(grouped(), context_mode="hierarchy")
     assert isinstance(parser.parse("quit", view="child"), ParsedCommand)
     parsed = ConfigurationParser(parser).parse("enter\n quit\n  nested\nlocal")
     assert [line.view for line in parsed.lines] == ["root", "child", "child", "root"]
+    assert [line.primary_match.source_view for line in parsed.lines] == [
+        "root",
+        "everywhere",
+        "child",
+        "root",
+    ]
     assert all(isinstance(line, ParsedCommand) for line in parsed.lines)
 
 

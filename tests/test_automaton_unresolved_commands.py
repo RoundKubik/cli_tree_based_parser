@@ -89,6 +89,11 @@ def test_report_counts_unresolved_as_recognized_but_distinguishes_it_from_errors
     assert line["kind"] == "unresolved_command"
     assert line["primary_match"]["parameters"][0]["slot_id"] == "p:4"
     assert len(line["alternative_matches"]) == 2
+    assert line["primary_match"]["source_view"] == "a"
+    assert [match["source_view"] for match in line["alternative_matches"]] == [
+        "b",
+        "generic",
+    ]
     assert "view" not in line and "error" not in line
     assert data["summary"]["unresolved"] == 1
 
@@ -98,7 +103,10 @@ def test_flat_catalog_serialization_keeps_the_existing_result_shape():
         CommandLineParser(catalog(), context_mode="hierarchy"), contextual=False
     )
     flat = ConfigurationParser(
-        CommandLineParser({"commands": ["set STRING<1-9>"]}, context_mode="hierarchy")
+        CommandLineParser(
+            {"commands": ["set STRING<1-9>", "set STRING<1-9>"]},
+            context_mode="hierarchy",
+        )
     )
     for parser in (grouped, flat):
         report = parser.parse("set abc\nmissing")
@@ -107,6 +115,17 @@ def test_flat_catalog_serialization_keeps_the_existing_result_shape():
         assert "unresolved" not in report.to_dict()["summary"]
         assert "context_issue" not in report.to_dict()["lines"][0]
     assert asdict(flat.parse("set abc").lines[0])["kind"] == "command"
+    assert [m.source_view for m in grouped.parse("set abc").lines[0].matches] == [
+        "a",
+        "b",
+        "generic",
+    ]
+    flat_report = flat.parse("set abc")
+    assert len(flat_report.lines[0].matches) == 2
+    assert all(match.source_view is None for match in flat_report.lines[0].matches)
+    line = flat_report.to_dict()["lines"][0]
+    for match in (line["primary_match"], *line["alternative_matches"]):
+        assert "source_view" not in match
 
 
 def test_unique_foreign_entry_does_not_apply_its_declared_transition():

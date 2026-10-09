@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import pytest
 from test_format_matcher_catalogs import catalog, command, document
@@ -224,7 +225,9 @@ def test_external_mapping_keeps_global_ids_and_runtime_slot_locations():
     parser = CommandLineParser(grouped, context_mode="hierarchy")
     parsed = parser.parse(" c 1 2", view="second")
     flat_parsed = CommandLineParser(flat, context_mode="hierarchy").parse(" c 1 2")
-    assert parsed.primary_match == flat_parsed.matches[1]
+    assert parsed.primary_match.source_view == "second"
+    assert flat_parsed.matches[1].source_view is None
+    assert replace(parsed.primary_match, source_view=None) == flat_parsed.matches[1]
     mapping = (
         FormatMatcher(context_mode="hierarchy")
         .compile_catalogs(

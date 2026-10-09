@@ -209,7 +209,8 @@ successful alternatives. Both system and non-system scopes can be ambiguous.
 A successful non-system line is a `ParsedCommand` with `view=None` (omitted in JSON),
 not an `UnresolvedCommand`. This means the coarse scope is known, but no concrete
 child view was established. `primary_match` never proves that view or its semantics.
-Use `pattern_id` and the mapping's source locations to identify the source record.
+Each match's `source_view` names its group in the input catalog; it does not confirm
+the runtime context. Use `pattern_id` to look up its offline mapping.
 
 With `context_mode="hierarchy"`, the previous context stack, transitions and diagnostic
 fallback remain available. Explicit flat parsing retains its original specificity
@@ -280,7 +281,7 @@ for line in report.lines:
     if isinstance(line, ParsedCommand):
         print(line.line_number, line.view, line.status)
         for match in line.matches:
-            print(match.pattern_id, match.original_pattern)
+            print(match.pattern_id, match.source_view, match.original_pattern)
             for value in match.parameters:
                 print(value.slot_id, value.iterations, value.raw, value.normalized)
     elif isinstance(line, ErrorLine):
@@ -292,6 +293,13 @@ In the default grouped mode, `primary_match` and `alternative_matches` preserve
 all fully valid candidates in source order. Flat and hierarchy modes retain the
 previous specificity ranking. `line.parameters` contains only the primary captures;
 for external matching of ambiguous results, iterate over `line.matches`.
+
+For grouped catalogs, every primary and alternative match includes `source_view`,
+the original view name from the input catalog. Global commands retain their global
+group name even when parsed in another context. This field also survives explicit
+flat searches and unresolved-context fallback. For flat catalogs, it is `None` in
+Python and omitted from report JSON. Unlike `line.view`, `source_view` describes
+where a format is stored, not which nested view the device has entered.
 
 `pattern_id` identifies the original format, `slot_id` identifies the parameter's
 position in that format, and `iterations` identifies an occurrence within repetitions.

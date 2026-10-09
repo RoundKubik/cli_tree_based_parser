@@ -27,6 +27,11 @@ Parse configurations using that same device catalog. For each successful line:
 5. Check the pair's applicability and bind captured values before interpreting an
    effect. Keep candidates from different parses and documentation records separate.
 
+`match.source_view` identifies the format's view in the parser's input catalog,
+including for alternatives. When parsing device formats, this is the device view;
+use the mapping's document source to locate the documentation view, whose name can
+differ. It does not establish the command's runtime context.
+
 The grouped default isolates system from non-system in both components. It does not
 prove a particular nested view. A unique parse may still have multiple documentation
 matches. `primary_match` is the first successful source pattern, not the most credible

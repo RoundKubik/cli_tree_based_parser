@@ -76,6 +76,7 @@ class PatternMatch:
     variation_id: str
     parameters: tuple[ParameterValue, ...] = ()
     trace: tuple[VariationStep, ...] = ()
+    source_view: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -281,6 +282,10 @@ class ParseReport:
                 line.pop("context_issue", None)
             if line["kind"] == "error" and line["error"]["catalog_matches"] is None:
                 line["error"].pop("catalog_matches")
+            if line["kind"] in {"command", "unresolved_command"}:
+                for match in (line["primary_match"], *line["alternative_matches"]):
+                    if match["source_view"] is None:
+                        match.pop("source_view")
         if not self.summary.unresolved:
             converted["summary"].pop("unresolved")
         return converted

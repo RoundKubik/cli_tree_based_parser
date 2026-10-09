@@ -236,17 +236,20 @@ class CommandLineParser:
         outcome: ResolvedMatch,
         view: str | None = None,
     ) -> ParsedCommand:
-        views = {
-            self._pattern_views[match.pattern_index]
-            for match in (outcome.primary_match, *outcome.alternative_matches)
-        }
+        matches = (outcome.primary_match, *outcome.alternative_matches)
+        if self._views:
+            matches = tuple(
+                replace(match, source_view=self._pattern_views[match.pattern_index])
+                for match in matches
+            )
+        views = {match.source_view for match in matches}
         return ParsedCommand(
             line_number=line_number,
             raw=raw,
             indent=indent,
             status=MatchStatus.AMBIGUOUS if len(views) > 1 else outcome.status,
-            primary_match=outcome.primary_match,
-            alternative_matches=outcome.alternative_matches,
+            primary_match=matches[0],
+            alternative_matches=matches[1:],
             view=view,
         )
 

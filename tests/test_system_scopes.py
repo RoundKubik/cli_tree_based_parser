@@ -61,6 +61,7 @@ def test_partitioned_matching_preserves_ids_locations_and_bindings(target_source
         for match in line.matches:
             device = saved["devices"][match.pattern_id]
             assert match.original_pattern == device["device_format"]
+            assert match.source_view == device["source"]["view"]
             assert (
                 device["source"]["view"] == list(target["views"])[match.pattern_index]
             )
