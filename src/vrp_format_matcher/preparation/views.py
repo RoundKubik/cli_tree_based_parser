@@ -37,19 +37,25 @@ class ViewScope:
         if device.info["type"] != "grouped" or documentation.info["type"] != "grouped":
             return cls()
         root = documentation.info["entry_view"]
+        global_view = documentation.info.get("global_view")
         system = frozenset(
             i
             for i, location in enumerate(documentation.locations)
-            if location.view == root
+            if location.view in (root, global_view)
         )
         other = frozenset(
             i
             for i, location in enumerate(documentation.locations)
             if location.view != root
         )
+        all_views = system | other
         return cls(
             {
-                i: system if location.view == device.info["entry_view"] else other
+                i: all_views
+                if location.view == device.info.get("global_view")
+                else system
+                if location.view == device.info["entry_view"]
+                else other
                 for i, location in enumerate(device.locations)
             }
         )
@@ -68,6 +74,8 @@ class ViewScope:
         shared = set().union(
             *(by_view[view] for view in documentation.info.get("shared_views", ()))
         )
+        if (global_view := documentation.info.get("global_view")) is not None:
+            shared.update(by_view[global_view])
         allowed = {}
         for view, references in views.items():
             names = (references,) if isinstance(references, str) else references

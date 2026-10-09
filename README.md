@@ -37,6 +37,10 @@ contain `parameter_types`, `creates`, and `requires`.
   The parser searches system for unindented lines and the other groups for indented
   lines. It retains alternative matches without claiming an exact nested view.
 
+An optional `global_view` names a group available in both scopes, for example
+`"global_view": "global"` on a device or `"global_view": "All views"` in documentation.
+The key must reference an existing group other than `entry_view`; names are never inferred.
+
 The grouped default ignores `switch_to_view` and `shared_views`. The optional
 `--context-mode hierarchy` retains the earlier hierarchy workflow; it is not
 required for the default parser or matcher.

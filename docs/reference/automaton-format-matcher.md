@@ -10,8 +10,8 @@ The matcher uses `parameter_types`, does not evaluate predicates, and does not r
 Use the existing grouped device and documentation catalogs directly. Their JSON
 format does not change. Each catalog's `entry_view` identifies its system group.
 Commands in that group match only the other catalog's system group. Every remaining
-group is searched together, excluding system. No shared scopes or cross-scope
-fallback are used. `switch_to_view` and `shared_views` are ignored in this mode.
+group is searched together, excluding system. A declared `global_view` is available
+in both scopes; otherwise there is no cross-scope fallback. `switch_to_view` and `shared_views` are ignored in this mode.
 
 ```python
 import json
@@ -93,7 +93,7 @@ data = result.to_dict()
 
 Matching considers structure, type compatibility, and the two search scopes.
 If both catalogs have `type="grouped"`, a command from `device.entry_view` searches
-only within `documentation.entry_view`. These groups may have
+within `documentation.entry_view` and its optional `global_view`. These groups may have
 different names; the initial pair is defined by `entry_view`, not names such as
 `system`/`System view` or the order of groups in JSON.
 
@@ -109,7 +109,9 @@ With `documentation.entry_view="System view"`, the intersection with the first r
 is selected. The exact gRPC match does not participate in the search. If nothing is
 found in these scopes, the search does not expand to other concrete views.
 
-Other device views search all non-system documentation groups together. There is
+Other device views search all non-system documentation groups together. An explicitly
+declared device `global_view` searches all documentation groups because it is
+available in both contexts; later semantic lookup filters by the parsed line scope. There is
 no fallback into the documentation entry view. Search is global if at least one
 catalog is flat. `matched` confirms a format relationship, not a concrete view or
 semantic interpretation. Hierarchy recovery is available only through explicit
@@ -118,7 +120,7 @@ semantic interpretation. Hierarchy recovery is available only through explicit
 The search scope is part of the grouping key for identical target formats: global
 search results are not reused for entry-view commands. ASTs and programs are still
 reused. A record's membership in the entry pair is visible through `source.view`
-and `catalogs.*.entry_view`.
+and `catalogs.*.entry_view`; the optional `catalogs.*.global_view` retains the global reference.
 
 A `source` is added to `devices[pattern_id]` and `documents[document_id]`:
 

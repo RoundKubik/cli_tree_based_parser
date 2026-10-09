@@ -10,6 +10,7 @@ from vrp_parser_automaton.parameters import ParameterTypeRegistry
 from vrp_parser_automaton.results import ParseError
 from vrp_parser_automaton.text import CommandText
 
+from .index import RecognitionIndex
 from .recognition import CommandRecognition
 from .resolution import MatchResolver, ResolvedMatch
 
@@ -24,7 +25,7 @@ class CommandMatcher:
     ) -> None:
         self._automaton = automaton
         self._parameter_types = parameter_types
-        self._excluded_starts = excluded_starts
+        self._index = RecognitionIndex(automaton, excluded_starts)
         self._resolver = MatchResolver()
         self._errors = CommandErrorFactory(CommandSuggester(automaton, parameter_types))
 
@@ -37,13 +38,16 @@ class CommandMatcher:
         retain_all: bool = False,
     ) -> ResolvedMatch | ParseError:
         diagnostics = MatchDiagnostics()
-        candidates = CommandRecognition(
-            self._automaton,
-            self._parameter_types,
-            CommandText(text),
-            diagnostics,
-            excluded_starts=self._excluded_starts,
-        ).candidates()
+        command = CommandText(text)
+        candidates = self._index.expand(
+            CommandRecognition(
+                self._automaton,
+                self._parameter_types,
+                command,
+                diagnostics,
+                starts=self._index.starts(command, diagnostics),
+            ).candidates()
+        )
         if valid_only:
             # A rejected format in one view must not hide a valid fallback in
             # another. Keep invalid candidates only to explain total failure.

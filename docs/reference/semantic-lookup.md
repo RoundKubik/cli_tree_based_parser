@@ -30,7 +30,11 @@ Parse configurations using that same device catalog. For each successful line:
 The grouped default isolates system from non-system in both components. It does not
 prove a particular nested view. A unique parse may still have multiple documentation
 matches. `primary_match` is the first successful source pattern, not the most credible
-semantic interpretation. No shared/global scope exceptions are applied.
+semantic interpretation. If `global_view` is declared, documentation records from
+that group are available in either scope. Device global commands can have mappings
+into both system and non-system documentation; filter those candidates by the line's
+scope before reading semantics. The example's `applicable_scope()` performs this
+filter and retains the documentation global group.
 
 An input command does not need an ID or index field. For lookup without using
 `source.index`, take the mapped record's `source.view` and `document_format`:

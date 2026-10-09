@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+_ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
+
 
 def ascii_lower(value: str) -> str:
-    upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    lower = "abcdefghijklmnopqrstuvwxyz"
-    return value.translate(str.maketrans(upper, lower))
+    return value.translate(_ASCII_LOWER)
 
 
 @dataclass(frozen=True, slots=True)

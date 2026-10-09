@@ -8,7 +8,7 @@ from vrp_parser_automaton.automata.model import CommandAutomaton
 from vrp_parser_automaton.diagnostics.progress import MatchDiagnostics
 from vrp_parser_automaton.parameters import ParameterTypeRegistry
 from vrp_parser_automaton.patterns import Literal, Parameter
-from vrp_parser_automaton.text import CommandText, ascii_lower
+from vrp_parser_automaton.text import CommandText
 
 from .atoms import LiteralTransition, ParameterTransition
 from .execution import Configuration, ControlFlow
@@ -22,11 +22,11 @@ class CommandRecognition:
     parameter_types: ParameterTypeRegistry
     command: CommandText
     diagnostics: MatchDiagnostics
-    excluded_starts: frozenset[int] = frozenset()
+    starts: tuple[int, ...]
 
     def candidates(self) -> tuple[Candidate, ...]:
         pending = PendingConfigurations()
-        for start in self._starts():
+        for start in self.starts:
             pending.offer(Configuration(start, WalkState()))
         candidates: list[Candidate] = []
         while pending.remaining():
@@ -46,16 +46,6 @@ class CommandRecognition:
                     for following in self._consume(current):
                         pending.offer(following)
         return tuple(candidates)
-
-    def _starts(self) -> tuple[int, ...]:
-        first = self.command.token(0)
-        assert first is not None
-        literals = self.automaton.literal_starts.get(ascii_lower(first.raw), ())
-        return tuple(
-            start
-            for start in dict.fromkeys((*literals, *self.automaton.parameter_starts))
-            if start not in self.excluded_starts
-        )
 
     def _accept(
         self, current: Configuration, pattern_index: int, candidates: list[Candidate]

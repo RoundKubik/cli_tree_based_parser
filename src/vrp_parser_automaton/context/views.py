@@ -26,6 +26,9 @@ class ViewMatchers:
         }
         self._outside_matchers: dict[str, CommandMatcher] = {}
         self._entry = catalog.entry_view
+        self._global = (
+            set() if catalog.global_view is None else self._starts[catalog.global_view]
+        )
         self._partitions: dict[bool, CommandMatcher] = {}
 
     def for_partition(self, nested: bool) -> CommandMatcher:
@@ -38,7 +41,7 @@ class ViewMatchers:
                     if (view != self._entry) == nested
                 )
             )
-            self._partitions[nested] = self._restricted(allowed)
+            self._partitions[nested] = self._restricted(allowed | self._global)
         return self._partitions[nested]
 
     def outside_view(self, view: str) -> CommandMatcher:
@@ -49,7 +52,7 @@ class ViewMatchers:
             self._outside_matchers[view] = CommandMatcher(
                 self._graph,
                 self._registry,
-                excluded_starts=frozenset(self._starts[view]),
+                excluded_starts=frozenset(self._starts[view] | self._global),
             )
         return self._outside_matchers[view]
 
@@ -57,7 +60,7 @@ class ViewMatchers:
         if view not in self._matchers:
             if view not in self._starts:
                 raise ValueError(f"unknown view: {view!r}")
-            self._matchers[view] = self._restricted(self._starts[view])
+            self._matchers[view] = self._restricted(self._starts[view] | self._global)
         return self._matchers[view]
 
     def _restricted(self, allowed: set[int]) -> CommandMatcher:

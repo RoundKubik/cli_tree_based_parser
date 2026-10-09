@@ -60,6 +60,7 @@ class CommandLineParser:
             annotations=tuple(command.parameter_types for command in catalog.commands),
         )
         self._entry_view = catalog.entry_view
+        self._global_view = catalog.global_view
         self._views = catalog.views
         self._pattern_views = tuple(command.view for command in catalog.commands)
         self._child_views = tuple(command.child_view for command in catalog.commands)
@@ -68,6 +69,10 @@ class CommandLineParser:
     @property
     def entry_view(self) -> str | None:
         return self._entry_view
+
+    @property
+    def global_view(self) -> str | None:
+        return self._global_view
 
     @property
     def context_mode(self) -> Literal["system", "hierarchy"]:
@@ -142,7 +147,14 @@ class CommandLineParser:
             return None, None
         if isinstance(command, UnresolvedCommand) or command.view is None:
             return None, command.context_issue
-        targets = {self._child_views[match.pattern_index] for match in command.matches}
+        targets = {
+            command.view
+            if self._global_view is not None
+            and self._pattern_views[match.pattern_index] == self._global_view
+            and self._child_views[match.pattern_index] == self._global_view
+            else self._child_views[match.pattern_index]
+            for match in command.matches
+        }
         if None in targets:
             return None, ContextIssue(
                 "unresolved_transition",

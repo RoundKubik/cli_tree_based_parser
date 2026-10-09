@@ -42,6 +42,7 @@ class PatternCatalog:
     commands: tuple[CatalogCommand, ...]
     views: tuple[str, ...] = ()
     entry_view: str | None = None
+    global_view: str | None = None
 
     @classmethod
     def read(
@@ -52,9 +53,9 @@ class PatternCatalog:
         layout = document.get("type", "flat")
         groups: Mapping[str | None, Any]
         if layout == "flat":
-            if "views" in document or "entry_view" in document:
+            if any(key in document for key in ("views", "entry_view", "global_view")):
                 raise PatternDocumentError(
-                    "flat document cannot contain views or entry_view"
+                    "flat document cannot contain views, entry_view or global_view"
                 )
             groups = {None: document.get("commands")}
             entry = None
@@ -73,6 +74,16 @@ class PatternCatalog:
                 )
         else:
             raise PatternDocumentError("pattern document type must be flat or grouped")
+
+        global_view = document.get("global_view")
+        if "global_view" in document and (
+            not isinstance(global_view, str)
+            or global_view not in groups
+            or global_view == entry
+        ):
+            raise PatternDocumentError(
+                "global_view must reference an existing view other than entry_view"
+            )
 
         commands = []
         for view, records in groups.items():
@@ -114,4 +125,5 @@ class PatternCatalog:
             tuple(commands),
             tuple(view for view in groups if view is not None),
             entry,
+            global_view,
         )

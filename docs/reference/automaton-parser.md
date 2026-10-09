@@ -3,11 +3,12 @@
 `vrp_parser_automaton` accepts one existing flat or grouped catalog and parses
 configurations. Flat input searches all formats. Grouped input defaults to two
 search scopes: `entry_view` for unindented lines, and all other views for indented
-lines. The input JSON schema, records, group names and ordering stay unchanged.
+lines. An optional `global_view` makes one group available in both scopes.
+Source records, group names, and ordering are preserved.
 
 No hierarchy recovery is required. `switch_to_view` and `shared_views` do not affect
-the default mode. A group named `global` is an ordinary non-system group unless it
-is the explicit `entry_view`. The parser never reads a mapping or evaluates semantics.
+the default mode. A group named `global` or `All views` is ordinary unless explicitly
+referenced by `global_view` (or `entry_view`). The parser never reads a mapping or evaluates semantics.
 See [semantic lookup](semantic-lookup.md) for using its results afterward.
 
 ## Input document
@@ -53,6 +54,29 @@ An existing grouped catalog can be used directly as `patterns.json`:
 in the JSON object do not matter. In the default `context_mode="system"`, transitions
 are ignored, including missing targets and unresolved markers. No additional fields,
 view merging or rewritten runtime catalog are needed.
+
+To make one group available everywhere, add `global_view` alongside `entry_view`:
+
+```json
+{
+  "type": "grouped",
+  "entry_view": "system",
+  "global_view": "global",
+  "views": {
+    "system": [{"format": "interface STRING<1-63>"}],
+    "interface": [{"format": "description TEXT<1-80>"}],
+    "global": [{"format": "quit"}, {"format": "return"}]
+  }
+}
+```
+
+For documentation, use `"global_view": "All views"` if that is its exact group key.
+The field is optional, cannot equal `entry_view`, and is invalid in a flat catalog.
+Global commands also participate in explicit `parse(view=...)` and hierarchy mode;
+a global command with no transition preserves the current context. Command names
+such as `quit` and `return` do not themselves implement context transitions.
+Source order still determines primary and alternative matches; global records retain
+one original ID, regardless of the scope in which they match.
 
 The former transition-following behavior is available explicitly through
 `context_mode="hierarchy"` (CLI: `--context-mode hierarchy`). Only that mode requires
@@ -164,8 +188,8 @@ The parser has no `--mapping` argument.
 
 In the default grouped mode, each line is classified independently:
 
-- No leading whitespace: search only the `entry_view` group.
-- Any leading whitespace: search all groups except `entry_view` together.
+- No leading whitespace: search `entry_view` plus `global_view`, when declared.
+- Any leading whitespace: search all groups except `entry_view`, including `global_view`.
 - Blank lines and `#` separators keep their existing result types.
 
 All nesting depths belong to the non-system scope. A previous parse error or missing
@@ -174,8 +198,8 @@ are not expanded. The input must use indentation to distinguish system commands
 from commands inside configuration blocks.
 
 There is no fallback across the two scopes. A failure produces `ErrorLine` with an
-English message naming the search scope. `quit`, `return` and `global` receive no
-special treatment; commands are available only where the input catalog places them.
+English message naming the search scope. An explicitly declared global group is
+available in both scopes; names alone never make a group global.
 
 Every fully recognized, valid candidate survives. Source catalog order selects the
 first `primary_match`; other successful candidates are `alternative_matches`, even
@@ -373,8 +397,17 @@ Atomic transitions retain the original AST nodes, including parameter spans.
 
 A shared suffix after alternatives is stored once per pattern. Different source
 patterns have their own fragments; merging their shared prefixes is not implemented
-yet. The catalog uses an index of allowed first literals and also considers patterns
-that begin with a parameter.
+yet. Recognition uses a prefix tree of mandatory leading literals, stopping at the
+first parameter or group. Optional/group-led patterns retain the conservative
+first-token index; no command paths are enumerated. Skipped literal prefixes still
+contribute the same syntax-error expectations.
+
+Identical source strings with identical parameter annotations share a parsed AST.
+Within a search scope their automaton is executed once, then accepted states are
+associated with every original source ID before resolving matches. This avoids
+repeated traversal for a format copied into many views without dropping alternatives,
+parameter slots, or repetition coordinates. Different type annotations remain separate.
+There is no cache of completed line results or normalized parameter values.
 
 The executor uses a queue ordered by position in the input line. It processes the
 ε-transitions at a position first, then the consuming transitions. Nested expressions
@@ -394,7 +427,8 @@ states can generate many configurations. There is no 512-route limit or executio
 strategy switch.
 
 Error suggestions run a separate bounded search over the automaton, with typo
-scoring. Their budget does not limit command recognition. Rankings for complex
+scoring. Token edit distances use a bounded cache; scores and search budgets are
+unchanged. Their budget does not limit command recognition. Rankings for complex
 suggestions may differ from those of the old engine.
 
 ## Code organization
@@ -407,6 +441,7 @@ suggestions may differ from those of the old engine.
 | `automata/sources.py` | Source patterns, stable IDs, and grammar errors |
 | `automata/compiler.py`, `automata/building.py` | AST compilation in a fresh workspace |
 | `automata/model.py`, `automata/first_tokens.py` | Instructions and the entry index |
+| `runtime/index.py` | Mandatory keyword prefixes and duplicate program reuse within a scope |
 | `runtime/execution.py` | Configurations, stack, and choice, set, and repetition transition objects |
 | `runtime/recognition.py`, `runtime/worklist.py` | One recognition run and its configuration queue |
 | `runtime/matcher.py` | Combining recognition, candidate resolution, and diagnostics |

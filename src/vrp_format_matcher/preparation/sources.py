@@ -46,9 +46,13 @@ class CommandCatalog:
 
         groups: Mapping[str | None, Any]
         if source.get("type") == "flat":
-            if any(key in source for key in ("views", "entry_view", "shared_views")):
+            if any(
+                key in source
+                for key in ("views", "entry_view", "shared_views", "global_view")
+            ):
                 raise FormatError(
-                    "flat catalog cannot contain views, entry_view or shared_views"
+                    "flat catalog cannot contain views, entry_view, "
+                    "shared_views or global_view"
                 )
             groups = {None: source.get("commands")}
         elif source.get("type") == "grouped":
@@ -62,6 +66,16 @@ class CommandCatalog:
             entry_view = source.get("entry_view")
             if not isinstance(entry_view, str) or entry_view not in views:
                 raise FormatError("catalog entry_view must reference an existing view")
+            global_view = source.get("global_view")
+            if "global_view" in source and (
+                not isinstance(global_view, str)
+                or global_view not in views
+                or global_view == entry_view
+            ):
+                raise FormatError(
+                    "catalog global_view must reference an existing view "
+                    "other than entry_view"
+                )
             shared = source.get("shared_views", [])
             if validate_transitions and (
                 not isinstance(shared, list)

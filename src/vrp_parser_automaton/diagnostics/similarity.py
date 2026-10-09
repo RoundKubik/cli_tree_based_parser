@@ -19,7 +19,15 @@ if TYPE_CHECKING:
 class TokenDistance:
     """Damerau edit distance: a transposition counts as one typo."""
 
+    def __init__(self) -> None:
+        self._cache: dict[tuple[str, str], int] = {}
+
     def distance(self, left: str, right: str) -> int:
+        if left == right:
+            return 0
+        key = (left, right)
+        if key in self._cache:
+            return self._cache[key]
         previous_previous: list[int] | None = None
         previous = list(range(len(right) + 1))
         for i, first in enumerate(left, 1):
@@ -39,6 +47,9 @@ class TokenDistance:
                 ):
                     current[j] = min(current[j], previous_previous[j - 2] + 1)
             previous_previous, previous = previous, current
+        if len(self._cache) >= 4096:
+            self._cache.clear()
+        self._cache[key] = previous[-1]
         return previous[-1]
 
     def cost(self, left: str, right: str) -> int:

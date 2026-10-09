@@ -11,7 +11,8 @@ section by default.
 
 The parser uses one catalog. Unindented configuration lines search `entry_view`;
 indented lines search every other group. `switch_to_view` and `shared_views` have no
-effect in this default mode. A group named `global` is ordinary. Neither component
+effect in this default mode. An optional `global_view` is available in both scopes;
+a group named `global` is ordinary without that declaration. Neither component
 modifies the input document or treats its first group as system implicitly.
 
 The former hierarchy behavior is available explicitly through
@@ -29,6 +30,7 @@ semantics described below. See the [parser guide](automaton-parser.md) and
 | `commands` | For `flat`: a nonempty array of command objects |
 | `views` | For `grouped`: an object mapping view names/IDs to arrays of command objects |
 | `entry_view` | For `grouped`: the initial view, an exact reference to a `views` key |
+| `global_view` | Optional for `grouped`: an existing group available in every context; must differ from `entry_view` |
 | `shared_views` | Legacy hierarchy mode only; ignored in the default mode |
 | `vendor` | Required: manufacturer, such as `Huawei` |
 | `device` | Required: platform/OS, such as `Huawei VRP` |
@@ -38,7 +40,7 @@ semantics described below. See the [parser guide](automaton-parser.md) and
 
 `source` identifies the origin and parameter profile; `type` defines the catalog
 layout. `commands` and `views` are mutually exclusive. A `flat` catalog has no
-`entry_view` or `shared_views`. A grouped catalog must contain at least one command; an individual
+`entry_view`, `global_view`, or `shared_views`. A grouped catalog must contain at least one command; an individual
 view may contain an empty array. Unknown transitions in the original device
 catalog may be represented by omitting `switch_to_view`. Documents prepared for hierarchy mode require
 an explicit marker instead; a separate global `hierarchy_status` is not needed.
@@ -50,6 +52,18 @@ copies. An absent field means no scopes have been declared shared.
 
 `vendor`, `device`, and `model_type` are nonempty strings required in all four v1
 variants. They describe the entire catalog and are preserved during processing.
+
+## Global commands
+
+Set `"global_view": "global"` for a device or `"global_view": "All views"` for
+documentation, using the exact key in that document. The key is optional; no name
+has built-in meaning. Existing catalogs without it retain their behavior.
+
+The parser includes global commands in system, non-system, and explicit view searches.
+The matcher includes the documentation global group in both search scopes. A device
+global command may match any documentation group; semantic lookup must select the
+system/non-system records applicable to the parsed line, plus the global records.
+The original groups and source IDs are retained; commands are not copied.
 
 ## Commands and view transitions
 

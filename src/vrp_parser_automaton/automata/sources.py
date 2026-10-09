@@ -18,6 +18,7 @@ from vrp_parser_automaton.patterns import (
     PatternLanguageError,
     PatternParser,
     RuntimePatternPolicy,
+    Sequence,
     SourceSpan,
 )
 
@@ -59,16 +60,24 @@ class PatternSources:
         patterns = []
         issues = []
         occurrences: dict[str, int] = defaultdict(int)
+        parsed: dict[tuple[str, tuple[tuple[str, str], ...]], Sequence] = {}
+        digests: dict[str, str] = {}
         for index, original in enumerate(self.commands):
             try:
                 types = self.annotations[index] if self.annotations else {}
-                if types:
-                    declarations = AnnotatedDeclarations(self.parameter_types, types)
-                    ast = PatternParser(declarations).parse(original)
-                    declarations.validate()
-                else:
-                    ast = parser.parse(original)
-                policy.validate(ast, original)
+                key = (original, tuple(sorted(types.items())))
+                ast = parsed.get(key)
+                if ast is None:
+                    if types:
+                        declarations = AnnotatedDeclarations(
+                            self.parameter_types, types
+                        )
+                        ast = PatternParser(declarations).parse(original)
+                        declarations.validate()
+                    else:
+                        ast = parser.parse(original)
+                    policy.validate(ast, original)
+                    parsed[key] = ast
             except (
                 PatternLanguageError,
                 ParameterDeclarationError,
@@ -76,7 +85,9 @@ class PatternSources:
             ) as error:
                 issues.append(PatternFailure(index, original, error).issue())
                 continue
-            digest = sha256(original.encode("utf-8")).hexdigest()[:20]
+            if original not in digests:
+                digests[original] = sha256(original.encode("utf-8")).hexdigest()[:20]
+            digest = digests[original]
             pattern_id = f"pattern:{digest}:{occurrences[original]}"
             occurrences[original] += 1
             patterns.append(PatternSource(pattern_id, index, original, ast))

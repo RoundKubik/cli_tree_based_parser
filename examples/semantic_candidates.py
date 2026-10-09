@@ -30,6 +30,8 @@ def applicable_scope(line, mapping, location):
     if target["type"] != "grouped" or docs["type"] != "grouped":
         return True
     view = location["view"]
+    if view == docs.get("global_view"):
+        return True
     return (view != docs["entry_view"]) == bool(line.indent)
 
 
