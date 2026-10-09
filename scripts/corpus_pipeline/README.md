@@ -389,8 +389,9 @@ original groups; appended shared commands do not renumber their existing entries
 Shared records are copied into actual groups because the parser has no global
 inheritance mechanism. For large catalogs this intentionally increases output
 size; `shared_copies` reports that cost.
-The grouped output also declares these scopes in `shared_views`, allowing the
-matcher to exclude shared formats from view identification without guessing names.
+The grouped output also declares these scopes in `shared_views` for the optional
+hierarchy mode. The default system/non-system matcher ignores that field and uses
+only the original group membership and `entry_view`.
 
 `quit`-like parent exits keep an unresolved runtime transition because the current
 parser has no stack-pop transition field. Fixed exits retain their known target.
@@ -445,9 +446,14 @@ The optional repeatable `--global-view` argument declares shared scopes in the
 grouped mock only. It does not infer a scope from its spelling, add runtime copies
 or change the flat output. Each declared scope must exist in the source corpus.
 
+The matcher experiment defaults to system/non-system scopes over the unchanged
+input catalogs. It skips hierarchy recovery; `runtime_catalog.json` is an unchanged
+copy of the target catalog. Use `--context-mode hierarchy` to run the previous
+hierarchy experiment and produce `hierarchy_report.json`. The parser experiment
+accepts the same option and otherwise selects its scope by indentation.
+
 The matcher experiment first validates supplied annotations. Missing annotations
-are accepted as unknown types and reported in `hierarchy_report.json` for grouped
-catalogs. Malformed entries, unsupported types, duplicate names and references to
+are accepted as unknown types. Malformed entries, unsupported types, duplicate names and references to
 absent parameters still fail validation. If any fail, it writes
 `input_validation.json` and stops. An
 explicit `--compatible-only` run selects a separate documentation subset; it never

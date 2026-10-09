@@ -25,6 +25,21 @@ class ViewMatchers:
             None: CommandMatcher(graph, registry)
         }
         self._outside_matchers: dict[str, CommandMatcher] = {}
+        self._entry = catalog.entry_view
+        self._partitions: dict[bool, CommandMatcher] = {}
+
+    def for_partition(self, nested: bool) -> CommandMatcher:
+        """Keep system and non-system entry points strictly separate."""
+        if nested not in self._partitions:
+            allowed = set().union(
+                *(
+                    starts
+                    for view, starts in self._starts.items()
+                    if (view != self._entry) == nested
+                )
+            )
+            self._partitions[nested] = self._restricted(allowed)
+        return self._partitions[nested]
 
     def outside_view(self, view: str) -> CommandMatcher:
         """Reuse the global graph, excluding only the selected view's entry points."""
@@ -42,22 +57,20 @@ class ViewMatchers:
         if view not in self._matchers:
             if view not in self._starts:
                 raise ValueError(f"unknown view: {view!r}")
-            allowed = self._starts[view]
-            # Keep global pattern indices: accept instructions refer to this table.
-            graph = CommandAutomaton.create(
-                self._graph.states,
-                self._graph.patterns,
-                self._graph.starts,
-                {
-                    word: selected
-                    for word, starts in self._graph.literal_starts.items()
-                    if (
-                        selected := tuple(start for start in starts if start in allowed)
-                    )
-                },
-                tuple(
-                    start for start in self._graph.parameter_starts if start in allowed
-                ),
-            )
-            self._matchers[view] = CommandMatcher(graph, self._registry)
+            self._matchers[view] = self._restricted(self._starts[view])
         return self._matchers[view]
+
+    def _restricted(self, allowed: set[int]) -> CommandMatcher:
+        # Keep global pattern indices and IDs even when searching a subset.
+        graph = CommandAutomaton.create(
+            self._graph.states,
+            self._graph.patterns,
+            self._graph.starts,
+            {
+                word: selected
+                for word, starts in self._graph.literal_starts.items()
+                if (selected := tuple(start for start in starts if start in allowed))
+            },
+            tuple(start for start in self._graph.parameter_starts if start in allowed),
+        )
+        return CommandMatcher(graph, self._registry)

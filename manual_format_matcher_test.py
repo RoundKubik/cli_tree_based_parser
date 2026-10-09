@@ -142,11 +142,15 @@ def main() -> None:
         help="Legacy inputs only; v1 catalogs select syntax from source",
     )
     arguments.add_argument("--summary", action="store_true")
+    arguments.add_argument(
+        "--context-mode", choices=("system", "hierarchy"), default="system"
+    )
     arguments.add_argument("--save", type=Path, help="Write plain result JSON")
     arguments.add_argument(
         "--save-catalog",
         type=Path,
-        help="Recover hierarchy and write a separate runtime catalog (v1 inputs)",
+        help="Save the runtime catalog; "
+        "hierarchy recovery requires --context-mode hierarchy",
     )
     args = arguments.parse_args()
     if bool(args.patterns) != bool(args.documents):
@@ -162,7 +166,7 @@ def main() -> None:
         if args.documents
         else case["documents"]
     )
-    matcher = FormatMatcher()
+    matcher = FormatMatcher(context_mode=args.context_mode)
     progress = show_progress if args.patterns else None
     if isinstance(documents, dict):
         if args.target_syntax is not None:
@@ -178,7 +182,8 @@ def main() -> None:
                 json.dumps(prepared.catalog, ensure_ascii=False), encoding="utf-8"
             )
             print(f"RUNTIME CATALOG: {prepared.catalog['type']}")
-            print(f"UNRESOLVED COMMANDS: {len(prepared.unresolved)}")
+            if args.context_mode == "hierarchy":
+                print(f"UNRESOLVED COMMANDS: {len(prepared.unresolved)}")
             print(f"SAVED CATALOG: {args.save_catalog}")
         else:
             result = matcher.compile_catalogs(targets, documents, on_progress=progress)

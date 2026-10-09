@@ -12,9 +12,14 @@ def main() -> int:
     arguments.add_argument("--patterns", type=Path, required=True)
     arguments.add_argument("--config", type=Path, required=True)
     arguments.add_argument("--output", type=Path, required=True)
+    arguments.add_argument(
+        "--context-mode", choices=("system", "hierarchy"), default="system"
+    )
     args = arguments.parse_args()
 
-    line_parser = CommandLineParser.from_json_file(args.patterns)
+    line_parser = CommandLineParser.from_json_file(
+        args.patterns, context_mode=args.context_mode
+    )
     parser = ConfigurationParser(line_parser)
     report = parser.parse(args.config.read_text(encoding="utf-8"))
 

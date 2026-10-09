@@ -111,12 +111,10 @@ def test_duplicate_formats_keep_distinct_view_and_record_locations():
         {"view": "GRPC server view", "index": 0},
         {"view": "GRPC server view", "index": 1},
     ]
-    # The entry view is scoped; the unresolved view still searches globally.
+    # Both scopes keep their original locations and cannot cross the system boundary.
     for record in data["devices"].values():
         expected_ids = (
-            ["doc:0"]
-            if record["source"]["view"] == "system"
-            else ["doc:0", "doc:1", "doc:2"]
+            ["doc:0"] if record["source"]["view"] == "system" else ["doc:1", "doc:2"]
         )
         assert [pair["document_id"] for pair in record["mappings"]] == expected_ids
         for pair in record["mappings"]:
@@ -192,7 +190,7 @@ def test_invalid_grouped_containers_are_rejected(change):
     device = catalog("device", views={"system": [command("c")]})
     device.update(change)
     with pytest.raises(FormatError):
-        FormatMatcher().compile_catalogs(
+        FormatMatcher(context_mode="hierarchy").compile_catalogs(
             device, catalog("documentation", [document("c")])
         )
 
@@ -208,7 +206,7 @@ def test_explicit_unknown_transition_is_not_an_authoritative_declared_edge(sourc
             "Reference": [{**document("c"), "switch_to_view": {"status": "unresolved"}}]
         },
     )
-    result = FormatMatcher().compile_catalogs(data, docs)
+    result = FormatMatcher(context_mode="hierarchy").compile_catalogs(data, docs)
     assert not result.hierarchy.declared_transitions
     assert result.hierarchy.evidence.command_links[0].transition.kind == "unknown"
 
@@ -221,7 +219,7 @@ def test_malformed_transition_markers_are_rejected(source, transition):
     record = command("c") if source == "device" else document("c")
     record["switch_to_view"] = transition
     with pytest.raises(FormatError, match="switch_to_view"):
-        FormatMatcher().compile_catalogs(
+        FormatMatcher(context_mode="hierarchy").compile_catalogs(
             catalog(source, views={"root": [record]}),
             catalog("documentation", [document("c")]),
         )

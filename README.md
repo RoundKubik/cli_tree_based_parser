@@ -24,18 +24,20 @@ The detailed documentation is split into a short navigation tree:
 - [pattern compiler and command graph](docs/reference/patterns-graph.md);
 - [runtime matcher](docs/reference/matching.md).
 - [standalone automaton parser](docs/reference/automaton-parser.md) — independent
-  `vrp_parser_automaton` package: one flat catalogue or a prepared view hierarchy,
-  context tracking, CLI and Python usage;
+  `vrp_parser_automaton` package: one flat or grouped catalogue,
+  system/non-system search scopes, CLI and Python usage;
   try the quick start below.
 - [format matcher for the automaton parser](docs/reference/automaton-format-matcher.md)
   — device → documentation and documentation → documentation matches, parameter
-  slot IDs, offline hierarchy recovery and a separate runtime catalog preserving
-  known transitions and marking unresolved ones (`prepare_catalogs`, `--save-catalog`);
+  slot IDs and scoped matching on the original grouped catalogs; hierarchy recovery
+  is optional (`context_mode="hierarchy"`);
   try `python3.13 manual_format_matcher_test.py` or benchmark a real CLIs corpus
   using `python3.13 benchmark_format_matcher.py --corpus /path/to/cmd_corpus`.
 - [command catalogue format specification (draft)](docs/reference/command-catalog-format.md)
   — flat/grouped matcher inputs, parameter types and view references.
-  The parser uses one prepared runtime document and does not recover hierarchy.
+  The parser uses one original catalog and does not require hierarchy recovery.
+- [semantic lookup after parsing](docs/reference/semantic-lookup.md) — mapping JSON,
+  original documentation, alternative parses and parameter values.
 - [documentation corpus extraction](scripts/corpus_pipeline/README.md)
   — reusable LLM prompt and JSON Schema, Codex extraction, and NE40E mock formats.
 - [CloudEngine mock catalogues](data/mocks/cloudengine_150/README.md)
@@ -77,7 +79,7 @@ the returned `pattern_id`, `slot_id` and repeat coordinates; the parser never
 loads an offline mapping or selects a documentation grammar.
 
 The [usage guide](docs/reference/automaton-parser.md) explains input formats,
-prepared hierarchy, result fields, exit codes and current limitations.
+system/non-system scopes, result fields, exit codes and current limitations.
 The API and CLI examples below describe the original `vrp_parser` package;
 the `vrp-parser` executable still runs that original implementation.
 

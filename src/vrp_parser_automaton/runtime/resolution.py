@@ -41,9 +41,13 @@ class MatchResolver:
         automaton: CommandAutomaton,
         *,
         span_offset: int,
+        retain_all: bool = False,
     ) -> ResolvedMatch | ParseError:
         valid = tuple(item for item in candidates if not item.state.rejected)
         invalid = tuple(item for item in candidates if item.state.rejected)
+
+        if retain_all and valid:
+            return self._resolved(valid, automaton, span_offset)
 
         best_valid = self._frontier.select(valid)
         invalid_frontier = self._applicable_frontier(invalid)
@@ -62,8 +66,16 @@ class MatchResolver:
                 span_offset=span_offset,
             )
 
+        return self._resolved(unblocked, automaton, span_offset)
+
+    def _resolved(
+        self,
+        candidates: tuple[Candidate, ...],
+        automaton: CommandAutomaton,
+        span_offset: int,
+    ) -> ResolvedMatch:
         matches = self._matches.create(
-            unblocked,
+            candidates,
             automaton,
             span_offset=span_offset,
         )

@@ -123,7 +123,17 @@ def test_unresolved_context_retains_matches_and_has_a_separate_summary_count(
         encoding="utf-8",
     )
     config.write_text("set 5\n", encoding="utf-8")
-    exit_code = main(["parse", "--patterns", str(patterns), "--config", str(config)])
+    exit_code = main(
+        [
+            "parse",
+            "--context-mode",
+            "hierarchy",
+            "--patterns",
+            str(patterns),
+            "--config",
+            str(config),
+        ]
+    )
     payload = _stdout_json(capsys)
     assert exit_code == 0
     assert payload["summary"]["commands"] == 1

@@ -30,6 +30,31 @@ class ViewScope:
         return self.scopes.get(device_index)
 
     @classmethod
+    def partitioned(
+        cls, device: CommandCatalog, documentation: CommandCatalog
+    ) -> ViewScope:
+        """Keep the two catalog entry views separate from every non-entry view."""
+        if device.info["type"] != "grouped" or documentation.info["type"] != "grouped":
+            return cls()
+        root = documentation.info["entry_view"]
+        system = frozenset(
+            i
+            for i, location in enumerate(documentation.locations)
+            if location.view == root
+        )
+        other = frozenset(
+            i
+            for i, location in enumerate(documentation.locations)
+            if location.view != root
+        )
+        return cls(
+            {
+                i: system if location.view == device.info["entry_view"] else other
+                for i, location in enumerate(device.locations)
+            }
+        )
+
+    @classmethod
     def recovered(
         cls,
         device: CommandCatalog,

@@ -37,7 +37,7 @@ def test_zero_one_or_many_positive_candidates_do_not_establish_a_target(count):
             "Child": [document("rule <id>")],
         },
     )
-    result = FormatMatcher().compile_catalogs(device, docs)
+    result = FormatMatcher(context_mode="hierarchy").compile_catalogs(device, docs)
     hierarchy = result.hierarchy
     target = hierarchy.targets["Child"]
     assert target.status == "unresolved" and target.device_view is None
@@ -58,7 +58,7 @@ def test_entry_target_is_known_even_without_matching_commands_in_the_entry_views
             "Child": [{**document("return"), "switch_to_view": "Root"}],
         },
     )
-    result = FormatMatcher().compile_catalogs(device, docs)
+    result = FormatMatcher(context_mode="hierarchy").compile_catalogs(device, docs)
     target = result.hierarchy.targets["Root"]
     assert target.status == "resolved" and target.device_view == "root"
     assert target.candidates == ()
@@ -89,7 +89,7 @@ def test_matching_names_and_prefixes_do_not_create_target_evidence():
             "Child": [document("rule <id> documentation")],
         },
     )
-    result = FormatMatcher().compile_catalogs(device, docs)
+    result = FormatMatcher(context_mode="hierarchy").compile_catalogs(device, docs)
     assert any(pair.stage == "prefix" and pair.bindings for pair in result.pairs)
     assert result.hierarchy.targets["Child"].candidates == ()
 
@@ -109,7 +109,7 @@ def test_known_incompatible_parameter_types_do_not_supply_a_target_candidate():
             "Child": [document("rule <id>")],
         },
     )
-    result = FormatMatcher().compile_catalogs(device, docs)
+    result = FormatMatcher(context_mode="hierarchy").compile_catalogs(device, docs)
     assert result.hierarchy.targets["Child"].candidates == ()
 
 
@@ -117,7 +117,7 @@ def test_resolution_reuses_original_pairs_and_view_links_without_comparisons(
     monkeypatch,
 ):
     device, docs = grouped_catalogs()
-    result = FormatMatcher().compile_catalogs(device, docs)
+    result = FormatMatcher(context_mode="hierarchy").compile_catalogs(device, docs)
 
     def forbidden(*args, **kwargs):
         raise AssertionError("resolving hierarchy must not parse or match again")
@@ -137,7 +137,7 @@ def test_resolution_reuses_original_pairs_and_view_links_without_comparisons(
 
 def test_json_references_recover_supporting_pairs_and_all_documented_effects():
     device, docs = grouped_catalogs()
-    result = FormatMatcher().compile_catalogs(device, docs)
+    result = FormatMatcher(context_mode="hierarchy").compile_catalogs(device, docs)
     data = json.loads(json.dumps(result.to_dict()))
     hierarchy = data["hierarchy"]
     # Hierarchy serialization adds no copies or modifications of pair data.
@@ -197,7 +197,9 @@ def test_conflicting_effects_and_unknown_are_not_collapsed_into_one_transition()
             "B": [],
         },
     )
-    data = FormatMatcher().compile_catalogs(device, docs).to_dict()
+    data = (
+        FormatMatcher(context_mode="hierarchy").compile_catalogs(device, docs).to_dict()
+    )
     (effects,) = data["hierarchy"]["transitions"].values()
     assert effects == [
         {"mapping_index": 0, "kind": "switch", "target": "A"},
@@ -222,7 +224,7 @@ def test_explicit_input_transitions_survive_without_documentation_matches(source
         },
     )
     docs = catalog("documentation", views={"Root": [document("unrelated")]})
-    result = FormatMatcher().compile_catalogs(device, docs)
+    result = FormatMatcher(context_mode="hierarchy").compile_catalogs(device, docs)
     enter, stay, unknown = result.devices
     assert result.pairs == ()
     assert result.hierarchy.declared_transitions == {enter: "actual-child", stay: None}
@@ -246,7 +248,7 @@ def test_explicit_device_switch_and_different_documented_effect_remain_separate(
             "Root": [{**document("enter"), "switch_to_view": None}],
         },
     )
-    result = FormatMatcher().compile_catalogs(device, docs)
+    result = FormatMatcher(context_mode="hierarchy").compile_catalogs(device, docs)
     (identifier,) = result.devices
     data = result.to_dict()["hierarchy"]
     assert data["declared_transitions"][identifier] == "child"
@@ -267,8 +269,10 @@ def test_saved_transition_uses_its_intersection_scope(parameters):
             "Child": [],
         },
     )
-    data = FormatMatcher().compile_catalogs(device, docs).to_dict()
-    parser = CommandLineParser({"commands": [pattern]})
+    data = (
+        FormatMatcher(context_mode="hierarchy").compile_catalogs(device, docs).to_dict()
+    )
+    parser = CommandLineParser({"commands": [pattern]}, context_mode="hierarchy")
     single = "c a 1" if parameters else "c a"
     both = "c b 2 a 1" if parameters else "c b a"
     for line in (single, both):
@@ -300,7 +304,9 @@ def test_target_evidence_is_serialized_once_for_many_entry_commands():
             "Child": [document("rule <id>")],
         },
     )
-    data = FormatMatcher().compile_catalogs(device, docs).to_dict()
+    data = (
+        FormatMatcher(context_mode="hierarchy").compile_catalogs(device, docs).to_dict()
+    )
     hierarchy = data["hierarchy"]
     assert len(hierarchy["targets"]) == 2
     assert len(hierarchy["view_links"]) == 2
@@ -322,7 +328,7 @@ def test_flat_or_mixed_inputs_do_not_create_hierarchy(device_grouped, doc_groupe
     docs = catalog(
         "documentation", doc_records, {"Root": doc_records} if doc_grouped else None
     )
-    result = FormatMatcher().compile_catalogs(device, docs)
+    result = FormatMatcher(context_mode="hierarchy").compile_catalogs(device, docs)
     assert result.hierarchy is None and "hierarchy" not in result.to_dict()
 
 
@@ -337,6 +343,8 @@ def test_manual_script_saves_the_hierarchy_with_existing_catalog_arguments(tmp_p
         [
             sys.executable,
             "manual_format_matcher_test.py",
+            "--context-mode",
+            "hierarchy",
             "--patterns",
             str(patterns),
             "--documents",
@@ -353,5 +361,7 @@ def test_manual_script_saves_the_hierarchy_with_existing_catalog_arguments(tmp_p
     assert "HIERARCHY TARGETS:" in completed.stdout
     assert (
         json.loads(output.read_text())
-        == FormatMatcher().compile_catalogs(device, docs).to_dict()
+        == FormatMatcher(context_mode="hierarchy")
+        .compile_catalogs(device, docs)
+        .to_dict()
     )

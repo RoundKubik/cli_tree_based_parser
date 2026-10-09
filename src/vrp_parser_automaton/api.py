@@ -7,7 +7,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from vrp_parser_automaton.automata.compiler import PatternCompiler
 from vrp_parser_automaton.automata.model import CommandAutomaton
@@ -31,6 +31,7 @@ from .results import (
     ParseError,
     ParseReport,
     ParseReportFactory,
+    SeparatorLine,
     UnresolvedCommand,
 )
 
@@ -43,8 +44,14 @@ class CommandLineParser:
         pattern_document: Mapping[str, Any],
         *,
         parameter_types: ParameterTypeRegistry | None = None,
+        context_mode: Literal["system", "hierarchy"] = "system",
     ) -> None:
-        catalog = PatternCatalog.read(pattern_document)
+        if context_mode not in {"system", "hierarchy"}:
+            raise ValueError("context_mode must be 'system' or 'hierarchy'")
+        self._context_mode = context_mode
+        catalog = PatternCatalog.read(
+            pattern_document, validate_transitions=context_mode == "hierarchy"
+        )
         commands = tuple(command.format for command in catalog.commands)
         source_registry = parameter_types or default_parameter_registry()
         self._parameter_types = source_registry.clone().freeze()
@@ -61,6 +68,10 @@ class CommandLineParser:
     @property
     def entry_view(self) -> str | None:
         return self._entry_view
+
+    @property
+    def context_mode(self) -> Literal["system", "hierarchy"]:
+        return self._context_mode
 
     @property
     def views(self) -> tuple[str, ...]:
@@ -86,7 +97,20 @@ class CommandLineParser:
     def parse(
         self, line: str, line_number: int = 1, *, view: str | None = None
     ) -> LineResult:
-        """Parse in the requested view, defaulting to the grouped catalog entry."""
+        """Grouped inputs default to system/non-system selection by indentation."""
+        if (
+            view is None
+            and self.entry_view is not None
+            and self.context_mode == "system"
+        ):
+            self._validate_input(line, line_number)
+            nested = bool(self._indent_end(line))
+            return self._parse_at(
+                line,
+                line_number,
+                None if nested else self.entry_view,
+                partition=nested,
+            )
         return self._parse_at(
             line, line_number, self.entry_view if view is None else view
         )
@@ -114,6 +138,8 @@ class CommandLineParser:
         self, command: ParsedCommand
     ) -> tuple[str | None, ContextIssue | None]:
         """Keep the cause of an unknown child view alongside the transition."""
+        if self.context_mode == "system":
+            return None, None
         if isinstance(command, UnresolvedCommand) or command.view is None:
             return None, command.context_issue
         targets = {self._child_views[match.pattern_index] for match in command.matches}
@@ -132,19 +158,42 @@ class CommandLineParser:
         return targets.pop(), None
 
     def _parse_at(
-        self, line: str, line_number: int, view: str | None, *, valid_only: bool = False
+        self,
+        line: str,
+        line_number: int,
+        view: str | None,
+        *,
+        valid_only: bool = False,
+        partition: bool | None = None,
     ) -> LineResult:
         self._validate_input(line, line_number)
-        matcher = self._matchers.for_view(view)
+        matcher = (
+            self._matchers.for_view(view)
+            if partition is None
+            else self._matchers.for_partition(partition)
+        )
         indent_end = self._indent_end(line)
         indent = line[:indent_end]
         command = line[indent_end:].rstrip()
         if not command:
             return BlankLine(line_number, line, indent)
+        if partition is not None and command == "#":
+            return SeparatorLine(line_number, line, indent)
 
-        outcome = matcher.match(command, span_offset=indent_end, valid_only=valid_only)
+        outcome = matcher.match(
+            command,
+            span_offset=indent_end,
+            valid_only=valid_only,
+            retain_all=partition is not None,
+        )
         if isinstance(outcome, ParseError):
-            if view is not None:
+            if partition is not None:
+                scope = "non-system views" if partition else f"system view {view!r}"
+                outcome = replace(
+                    outcome,
+                    message=f"{outcome.message} Search was restricted to {scope}.",
+                )
+            elif view is not None and self.context_mode == "hierarchy":
                 fallback = self._matchers.outside_view(view).match(
                     command, span_offset=indent_end, valid_only=True
                 )
@@ -215,6 +264,7 @@ class CommandLineParser:
         source: str,
         *,
         parameter_types: ParameterTypeRegistry | None = None,
+        context_mode: Literal["system", "hierarchy"] = "system",
     ) -> CommandLineParser:
         try:
             document = json.loads(source)
@@ -222,7 +272,7 @@ class CommandLineParser:
             raise PatternDocumentError(f"invalid pattern JSON: {error}") from error
         if not isinstance(document, Mapping):
             raise PatternDocumentError("pattern JSON root must be an object")
-        return cls(document, parameter_types=parameter_types)
+        return cls(document, parameter_types=parameter_types, context_mode=context_mode)
 
     @classmethod
     def from_json_file(
@@ -230,10 +280,12 @@ class CommandLineParser:
         path: str | Path,
         *,
         parameter_types: ParameterTypeRegistry | None = None,
+        context_mode: Literal["system", "hierarchy"] = "system",
     ) -> CommandLineParser:
         return cls.from_json(
             Path(path).read_text(encoding="utf-8"),
             parameter_types=parameter_types,
+            context_mode=context_mode,
         )
 
 
@@ -264,6 +316,13 @@ class ConfigurationParser:
             raise TypeError("configuration content must be a string")
         physical = self._physical_lines(content)
         if self._contextual:
+            if self._line_parser.context_mode == "system":
+                return self._report_factory.create(
+                    tuple(
+                        self._line_parser.parse(raw, number)
+                        for number, raw in enumerate(physical, 1)
+                    )
+                )
             return self._report_factory.create(
                 ContextSession(self._line_parser).parse(physical)
             )

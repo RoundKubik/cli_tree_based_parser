@@ -33,7 +33,7 @@ def catalog():
 
 
 def test_equal_foreign_matches_keep_both_ids_and_original_indented_value_spans():
-    parser = CommandLineParser(catalog())
+    parser = CommandLineParser(catalog(), context_mode="hierarchy")
     result = parser.parse("  set abc", line_number=7)
     assert isinstance(result, UnresolvedCommand)
     assert result.parsed and result.view is None
@@ -52,7 +52,7 @@ def test_equal_foreign_matches_keep_both_ids_and_original_indented_value_spans()
 
 
 def test_unknown_parent_uses_valid_foreign_formats_despite_rejected_specific_format():
-    parser = CommandLineParser(catalog())
+    parser = CommandLineParser(catalog(), context_mode="hierarchy")
     report = ConfigurationParser(parser).parse("enter\n set 10\n  set abc\nroot-only")
     assert type(report.lines[0]) is ParsedCommand
     for line in report.lines[1:3]:
@@ -67,7 +67,7 @@ def test_unknown_parent_uses_valid_foreign_formats_despite_rejected_specific_for
 
 
 def test_known_context_success_does_not_consider_foreign_patterns():
-    parser = CommandLineParser(catalog())
+    parser = CommandLineParser(catalog(), context_mode="hierarchy")
     result = parser.parse("set 5")
     assert type(result) is ParsedCommand
     assert result.view == "root" and result.context_issue is None
@@ -76,9 +76,9 @@ def test_known_context_success_does_not_consider_foreign_patterns():
 
 
 def test_report_counts_unresolved_as_recognized_but_distinguishes_it_from_errors():
-    report = ConfigurationParser(CommandLineParser(catalog())).parse(
-        "enter\n set abc\n missing\nroot-only"
-    )
+    report = ConfigurationParser(
+        CommandLineParser(catalog(), context_mode="hierarchy")
+    ).parse("enter\n set abc\n missing\nroot-only")
     assert report.has_errors and report.has_unresolved
     assert report.summary.commands == 3
     assert report.summary.unresolved == 1
@@ -94,8 +94,12 @@ def test_report_counts_unresolved_as_recognized_but_distinguishes_it_from_errors
 
 
 def test_flat_catalog_serialization_keeps_the_existing_result_shape():
-    grouped = ConfigurationParser(CommandLineParser(catalog()), contextual=False)
-    flat = ConfigurationParser(CommandLineParser({"commands": ["set STRING<1-9>"]}))
+    grouped = ConfigurationParser(
+        CommandLineParser(catalog(), context_mode="hierarchy"), contextual=False
+    )
+    flat = ConfigurationParser(
+        CommandLineParser({"commands": ["set STRING<1-9>"]}, context_mode="hierarchy")
+    )
     for parser in (grouped, flat):
         report = parser.parse("set abc\nmissing")
         assert not report.has_unresolved
@@ -108,7 +112,7 @@ def test_flat_catalog_serialization_keeps_the_existing_result_shape():
 def test_unique_foreign_entry_does_not_apply_its_declared_transition():
     data = catalog()
     data["views"]["a"] = [{"format": "foreign-entry", "switch_to_view": "b"}]
-    parser = CommandLineParser(data)
+    parser = CommandLineParser(data, context_mode="hierarchy")
     report = ConfigurationParser(parser).parse("foreign-entry\n set abc\nroot-only")
     assert isinstance(report.lines[0], UnresolvedCommand)
     assert report.lines[0].status == MatchStatus.UNIQUE
@@ -130,7 +134,8 @@ def test_current_view_generic_match_cannot_turn_validation_error_into_fallback(
         {"format": prefix + "STRING<1-20>"},
     ]
     parser = CommandLineParser(
-        {"type": "grouped", "entry_view": "root", "views": views}
+        {"type": "grouped", "entry_view": "root", "views": views},
+        context_mode="hierarchy",
     )
     line = "  " + prefix + "10"
     result = parser.parse(line, view=view)
@@ -161,7 +166,8 @@ def test_current_view_matches_are_excluded_before_ranking_foreign_candidates(
                 ],
                 "other": [{"format": "set " + foreign_type}],
             },
-        }
+        },
+        context_mode="hierarchy",
     )
     result = parser.parse("  set 10", line_number=7)
     expected = parser.parse("  set 10", view="other").primary_match
@@ -190,7 +196,8 @@ def test_unknown_context_still_searches_formats_from_the_parent_view():
                     {"format": "set STRING<1-20>"},
                 ]
             },
-        }
+        },
+        context_mode="hierarchy",
     )
     report = ConfigurationParser(parser).parse("enter\n set 10\nset 10")
     unknown, known = report.lines[1:]

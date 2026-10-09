@@ -121,8 +121,10 @@ def test_arbitrary_view_renaming_preserves_matching_and_hierarchy_evidence(sourc
     doc_names = dict(zip(docs["views"], ["n1", "n8", "n3", "n2"], strict=True))
     renamed_device = renamed_catalog(device, device_names)
     renamed_docs = renamed_catalog(docs, doc_names)
-    original = FormatMatcher().compile_catalogs(device, docs)
-    renamed = FormatMatcher().compile_catalogs(renamed_device, renamed_docs)
+    original = FormatMatcher(context_mode="hierarchy").compile_catalogs(device, docs)
+    renamed = FormatMatcher(context_mode="hierarchy").compile_catalogs(
+        renamed_device, renamed_docs
+    )
     assert renamed.devices == original.devices
 
     expected_json = original.to_dict()
@@ -167,7 +169,7 @@ def test_many_to_many_view_links_retain_original_pairs_without_new_matching(
     monkeypatch,
 ):
     device, docs = grouped_catalogs()
-    mapping = FormatMatcher().compile_catalogs(device, docs)
+    mapping = FormatMatcher(context_mode="hierarchy").compile_catalogs(device, docs)
     before = mapping.to_dict()
 
     def forbidden(*args, **kwargs):
@@ -215,7 +217,7 @@ def test_parameterless_transitions_keep_switch_stay_unknown_and_conflicting_targ
             "B": [],
         },
     )
-    mapping = FormatMatcher().compile_catalogs(devices, docs)
+    mapping = FormatMatcher(context_mode="hierarchy").compile_catalogs(devices, docs)
     evidence = HierarchyAnalysis(devices, docs, mapping).collect()
     assert [link.transition for link in evidence.command_links] == [
         DocumentTransition("switch", "A"),
@@ -255,7 +257,7 @@ def test_intersection_transition_retains_scope_for_sets_and_source_slots(
             "Child": [],
         },
     )
-    mapping = FormatMatcher().compile_catalogs(devices, docs)
+    mapping = FormatMatcher(context_mode="hierarchy").compile_catalogs(devices, docs)
     (link,) = HierarchyAnalysis(devices, docs, mapping).collect().command_links
     assert link.transition == DocumentTransition("switch", "Child")
     assert link.pair is mapping.pairs[0]
@@ -264,7 +266,7 @@ def test_intersection_transition_retains_scope_for_sets_and_source_slots(
     data = mapping.to_dict()
     saved = data["devices"][link.pair.pattern_id]["mappings"][0]
     machine = restored_pair(data, link.pair.pattern_id, saved)["automaton"]
-    parser = CommandLineParser({"commands": [pattern]})
+    parser = CommandLineParser({"commands": [pattern]}, context_mode="hierarchy")
     single = "c a 1" if parameters else "c a"
     both = "c b 2 a 1" if parameters else "c b a"
     for line in (single, both):
@@ -289,7 +291,7 @@ def test_reordered_pair_preserves_bindings_and_transition():
             "Child": [],
         },
     )
-    mapping = FormatMatcher().compile_catalogs(devices, docs)
+    mapping = FormatMatcher(context_mode="hierarchy").compile_catalogs(devices, docs)
     (link,) = HierarchyAnalysis(devices, docs, mapping).collect().command_links
     assert link.pair.stage == "reordered" and len(link.pair.bindings) == 2
     assert link.pair.automaton is None
@@ -317,16 +319,16 @@ def test_prefix_unknown_and_unmatched_results_create_no_hierarchy_links():
             "Child": [],
         },
     )
-    mapping = FormatMatcher().compile_catalogs(devices, docs)
+    mapping = FormatMatcher(context_mode="hierarchy").compile_catalogs(devices, docs)
     prefix = next(p for p in mapping.pairs if p.stage == "prefix")
     assert prefix.bindings
     evidence = HierarchyAnalysis(devices, docs, mapping).collect()
     assert [link.pair.device_format for link in evidence.command_links] == [
         "unknown [ INTEGER<1-9> ]"
     ]
-    limited = FormatMatcher(MappingLimits(analysis_steps=1)).compile_catalogs(
-        devices, docs
-    )
+    limited = FormatMatcher(
+        MappingLimits(analysis_steps=1), context_mode="hierarchy"
+    ).compile_catalogs(devices, docs)
     assert any(p.status == "unknown" for p in limited.pairs)
     assert HierarchyAnalysis(devices, docs, limited).collect() == HierarchyEvidence(
         (), ()
@@ -342,9 +344,9 @@ def test_finished_intersection_with_unfinished_inclusion_still_carries_transitio
             "Child": [],
         },
     )
-    mapping = FormatMatcher(MappingLimits(comparison_states=1)).compile_catalogs(
-        devices, docs
-    )
+    mapping = FormatMatcher(
+        MappingLimits(comparison_states=1), context_mode="hierarchy"
+    ).compile_catalogs(devices, docs)
     (link,) = HierarchyAnalysis(devices, docs, mapping).collect().command_links
     assert link.pair.status == "matched" and link.pair.automaton is not None
     assert link.transition == DocumentTransition("switch", "Child")
@@ -356,7 +358,7 @@ def test_command_semantics_is_not_read_or_evaluated():
         for record in records:
             record["creates"] = object()
             record["requires"] = object()
-    mapping = FormatMatcher().compile_catalogs(device, docs)
+    mapping = FormatMatcher(context_mode="hierarchy").compile_catalogs(device, docs)
     evidence = HierarchyAnalysis(device, docs, mapping).collect()
     assert len(evidence.command_links) == 10
 
@@ -364,7 +366,7 @@ def test_command_semantics_is_not_read_or_evaluated():
 @pytest.mark.parametrize("side", ["device", "documentation"])
 def test_changed_formats_cannot_attach_transitions_to_an_old_mapping(side):
     device, docs = grouped_catalogs()
-    mapping = FormatMatcher().compile_catalogs(device, docs)
+    mapping = FormatMatcher(context_mode="hierarchy").compile_catalogs(device, docs)
     target = device if side == "device" else docs
     next(iter(target["views"].values()))[0]["format"] = "different"
     with pytest.raises(FormatError, match="format differs"):
@@ -373,10 +375,12 @@ def test_changed_formats_cannot_attach_transitions_to_an_old_mapping(side):
 
 def test_hierarchy_requires_catalog_locations_and_grouped_inputs():
     device, docs = grouped_catalogs()
-    legacy = FormatMatcher().compile_formats(["c"], [{"format": "c"}])
+    legacy = FormatMatcher(context_mode="hierarchy").compile_formats(
+        ["c"], [{"format": "c"}]
+    )
     with pytest.raises(FormatError, match="compile_catalogs"):
         HierarchyAnalysis(device, docs, legacy).collect()
     flat = catalog("device", [command("c")])
-    mapping = FormatMatcher().compile_catalogs(flat, docs)
+    mapping = FormatMatcher(context_mode="hierarchy").compile_catalogs(flat, docs)
     with pytest.raises(FormatError, match="two grouped"):
         HierarchyAnalysis(flat, docs, mapping).collect()

@@ -42,7 +42,7 @@ def example():
 def test_recovery_export_context_and_runtime_slots_end_to_end():
     device, docs = example()
     original = copy.deepcopy((device, docs))
-    prepared = FormatMatcher().prepare_catalogs(device, docs)
+    prepared = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert (device, docs) == original
     assert prepared.unresolved == ()
     assert prepared.catalog["type"] == "grouped"
@@ -55,7 +55,7 @@ def test_recovery_export_context_and_runtime_slots_end_to_end():
         for effects in saved["hierarchy"]["transitions"].values()
         for effect in effects
     } == {"switch", "stay"}
-    parser = CommandLineParser(prepared.catalog)
+    parser = CommandLineParser(prepared.catalog, context_mode="hierarchy")
     report = ConfigurationParser(parser).parse("enter\n rule 2\n shared\nshared")
     assert all(isinstance(line, ParsedCommand) for line in report.lines)
     assert [line.view for line in report.lines] == ["v0", "v1", "v1", "v0"]
@@ -92,7 +92,12 @@ def test_recovery_reuses_full_pairs_without_a_second_comparison_pass(monkeypatch
         return refined
 
     monkeypatch.setattr(PreparationPipeline, "refine", refine)
-    assert FormatMatcher().prepare_catalogs(device, docs).catalog["type"] == "grouped"
+    assert (
+        FormatMatcher(context_mode="hierarchy")
+        .prepare_catalogs(device, docs)
+        .catalog["type"]
+        == "grouped"
+    )
 
 
 def test_partial_recovery_preserves_known_edges_and_marks_documented_unknown():
@@ -105,7 +110,7 @@ def test_partial_recovery_preserves_known_edges_and_marks_documented_unknown():
         }
     )
     original = copy.deepcopy((device, docs))
-    prepared = FormatMatcher().prepare_catalogs(device, docs)
+    prepared = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert (device, docs) == original
     assert prepared.catalog["type"] == "grouped"
     assert prepared.catalog["entry_view"] == "v0"
@@ -119,7 +124,9 @@ def test_partial_recovery_preserves_known_edges_and_marks_documented_unknown():
     assert saved["hierarchy"]["transitions"][identifier] == [
         {"mapping_index": 0, "kind": "unknown"}
     ]
-    parser = CommandLineParser(json.loads(json.dumps(prepared.catalog)))
+    parser = CommandLineParser(
+        json.loads(json.dumps(prepared.catalog)), context_mode="hierarchy"
+    )
     report = ConfigurationParser(parser).parse(
         "enter\n rule 2\ninterface Port1\n shared\nenter\n rule 3"
     )
@@ -133,7 +140,9 @@ def test_partial_recovery_preserves_known_edges_and_marks_documented_unknown():
 
     # A manual correction uses the same view keys, formats, bindings and IDs.
     root[2]["switch_to_view"] = "v1"
-    repaired = FormatMatcher().prepare_catalogs(prepared.catalog, docs)
+    repaired = FormatMatcher(context_mode="hierarchy").prepare_catalogs(
+        prepared.catalog, docs
+    )
     assert not repaired.unresolved
     assert repaired.mapping.devices == prepared.mapping.devices
     assert repaired.catalog["views"]["v0"][2]["switch_to_view"] == "v1"
@@ -149,10 +158,10 @@ def test_explicit_unknown_survives_documentation_self_mapping_and_json_round_tri
             ]
         },
     )
-    prepared = FormatMatcher().prepare_catalogs(docs, docs)
+    prepared = FormatMatcher(context_mode="hierarchy").prepare_catalogs(docs, docs)
     assert prepared.catalog == docs
     assert len(prepared.unresolved) == 1
-    restored = FormatMatcher().prepare_catalogs(
+    restored = FormatMatcher(context_mode="hierarchy").prepare_catalogs(
         json.loads(json.dumps(prepared.catalog)), docs
     )
     assert restored.catalog == prepared.catalog
@@ -178,7 +187,7 @@ def test_unknown_effect_blocks_a_known_covering_transition_without_losing_pairs(
             "Child": [document("rule")],
         },
     )
-    prepared = FormatMatcher().prepare_catalogs(device, docs)
+    prepared = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert prepared.catalog["views"]["root"][0]["switch_to_view"] == {
         "status": "unresolved"
     }
@@ -220,7 +229,7 @@ def test_interface_targets_remain_unresolved_without_a_parameter_selection_rule(
             "Second": [document("second-rule")],
         },
     )
-    prepared = FormatMatcher().prepare_catalogs(device, docs)
+    prepared = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert prepared.catalog["views"]["root"][0]["switch_to_view"] == {
         "status": "unresolved"
     }
@@ -236,7 +245,7 @@ def test_interface_targets_remain_unresolved_without_a_parameter_selection_rule(
         == {"interface-name", "interface-type", "interface-number"}
         for pair in pairs
     )
-    parser = CommandLineParser(prepared.catalog)
+    parser = CommandLineParser(prepared.catalog, context_mode="hierarchy")
     for line in ("interface Port1", "interface Port 1"):
         parsed = parser.parse(line)
         assert isinstance(parsed, ParsedCommand)
@@ -263,7 +272,7 @@ def test_only_competitors_covering_the_documented_sample_block_uniqueness(subset
             "ACL": [document("rule <id>"), document("shared")],
         },
     )
-    prepared = FormatMatcher().prepare_catalogs(device, docs)
+    prepared = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert prepared.catalog["type"] == "grouped"
     assert prepared.catalog["entry_view"] == device["entry_view"]
     assert list(prepared.catalog["views"]) == list(device["views"])
@@ -274,7 +283,7 @@ def test_only_competitors_covering_the_documented_sample_block_uniqueness(subset
         "resolved" if subset else "unresolved"
     )
     assert (next(iter(prepared.mapping.devices)) in prepared.unresolved) is not subset
-    parser = CommandLineParser(prepared.catalog)
+    parser = CommandLineParser(prepared.catalog, context_mode="hierarchy")
     assert tuple(p.pattern_id for p in parser.automaton.patterns) == tuple(
         prepared.mapping.devices
     )
@@ -303,7 +312,7 @@ def test_types_distinguish_views_and_names_have_no_effect():
             "y": [typed_document("address <ip>", ip="ipv6-address")],
         },
     )
-    prepared = FormatMatcher().prepare_catalogs(device, docs)
+    prepared = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert prepared.unresolved == ()
     assert [c["switch_to_view"] for c in prepared.catalog["views"]["Root"]] == [
         "misleading6",
@@ -334,7 +343,7 @@ def test_existing_edges_disambiguate_identical_inventories_without_view_names():
             "Y": [document("same")],
         },
     )
-    result = FormatMatcher().prepare_catalogs(device, docs)
+    result = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert result.catalog["type"] == "grouped" and not result.unresolved
     assert result.mapping.hierarchy.resolved_views == {"a": "Root", "b": "Y", "c": "X"}
     for identifier, match in result.mapping.devices.items():
@@ -352,7 +361,7 @@ def test_unknown_parameter_types_and_prefixes_do_not_establish_transitions(forma
             "Child": [document("c")],
         },
     )
-    result = FormatMatcher().prepare_catalogs(device, docs)
+    result = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert result.catalog["type"] == "grouped"
     assert result.catalog["views"]["v0"][0]["switch_to_view"] == {
         "status": "unresolved"
@@ -375,7 +384,7 @@ def test_conflicting_partial_effect_cannot_be_promoted_to_whole_format_switch():
             "Child": [document("rule")],
         },
     )
-    result = FormatMatcher().prepare_catalogs(device, docs)
+    result = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert result.catalog["type"] == "grouped"
     assert result.catalog["views"]["v0"][0]["switch_to_view"] == {
         "status": "unresolved"
@@ -390,9 +399,9 @@ def test_expensive_unknown_comparison_cannot_prove_a_switch():
         "documentation",
         views={"Root": [document("enter [ number ] <id>")]},
     )
-    result = FormatMatcher(MappingLimits(analysis_steps=1)).prepare_catalogs(
-        device, docs
-    )
+    result = FormatMatcher(
+        MappingLimits(analysis_steps=1), context_mode="hierarchy"
+    ).prepare_catalogs(device, docs)
     assert result.catalog["type"] == "grouped" and result.unresolved
 
 
@@ -415,9 +424,9 @@ def test_uncertain_competitor_cannot_turn_another_candidate_into_unique(uncertai
             "Child": [document("rule <id>")],
         },
     )
-    result = FormatMatcher(MappingLimits(analysis_steps=1)).prepare_catalogs(
-        device, docs
-    )
+    result = FormatMatcher(
+        MappingLimits(analysis_steps=1), context_mode="hierarchy"
+    ).prepare_catalogs(device, docs)
     assert result.mapping.hierarchy.targets["Child"].status == "unresolved"
     assert result.catalog["type"] == "grouped" and result.unresolved
 
@@ -437,11 +446,11 @@ def test_reordered_sets_retain_bindings_and_runtime_slot_ids(brackets):
             "C": [document(reference)],
         },
     )
-    prepared = FormatMatcher().prepare_catalogs(device, docs)
+    prepared = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert prepared.unresolved == ()
-    report = ConfigurationParser(CommandLineParser(prepared.catalog)).parse(
-        "enter\n options b 2 a 1"
-    )
+    report = ConfigurationParser(
+        CommandLineParser(prepared.catalog, context_mode="hierarchy")
+    ).parse("enter\n options b 2 a 1")
     match = report.lines[1].primary_match
     (pair,) = prepared.mapping.devices[match.pattern_id].mappings
     assert pair.stage == "reordered"
@@ -467,7 +476,7 @@ def test_removing_foreign_full_match_retries_prefix_in_the_resolved_view():
             "Other": [document("set <id> device")],
         },
     )
-    prepared = FormatMatcher().prepare_catalogs(device, docs)
+    prepared = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert prepared.catalog["type"] == "grouped"
     child = list(prepared.mapping.devices.values())[1]
     assert child.status == "partial"
@@ -497,7 +506,7 @@ def test_conflicting_paths_do_not_choose_one_documentation_context():
             "B": [document("same")],
         },
     )
-    prepared = FormatMatcher().prepare_catalogs(device, docs)
+    prepared = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert prepared.mapping.hierarchy.resolved_views == {"r": "R"}
     assert prepared.catalog["type"] == "grouped"
     assert prepared.catalog["views"]["r"] == device["views"]["r"]
@@ -530,7 +539,7 @@ def test_cycles_and_empty_views_are_resolved_from_existing_edges():
             "Empty": [],
         },
     )
-    prepared = FormatMatcher().prepare_catalogs(device, docs)
+    prepared = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert prepared.mapping.hierarchy.resolved_views == {
         "r": "Root",
         "c": "Child",
@@ -551,6 +560,8 @@ def test_manual_preparation_writes_separate_catalog_and_mapping(tmp_path):
         [
             sys.executable,
             "manual_format_matcher_test.py",
+            "--context-mode",
+            "hierarchy",
             "--patterns",
             str(paths[0]),
             "--documents",
@@ -566,6 +577,6 @@ def test_manual_preparation_writes_separate_catalog_and_mapping(tmp_path):
         check=True,
     )
     assert "RUNTIME CATALOG: grouped" in completed.stdout
-    expected = FormatMatcher().prepare_catalogs(device, docs)
+    expected = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert json.loads(paths[2].read_text()) == expected.catalog
     assert json.loads(paths[3].read_text()) == expected.mapping.to_dict()

@@ -30,8 +30,16 @@ from .views import ViewScope
 
 
 class FormatMatcher:
-    def __init__(self, limits: MappingLimits | None = None) -> None:
+    def __init__(
+        self,
+        limits: MappingLimits | None = None,
+        *,
+        context_mode: Literal["system", "hierarchy"] = "system",
+    ) -> None:
+        if context_mode not in {"system", "hierarchy"}:
+            raise ValueError("context_mode must be 'system' or 'hierarchy'")
         self.limits = limits or MappingLimits()
+        self.context_mode = context_mode
 
     def compare(self, document_format: str, device_format: str) -> Comparison:
         """Diagnose the full-language relationship of one explicitly selected pair."""
@@ -92,7 +100,7 @@ class FormatMatcher:
         *,
         on_progress: Callable[[PreparationProgress], None] | None = None,
     ) -> PreparedMapping:
-        """Match v1 catalogs; grouped inputs also prepare scoped hierarchy options."""
+        """Match v1 catalogs inside system/non-system scopes by default."""
         prepared, _, _, _ = self._catalogs(
             device_catalog, documentation_catalog, on_progress
         )
@@ -105,14 +113,12 @@ class FormatMatcher:
         *,
         on_progress: Callable[[PreparationProgress], None] | None = None,
     ) -> PreparedCatalog:
-        """Recover from a prepared reference hierarchy with a partial inventory.
-
-        Unknown transitions are marked in place; established views remain usable.
-        The mapping keeps source locations in the original catalogs.
-        """
+        """Return the runtime catalog and mapping; hierarchy recovery is opt-in."""
         prepared, pipeline, device, documentation = self._catalogs(
             device_catalog, documentation_catalog, on_progress
         )
+        if self.context_mode == "system":
+            return PreparedCatalog(deepcopy(dict(device_catalog)), prepared)
         if prepared.hierarchy is None:
             if device.info["type"] == "grouped":
                 raise FormatError("hierarchy recovery requires grouped documentation")
@@ -154,8 +160,11 @@ class FormatMatcher:
         documentation_catalog: Mapping[str, Any],
         on_progress: Callable[[PreparationProgress], None] | None,
     ) -> tuple[PreparedMapping, PreparationPipeline, CommandCatalog, CommandCatalog]:
-        device = CommandCatalog.read(device_catalog)
-        documentation = CommandCatalog.read(documentation_catalog)
+        recover = self.context_mode == "hierarchy"
+        device = CommandCatalog.read(device_catalog, validate_transitions=recover)
+        documentation = CommandCatalog.read(
+            documentation_catalog, validate_transitions=recover
+        )
         if documentation.info["source"] != "documentation":
             raise FormatError("documentation catalog source must be documentation")
         syntax: Literal["device", "document"] = (
@@ -171,7 +180,11 @@ class FormatMatcher:
             documentation.commands,
             self.limits,
             on_progress,
-            view_scope=ViewScope.between(device, documentation),
+            view_scope=(
+                ViewScope.between(device, documentation)
+                if recover
+                else ViewScope.partitioned(device, documentation)
+            ),
         )
         prepared = pipeline.prepare()
         located = replace(
@@ -188,7 +201,7 @@ class FormatMatcher:
                 },
             ),
         )
-        if device.info["type"] == documentation.info["type"] == "grouped":
+        if recover and device.info["type"] == documentation.info["type"] == "grouped":
             located = replace(
                 located,
                 hierarchy=HierarchyAnalysis(

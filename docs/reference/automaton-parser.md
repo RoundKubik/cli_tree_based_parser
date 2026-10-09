@@ -1,13 +1,14 @@
 # Automaton parser
 
-`vrp_parser_automaton` accepts **one document with prepared command formats**,
-compiles it, and parses configurations. Flat parsing remains the default.
-For `type: "grouped"`, it uses the views and transitions from the same document.
+`vrp_parser_automaton` accepts one existing flat or grouped catalog and parses
+configurations. Flat input searches all formats. Grouped input defaults to two
+search scopes: `entry_view` for unindented lines, and all other views for indented
+lines. The input JSON schema, records, group names and ordering stay unchanged.
 
-The parser does not read documentation or a mapping file. Hierarchy preparation
-happens before parsing; matching results to documentation is handled by separate
-code afterward. `pattern_id`, `slot_id`, and repetition coordinates are preserved
-for that purpose.
+No hierarchy recovery is required. `switch_to_view` and `shared_views` do not affect
+the default mode. A group named `global` is an ordinary non-system group unless it
+is the explicit `entry_view`. The parser never reads a mapping or evaluates semantics.
+See [semantic lookup](semantic-lookup.md) for using its results afterward.
 
 ## Input document
 
@@ -26,7 +27,7 @@ The legacy flat format works unchanged:
 You can explicitly set `"type": "flat"` and pass commands as
 `{"format": "..."}` objects. Both forms search all formats.
 
-For a recovered hierarchy, save the following as `patterns.json`:
+An existing grouped catalog can be used directly as `patterns.json`:
 
 ```json
 {
@@ -48,19 +49,14 @@ For a recovered hierarchy, save the following as `patterns.json`:
 }
 ```
 
-`entry_view` is the initial context; `switch_to_view` is the exact key of the target
-view. An omitted or `null` `switch_to_view` preserves the current view.
-If an external process could not establish a transition, it must mark it explicitly:
+`entry_view` identifies the system group by its exact key; its spelling and position
+in the JSON object do not matter. In the default `context_mode="system"`, transitions
+are ignored, including missing targets and unresolved markers. No additional fields,
+view merging or rewritten runtime catalog are needed.
 
-```json
-{"format": "interface STRING<1-64>", "switch_to_view": {"status": "unresolved"}}
-```
-
-This record preserves the catalog's grouping and all known transitions. Only this
-command's child block is parsed without view restrictions. Leaving the block
-restores the parent context. You can manually replace the marker with a target view
-or `null`; the format and parameter identifiers remain unchanged. Grouping commands
-with unknown transitions without these markers does not replace preparation.
+The former transition-following behavior is available explicitly through
+`context_mode="hierarchy"` (CLI: `--context-mode hierarchy`). Only that mode requires
+valid target references and explicit `{"status": "unresolved"}` for unknown transitions.
 
 Supported declarations include `INTEGER<…>`, `STRING<…>`, `TEXT<…>`, IP addresses,
 and other registered types, as well as named parameters `<parameter-name>` in both
@@ -88,7 +84,7 @@ Optional `parameter_types` on each command selects the existing type validators:
 
 `acl 001` now yields `type_id="integer"`, `raw="001"`, and `normalized=1`;
 `acl invalid` fails validation. Annotations apply in both flat and grouped catalogs,
-including matches from unknown or foreign views. They are local to each command:
+including alternatives from different non-system views. They are local to each command:
 the same name may have a different type in another command or view.
 
 Supported built-in annotations are `integer`, `string`, `text`, `ipv4-address`,
@@ -132,9 +128,9 @@ including `All views`. The checked-in `documentation_grouped.json` is a CloudEng
 v300r024c00 structural export with 282 views and 36,750 view/format records.
 Entries contain only `format`; the script does not infer `switch_to_view`,
 `parameter_types`, or command semantics. Prepare transitions before contextual
-parsing. Parameter annotations improve type filtering in the matcher but may be
-incomplete or absent.
-The export itself does not establish a recovered hierarchy.
+parsing in the optional hierarchy mode. Default system/non-system parsing needs
+only `entry_view`. Parameter annotations improve type filtering but may be incomplete
+or absent. The export itself does not establish a recovered hierarchy.
 
 ## Running the parser
 
@@ -177,28 +173,34 @@ The parser has no `--mapping` argument.
 
 ## Catalogs and context
 
-`ConfigurationParser` starts in `entry_view` and searches for commands only in the
-current view. An increase in indentation opens a child block using the previous
-command's transition. A decrease restores the parent context. Blank lines do not
-change the stack. A root-level `#` separator returns to the initial view.
-Depth is the length of the original indentation: with one space per level, this is
-`0`, `1`, `2`, and so on. Tabs are not expanded into spaces.
+In the default grouped mode, each line is classified independently:
 
-In the example, `bgp 65000` is parsed in `system`, while `router-id 192.0.2.1` is parsed
-in `bgp`. A transition does not carry over to the next command at the same indentation:
-this handles a configuration file, not an interactive session.
+- No leading whitespace: search only the `entry_view` group.
+- Any leading whitespace: search all groups except `entry_view` together.
+- Blank lines and `#` separators keep their existing result types.
 
-`quit` and `return` have no built-in exit semantics; a group named `global` has no
-special meaning. View names come from the input document. If a known view has no
-valid match, the parser searches other groups and marks a complete fallback match
-as `UnresolvedCommand` rather than assigning its source view to the configuration.
+All nesting depths belong to the non-system scope. A previous parse error or missing
+transition cannot change this classification. Tabs count as leading whitespace and
+are not expanded. The input must use indentation to distinguish system commands
+from commands inside configuration blocks.
 
-Ambiguous results are preserved. If parse alternatives specify different transitions,
-the parser does not choose one: the child block is searched globally with `view=None`
-(the JSON omits `view`). The same applies to a block following a failed entry command
-or an explicit `{"status": "unresolved"}`. Even a unique syntactic match in such a
-block does not establish the view. The parser does not recover hierarchies, select
-a target view, or execute parameter-dependent conditional transitions.
+There is no fallback across the two scopes. A failure produces `ErrorLine` with an
+English message naming the search scope. `quit`, `return` and `global` receive no
+special treatment; commands are available only where the input catalog places them.
+
+Every fully recognized, valid candidate survives. Source catalog order selects the
+first `primary_match`; other successful candidates are `alternative_matches`, even
+when they have lower specificity. Invalid values and incomplete matches are not
+successful alternatives. Both system and non-system scopes can be ambiguous.
+
+A successful non-system line is a `ParsedCommand` with `view=None` (omitted in JSON),
+not an `UnresolvedCommand`. This means the coarse scope is known, but no concrete
+child view was established. `primary_match` never proves that view or its semantics.
+Use `pattern_id` and the mapping's source locations to identify the source record.
+
+With `context_mode="hierarchy"`, the previous context stack, transitions and diagnostic
+fallback remain available. Explicit flat parsing retains its original specificity
+rules. Neither alternative mode is required for the default workflow.
 
 ## Python API
 
@@ -213,9 +215,8 @@ PYTHONPATH=src python3.13 examples/parse_configuration.py \
   --output parsed.json
 ```
 
-For grouped input, use a prepared catalog with transitions and explicit `unresolved`
-markers; for flat input, use an ordinary format catalog. The mode is selected
-automatically. The script returns `0` if there are no line errors and `1` otherwise;
+For grouped input, use the existing catalog with `entry_view`; transitions are not
+required. Flat input continues to search all formats. The script returns `0` if there are no line errors and `1` otherwise;
 it saves the complete report in both cases. It does not need a mapping.
 
 After `python3.13 -m pip install -e .`, or with `PYTHONPATH=src`:
@@ -237,18 +238,19 @@ Path("parsed.json").write_text(
 ```
 
 The catalog is compiled once and can be reused for multiple files.
-Each configuration parse starts with a fresh stack.
+The default grouped parse classifies each line by indentation.
 
 ```python
 line = parser.parse("bgp 65000")  # entry view
-line = parser.parse("router-id 192.0.2.1", view="bgp")
+line = parser.parse(" router-id 192.0.2.1")  # all non-system views
 line = parser.parse_flat("router-id 192.0.2.1")
 flat_report = ConfigurationParser(parser, contextual=False).parse("bgp 65000")
 ```
 
 The line-level `parse()` accepts one physical line without a line terminator and
-does not retain context between calls. Its `view=None` means the entry view;
-use `parse_flat()` to search the entire catalog.
+does not retain context between calls. In the default grouped mode it uses the
+line indentation; explicit `view="..."` restricts a call to that particular group.
+Use `parse_flat()` to search the entire catalog.
 
 `CommandLineParser(document)` and `from_json(text)` are also available for loading.
 The `parameter_types=` argument still accepts a custom type registry.
@@ -273,8 +275,9 @@ for line in report.lines:
 ```
 
 A successful line's `status` is `unique`, `equivalent`, or `ambiguous`.
-`primary_match` and `alternative_matches` preserve the remaining equally ranked
-alternatives. `line.parameters` contains parameters from the first alternative only;
+In the default grouped mode, `primary_match` and `alternative_matches` preserve
+all fully valid candidates in source order. Flat and hierarchy modes retain the
+previous specificity ranking. `line.parameters` contains only the primary captures;
 for external matching of ambiguous results, iterate over `line.matches`.
 
 `pattern_id` identifies the original format, `slot_id` identifies the parameter's
@@ -298,7 +301,10 @@ report shape. A file with unresolved commands but no errors retains CLI exit cod
 check `has_unresolved` or the JSON count when confirmed context is required.
 One error does not stop parsing subsequent lines.
 
-### Context diagnostics
+### Context diagnostics in the optional hierarchy mode
+
+The following behavior requires `context_mode="hierarchy"`. The default mode keeps
+the two scopes separate and does not search the opposite scope after failure.
 
 When a command does not match in the selected view, the parser searches the global
 automaton using its entry index, excluding that view's formats before recognition

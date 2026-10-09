@@ -57,7 +57,7 @@ def test_entry_view_is_filtered_before_stages_without_leaking_duplicate_results(
     )
     docs["entry_view"] = "Initial context"
     before = copy.deepcopy((targets, docs))
-    result = FormatMatcher().compile_catalogs(targets, docs)
+    result = FormatMatcher(context_mode="hierarchy").compile_catalogs(targets, docs)
     unresolved, root = result.devices.values()
     assert root.stage == stage
     assert [p.document_id for p in root.mappings] == ["doc:1"]
@@ -81,7 +81,9 @@ def test_entry_view_is_filtered_before_stages_without_leaking_duplicate_results(
         json.dumps(asdict(pair))
     )
     if target_source == "device":
-        parser = CommandLineParser({"commands": [device_format, device_format]})
+        parser = CommandLineParser(
+            {"commands": [device_format, device_format]}, context_mode="hierarchy"
+        )
         parsed = parser.parse(line)
         assert isinstance(parsed, ParsedCommand)
         match = next(m for m in parsed.matches if m.pattern_id == pair.pattern_id)
@@ -108,7 +110,7 @@ def test_missing_entry_match_does_not_fall_back_to_foreign_views(root_first):
             "Other": [document("acl <id>")],
         },
     )
-    result = FormatMatcher().compile_catalogs(targets, docs)
+    result = FormatMatcher(context_mode="hierarchy").compile_catalogs(targets, docs)
     for identifier, match in result.devices.items():
         view = result.device_catalog.entries[identifier].view
         if view == "root":
@@ -131,7 +133,11 @@ def test_empty_documentation_entry_view_is_a_closed_search_scope(monkeypatch):
             "Other": [document("acl <id>")],
         },
     )
-    (match,) = FormatMatcher().compile_catalogs(targets, docs).devices.values()
+    (match,) = (
+        FormatMatcher(context_mode="hierarchy")
+        .compile_catalogs(targets, docs)
+        .devices.values()
+    )
     assert match.status == "unmatched" and match.mappings == ()
 
 
@@ -148,8 +154,8 @@ def test_flat_or_mixed_catalogs_keep_global_search(target_grouped, doc_grouped):
         root_docs + other_docs,
         {"Root": root_docs, "Other": other_docs} if doc_grouped else None,
     )
-    result = FormatMatcher().compile_catalogs(targets, docs)
-    baseline = FormatMatcher().compile_formats(
+    result = FormatMatcher(context_mode="hierarchy").compile_catalogs(targets, docs)
+    baseline = FormatMatcher(context_mode="hierarchy").compile_formats(
         [entries[0]["format"]], root_docs + other_docs
     )
     assert result.devices == baseline.devices
@@ -175,7 +181,7 @@ def test_foreign_views_are_excluded_before_pair_comparison(monkeypatch):
         },
     )
     docs["entry_view"] = "Root"
-    result = FormatMatcher().compile_catalogs(targets, docs)
+    result = FormatMatcher(context_mode="hierarchy").compile_catalogs(targets, docs)
     assert calls == ["doc:250"]  # The allowed duplicate reuses the pair computation.
     assert [p.document_id for p in result.pairs] == ["doc:250", "doc:251"]
 
@@ -189,5 +195,9 @@ def test_incompatible_entry_parameter_does_not_use_a_foreign_compatible_paramete
             "Other": [document("acl <id>")],
         },
     )
-    (match,) = FormatMatcher().compile_catalogs(targets, docs).devices.values()
+    (match,) = (
+        FormatMatcher(context_mode="hierarchy")
+        .compile_catalogs(targets, docs)
+        .devices.values()
+    )
     assert match.status == "unmatched" and match.mappings == ()

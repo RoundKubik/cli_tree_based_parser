@@ -49,8 +49,10 @@ def catalogs(devices, documents):
 def test_mutual_union_coverage_recovers_views(devices, documents):
     device, docs = catalogs(devices, documents)
     unchanged = copy.deepcopy((device, docs))
-    old_pairs = FormatMatcher().compile_catalogs(device, docs).pairs
-    prepared = FormatMatcher().prepare_catalogs(device, docs)
+    old_pairs = (
+        FormatMatcher(context_mode="hierarchy").compile_catalogs(device, docs).pairs
+    )
+    prepared = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert (device, docs) == unchanged
     assert prepared.catalog["type"] == "grouped" and not prepared.unresolved
     assert prepared.catalog["views"]["root"][0]["switch_to_view"] == "child"
@@ -74,7 +76,9 @@ def test_mutual_union_coverage_recovers_views(devices, documents):
 def test_sample_coverage_does_not_prove_effects_of_extra_device_branches(
     devices, documents, covered
 ):
-    prepared = FormatMatcher().prepare_catalogs(*catalogs(devices, documents))
+    prepared = FormatMatcher(context_mode="hierarchy").prepare_catalogs(
+        *catalogs(devices, documents)
+    )
     assert prepared.catalog["type"] == "grouped" and prepared.unresolved
     assert prepared.mapping.hierarchy.targets["Child"].status == (
         "resolved" if covered else "unresolved"
@@ -91,7 +95,7 @@ def test_sample_coverage_does_not_prove_effects_of_extra_device_branches(
 def test_formats_from_different_documentation_views_are_never_unioned():
     device, docs = catalogs(["c { a | b }"], ["c a"])
     docs["views"]["Other"] = [document("c b")]
-    prepared = FormatMatcher().prepare_catalogs(device, docs)
+    prepared = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert prepared.catalog["type"] == "grouped" and prepared.unresolved
     assert prepared.mapping.hierarchy.resolved_views == {"root": "Root"}
 
@@ -120,7 +124,7 @@ def test_split_entry_formats_transfer_only_a_common_effect(same_target):
             "Second": [document("second-rule")],
         },
     )
-    prepared = FormatMatcher().prepare_catalogs(device, docs)
+    prepared = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert prepared.catalog["type"] == "grouped"
     assert prepared.catalog["views"]["root"][0]["switch_to_view"] == (
         "first" if same_target else {"status": "unresolved"}
@@ -128,7 +132,7 @@ def test_split_entry_formats_transfer_only_a_common_effect(same_target):
     identifier = next(iter(prepared.mapping.devices))
     assert (identifier in prepared.unresolved) is not same_target
     saved = prepared.mapping.to_dict()
-    parser = CommandLineParser(prepared.catalog)
+    parser = CommandLineParser(prepared.catalog, context_mode="hierarchy")
     for branch in ("a", "b"):
         parsed = parser.parse(f"enter {branch} 1")
         assert isinstance(parsed, ParsedCommand)
@@ -169,16 +173,16 @@ def test_union_coverage_is_available_for_documentation_targets():
             "Child": [document("c a <a>"), document("c b <b>")],
         },
     )
-    prepared = FormatMatcher().prepare_catalogs(target, docs)
+    prepared = FormatMatcher(context_mode="hierarchy").prepare_catalogs(target, docs)
     assert prepared.mapping.hierarchy.resolved_views == {"r": "Root", "v": "Child"}
     assert prepared.catalog["type"] == "grouped" and not prepared.unresolved
 
 
 def test_coverage_budget_failure_preserves_bindings_and_unknown_context():
     device, docs = catalogs(["c { a | b } INTEGER<1-9>"], ["c a <a>", "c b <b>"])
-    prepared = FormatMatcher(MappingLimits(comparison_states=1)).prepare_catalogs(
-        device, docs
-    )
+    prepared = FormatMatcher(
+        MappingLimits(comparison_states=1), context_mode="hierarchy"
+    ).prepare_catalogs(device, docs)
     assert prepared.catalog["type"] == "grouped" and prepared.unresolved
     assert prepared.mapping.hierarchy.targets["Child"].status == "unresolved"
     child = list(prepared.mapping.devices.values())[1]
@@ -205,9 +209,9 @@ def test_proved_coverage_can_tolerate_uncertain_pair_only_with_same_effect(same_
             "Child": [document("rule")],
         },
     )
-    prepared = FormatMatcher(MappingLimits(product_states=1)).prepare_catalogs(
-        device, docs
-    )
+    prepared = FormatMatcher(
+        MappingLimits(product_states=1), context_mode="hierarchy"
+    ).prepare_catalogs(device, docs)
     root = next(iter(prepared.mapping.devices.values()))
     assert any(pair.status == "unknown" for pair in root.mappings)
     assert prepared.catalog["type"] == "grouped"
@@ -221,7 +225,7 @@ def test_exact_view_recovery_does_not_run_union_automata(monkeypatch):
         raise AssertionError("existing whole-format proofs must suffice")
 
     monkeypatch.setattr(FormatCoverage, "_prove", forbidden)
-    prepared = FormatMatcher().prepare_catalogs(
+    prepared = FormatMatcher(context_mode="hierarchy").prepare_catalogs(
         *catalogs(["c INTEGER<1-9>"], ["c <id>"])
     )
     assert prepared.catalog["type"] == "grouped"

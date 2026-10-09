@@ -55,7 +55,7 @@ def test_all_partial_samples_recover_only_views_with_distinguishing_types(
         ]
         docs["views"][view] = [c for i, c in enumerate(complete) if mask & (1 << i)]
     original = deepcopy((device, docs))
-    prepared = FormatMatcher().prepare_catalogs(device, docs)
+    prepared = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert (device, docs) == original
     expected = {"v0": "R"}
     for index, mask, target, reference in (
@@ -70,9 +70,9 @@ def test_all_partial_samples_recover_only_views_with_distinguishing_types(
             # Resolving the other view must not assign this view by elimination.
             assert transition == {"status": "unresolved"}
     assert prepared.mapping.hierarchy.resolved_views == expected
-    parsed = ConfigurationParser(CommandLineParser(prepared.catalog)).parse(
-        "enter-four\n source-ip 192.0.2.1\nenter-six\n source-ip 2001:db8::1"
-    )
+    parsed = ConfigurationParser(
+        CommandLineParser(prepared.catalog, context_mode="hierarchy")
+    ).parse("enter-four\n source-ip 192.0.2.1\nenter-six\n source-ip 2001:db8::1")
     assert all(isinstance(line, ParsedCommand) for line in parsed.lines)
     assert [line.view for line in parsed.lines] == [
         "v0",
@@ -103,7 +103,7 @@ def test_declared_shared_commands_are_available_but_supply_no_view_identity(copi
         },
     )
     docs["shared_views"] = ["g"]
-    prepared = FormatMatcher().prepare_catalogs(device, docs)
+    prepared = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert prepared.mapping.hierarchy.resolved_views == {"r": "R", "c": "C"}
     assert not prepared.unresolved
     quit_match = list(prepared.mapping.devices.values())[-1]
@@ -127,7 +127,7 @@ def test_shared_only_group_and_device_shared_scope_cannot_be_selected():
         },
     )
     docs["shared_views"] = ["Common"]
-    result = FormatMatcher().prepare_catalogs(device, docs)
+    result = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert result.mapping.hierarchy.resolved_views == {"r": "R"}
     assert result.catalog["views"]["r"][0]["switch_to_view"] == {"status": "unresolved"}
 
@@ -145,7 +145,7 @@ def test_shared_exclusion_uses_types_not_only_the_format_text():
         },
     )
     docs["shared_views"] = ["Common"]
-    result = FormatMatcher().prepare_catalogs(device, docs)
+    result = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert result.catalog["views"]["r"][0]["switch_to_view"] == "c"
 
 
@@ -158,7 +158,7 @@ def test_view_named_all_views_is_ordinary_unless_explicitly_shared():
             "All views": [document("rule")],
         },
     )
-    result = FormatMatcher().prepare_catalogs(device, docs)
+    result = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert result.mapping.hierarchy.resolved_views == {"r": "R", "c": "All views"}
 
 
@@ -185,7 +185,7 @@ def test_several_documented_scopes_can_share_one_device_scope_without_losing_pai
             "B": [document("second"), document("rule <b>")],
         },
     )
-    result = FormatMatcher().prepare_catalogs(device, docs)
+    result = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert [c["switch_to_view"] for c in result.catalog["views"]["r"]] == [
         "combined",
         "combined",
@@ -215,7 +215,7 @@ def test_distinct_device_groups_are_not_unioned_to_force_a_generic_target():
             "Family": [document("one"), document("two")],
         },
     )
-    result = FormatMatcher().prepare_catalogs(device, docs)
+    result = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert result.mapping.hierarchy.resolved_views == {"r": "R"}
     assert result.catalog["views"]["r"][0]["switch_to_view"] == {"status": "unresolved"}
     assert {
@@ -229,7 +229,7 @@ def test_invalid_shared_scopes_are_rejected(shared):
     device["shared_views"] = shared
     docs = catalog("documentation", views={"R": [document("enter")]})
     with pytest.raises(FormatError, match="shared_views"):
-        FormatMatcher().prepare_catalogs(device, docs)
+        FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
 
 
 @pytest.mark.parametrize("entry", ["enter extra", "unrelated"])
@@ -245,7 +245,7 @@ def test_known_target_does_not_supply_missing_entry_command_evidence(entry):
             "C": [document("rule")],
         },
     )
-    result = FormatMatcher().prepare_catalogs(device, docs)
+    result = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     assert result.mapping.hierarchy.resolved_views == {"r": "R", "c": "C"}
     assert result.catalog["views"]["r"][0]["switch_to_view"] == {"status": "unresolved"}
 
@@ -266,7 +266,7 @@ def test_unknown_device_type_blocks_uniqueness_but_keeps_bindings():
             "C": [document("rule <id>")],
         },
     )
-    result = FormatMatcher().prepare_catalogs(device, docs)
+    result = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     target = result.mapping.hierarchy.targets["C"]
     assert target.status == "unresolved"
     assert {c.device_view: c.coverage for c in target.candidates} == {
@@ -299,7 +299,7 @@ def test_unknown_reference_type_keeps_the_format_without_proving_a_transition(
             "C": [record],
         },
     )
-    result = FormatMatcher().prepare_catalogs(device, docs)
+    result = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs)
     (pair,) = list(result.mapping.devices.values())[-1].mappings
     assert pair.bindings[0].document.type_id == ("unknown" if annotations else None)
     assert pair.bindings[0].device.slot_id == pair.bindings[0].document.slot_id == "p:5"
@@ -321,9 +321,9 @@ def test_unfinished_comparison_is_visible_without_completed_bindings():
             "C": [document("rule [ a b ]")],
         },
     )
-    result = FormatMatcher(MappingLimits(analysis_steps=1)).prepare_catalogs(
-        device, docs
-    )
+    result = FormatMatcher(
+        MappingLimits(analysis_steps=1), context_mode="hierarchy"
+    ).prepare_catalogs(device, docs)
     (candidate,) = result.mapping.hierarchy.targets["C"].candidates
     assert candidate.coverage == "unknown"
     assert candidate.commands == ()

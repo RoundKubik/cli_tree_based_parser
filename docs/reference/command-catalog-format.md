@@ -1,28 +1,23 @@
 # Command catalog formats: draft specification v1
 
-The matcher accepts these containers through `compile_catalogs()`, checks parameter
-type compatibility, and preserves source record locations. For two grouped catalogs,
-commands from the device's entry view are searched in the documentation's entry
-view and explicitly shared scopes. Other views and flat catalogs retain a global
-search for all full matches,
-without scoring or selecting view correspondences. For two grouped catalogs, the
-result also contains `hierarchy`: command and view relations, possible transition
-targets, and explicit transitions from the target catalog. A single candidate does
-not count as an established correspondence. This specification describes matcher
-inputs. The runtime parser accepts one prepared document with standard parameter
-declarations; for `type: grouped`, it uses known transitions, and unresolved
-transitions must be marked explicitly.
-It uses optional type annotations from that document and does not load a separate
-documentation catalog or mapping JSON. See
-[parser input](automaton-parser.md#input-document) for details.
+The matcher and parser continue to consume the existing flat/grouped JSON format.
+No new fields or rewritten catalogs are required for the default workflow.
 
-The offline `prepare_catalogs()` method accepts documentation with a recovered
-hierarchy: in this mode, an omitted documentation `switch_to_view` means that the
-context is preserved. It returns a separate runtime catalog and mapping.
-A grouped catalog keeps its original views and all established transitions.
-Unresolved transitions receive an explicit marker on the corresponding command.
-Recovery rules and a usage example are described in the
-[matcher guide](automaton-format-matcher.md#prepare-a-parser-catalog-and-final-mapping).
+For two grouped inputs, the matcher compares `entry_view` only with `entry_view`;
+all other groups are compared together, excluding the entry groups. Flat or mixed
+inputs use global matching. The four format matching cases and parameter bindings
+are unchanged. The output retains source view/index locations and has no hierarchy
+section by default.
+
+The parser uses one catalog. Unindented configuration lines search `entry_view`;
+indented lines search every other group. `switch_to_view` and `shared_views` have no
+effect in this default mode. A group named `global` is ordinary. Neither component
+modifies the input document or treats its first group as system implicitly.
+
+The former hierarchy behavior is available explicitly through
+`context_mode="hierarchy"`. Only that mode uses the transition and shared-scope
+semantics described below. See the [parser guide](automaton-parser.md) and
+[matcher guide](automaton-format-matcher.md).
 
 ## Common fields
 
@@ -34,7 +29,7 @@ Recovery rules and a usage example are described in the
 | `commands` | For `flat`: a nonempty array of command objects |
 | `views` | For `grouped`: an object mapping view names/IDs to arrays of command objects |
 | `entry_view` | For `grouped`: the initial view, an exact reference to a `views` key |
-| `shared_views` | Optional for `grouped`: distinct existing view keys declaring shared commands; cannot include `entry_view` |
+| `shared_views` | Legacy hierarchy mode only; ignored in the default mode |
 | `vendor` | Required: manufacturer, such as `Huawei` |
 | `device` | Required: platform/OS, such as `Huawei VRP` |
 | `model_type` | Required: model or family, such as `CloudEngine` |
@@ -45,10 +40,10 @@ Recovery rules and a usage example are described in the
 layout. `commands` and `views` are mutually exclusive. A `flat` catalog has no
 `entry_view` or `shared_views`. A grouped catalog must contain at least one command; an individual
 view may contain an empty array. Unknown transitions in the original device
-catalog may be represented by omitting `switch_to_view`. Prepared documents require
+catalog may be represented by omitting `switch_to_view`. Documents prepared for hierarchy mode require
 an explicit marker instead; a separate global `hierarchy_status` is not needed.
 
-Shared scopes and copies of their typed formats do not identify concrete device
+In the optional hierarchy mode, shared scopes and copies of their typed formats do not identify concrete device
 views. They remain available to scoped matching. No scope name is special without
 this declaration. The field does not change parser inheritance or add command
 copies. An absent field means no scopes have been declared shared.
@@ -72,7 +67,8 @@ formats in different views are not treated as semantically identical. Existing
 `pattern_id` and `slot_id` values remain internal links between matcher and parser
 results.
 
-`switch_to_view` uses the following representations:
+`switch_to_view` is preserved but ignored in the default mode. In hierarchy mode
+it uses the following representations:
 
 | Representation | Meaning |
 |---|---|
@@ -81,7 +77,7 @@ results.
 | `"switch_to_view": {"status": "unresolved"}` | No single transition has been established; this does not mean that the context is preserved |
 | Field omitted | Unknown in the matcher's original device input; context preservation in prepared documentation and runtime catalogs |
 
-`compile_catalogs()` collects evidence without assuming completeness: an omitted
+In hierarchy mode, `compile_catalogs()` collects evidence without assuming completeness: an omitted
 field remains unknown even in documentation. `prepare_catalogs()` accepts prepared
 documentation, so its omissions mean context preservation. An explicit `unresolved`
 remains unknown in both modes.
@@ -267,7 +263,8 @@ These examples illustrate the data structure, not a complete model of a specific
 - For documentation, supplied `parameter_types` entries reference existing parameter
   names without duplicates; types belong to the supported set above, including
   explicit `unknown`. Missing annotations are treated as unknown types.
-- `entry_view` and all string `switch_to_view` values reference existing groups.
+- `entry_view` references an existing group. In hierarchy mode, string
+  `switch_to_view` values must also reference existing groups.
   Misspelled structural fields, such as `switch_to_veiw`, must be detected.
 - Valid references do not prove that the extracted semantics are correct.
 

@@ -5,148 +5,40 @@ formats and parameter correspondences. The result is saved as ordinary JSON.
 The matcher uses `parameter_types`, does not evaluate predicates, and does not read
 `requires`/`creates`. The calling code handles their subsequent processing.
 
-## Prepare a parser catalog and final mapping
+## Default workflow: system and non-system scopes
 
-For the complete offline stage, use `prepare_catalogs(device, documentation)`.
-The second input is documentation **with a prepared hierarchy**. In this method,
-an omitted documentation `switch_to_view` means context preservation. Known gaps,
-including parameter-dependent targets without a single transition, must be marked
-explicitly with `"switch_to_view": {"status": "unresolved"}`.
-In the original grouped device input, an omitted field still means unknown.
-For documentation → documentation, both inputs are treated as prepared hierarchies.
-The reference may contain only a sample of commands: prepared transition annotations
-do not require a complete command inventory.
+Use the existing grouped device and documentation catalogs directly. Their JSON
+format does not change. Each catalog's `entry_view` identifies its system group.
+Commands in that group match only the other catalog's system group. Every remaining
+group is searched together, excluding system. No shared scopes or cross-scope
+fallback are used. `switch_to_view` and `shared_views` are ignored in this mode.
 
 ```python
-prepared = FormatMatcher().prepare_catalogs(device, documentation)
-Path("runtime_catalog.json").write_text(
-    json.dumps(prepared.catalog, ensure_ascii=False),
-    encoding="utf-8",
-)
-Path("mapping.json").write_text(
-    json.dumps(prepared.mapping.to_dict(), ensure_ascii=False),
-    encoding="utf-8",
-)
-print(prepared.catalog["type"], len(prepared.unresolved))
+import json
+from pathlib import Path
+from vrp_format_matcher import FormatMatcher
+
+device = json.loads(Path("device_grouped.json").read_text())
+documentation = json.loads(Path("documentation_grouped.json").read_text())
+mapping = FormatMatcher().compile_catalogs(device, documentation)
+Path("mapping.json").write_text(json.dumps(mapping.to_dict(), ensure_ascii=False))
 ```
 
-`prepared.catalog` is the runtime parser's only input. Your external code uses the
-mapping and original documentation after configuration parsing. `prepared.unresolved`
-contains the `pattern_id` values of commands whose single effect on context cannot
-yet be established. These can include ordinary commands if view preservation could
-not be confirmed.
-
-Processing order:
-
-1. Match formats and check parameter type categories.
-2. Require a device view to cover every local format in the documentation sample.
-   Extra device commands are allowed. Existing `equivalent` and `document_subset`
-   proofs are used first; otherwise check inclusion in the union of suitable device
-   formats **from the same view**. Prefix matches do not prove full coverage.
-   Explicit `shared_views` and copies of their typed formats are excluded from view
-   identification. The entry pair is an anchor, not a competing candidate.
-3. Select a target only when exactly one device view covers that sample and no
-   competitor has unknown coverage. Several documentation groups may refer to the
-   same device group; all their mappings are retained. Empty or shared-only samples
-   supply no identity. View names, weights and match counts are not used. Missing
-   coverage retains the existing partial evidence without promoting a target.
-4. Propagate explicitly known transitions from the entry view pair. They distinguish
-   identical command sets in documentation → documentation and when device transitions
-   are already known. Conflicting paths are not selected by traversal order. Relations
-   established through known transitions take precedence over similarity of complete
-   group contents.
-5. Transfer a transition only when the **entire device format** is covered, all
-   applicable full pairs have one documented effect, and the target is unambiguous.
-   Coverage may be collective: several documentation records with the same effect
-   can cover the entire format together. A conflict, even with a partial or still
-   unresolved match, prevents a format-wide `switch_to_view`. When a device scope
-   has several documentation references, each must establish a whole-format effect
-   and those effects must resolve to the same runtime destination. Missing evidence
-   in one reference does not imply a stay.
-6. Restrict the final pairs to established views. Full pairs and their bindings are
-   reused; if restriction removes a full match, run prefix fallback within the
-   allowed view.
-
-For example, `c { a | b } <id>` is covered by `c a <first>` and `c b <second>` when
-parameter types agree. Both original pairs, their bindings, and their applicability
-scopes are preserved. For transition transfer the collective check must prove that
-no device commands remain uncovered: a missing branch, optional omission or `{}*`
-permutation prevents assigning an effect to the entire device format. Such extra
-device routes do not prevent identification of the containing view from a smaller
-documentation sample.
-
-The union does not copy graphs or enumerate routes: traversal keeps the source
-automaton ID and its current states with repetition registers. States from different
-formats are not merged. ASTs and compiled programs are reused; languages with
-identical typed structure share a check result. Binding calculation and the four
-existing matching cases for individual formats remain unchanged.
-
-Inclusion checks are bounded by `comparison_states` and `analysis_steps`. Exhausting
-a limit means unknown, not uncovered; such a competitor cannot falsely make another
-view unique. Unknown parameter categories do not prove equality either. Proven
-coverage can still be used if additional unresolved pairs introduce no different
-context effect.
-
-This recovers a hierarchy using the agreed structural criterion; it does not confirm
-device behavior. Numeric ranges and string lengths are still not compared.
-In JSON, `hierarchy.resolved_views` contains device-view → documentation-view
-relations with a single reference. When several documentation groups map to one
-device view, `hierarchy.targets` retains each resolved target and `view_links`
-retains the corresponding pair references. No documentation group is selected by
-order. Unresolved views retain their positive candidates.
-
-For example, a sample containing `server enable` and an IPv4 `source-ip` format
-can identify an IPv4 server scope even when the device has additional commands.
-Removing `source-ip` may leave both IPv4 and IPv6 scopes possible. Resolving one
-scope never assigns another by elimination. If syntax differs between releases,
-even one-sided full coverage can fail; partial matches remain available, but are
-not silently discarded to manufacture uniqueness.
-
-The optional grouped-catalog field `"shared_views": ["common-scope-id"]` declares
-shared scopes explicitly. Names are local references and have no built-in meaning.
-Shared formats remain available to scoped matching and effect checks; declarations
-do not add or reorder command records. This field does not implement parser global
-inheritance: a runtime producer must still place commands in their usable views,
-as the documentation recovery pipeline does. Without the field, scopes are ordinary.
-
-The prepared grouped catalog preserves **original device view IDs**, groups, and
-known transitions. Documentation names are not copied into the device catalog.
-An unknown effect is marked directly on the command record:
-
-```json
-{"format": "interface STRING<1-64>", "switch_to_view": {"status": "unresolved"}}
-```
-
-The parser uses the entire established hierarchy. Only the child block after such
-a command is parsed without view restrictions; leaving it restores the known parent
-context. For manual refinement, replace the marker with a device view ID or `null`.
-Documentation alternatives are in `hierarchy.transitions[pattern_id]` and reference
-the original pairs and their bindings; target candidates are in `hierarchy.targets`.
-They do not need to be duplicated in every runtime catalog record.
-
-If different parts of a device format correspond to documentation commands with
-different transitions, no single `switch_to_view` is assigned: the record stays
-`unresolved`, and all pairs and their applicability scopes are preserved. Splitting
-documentation into formats with constant targets helps retain these differences,
-but does not itself create a conditional transition for a shared device format.
-Execution of rules based on parameter values is not implemented yet. Name
-normalization cannot recover a missing target-selection rule.
-
-Formats, record order, `pattern_id`, `slot_id`, and bindings are preserved.
-`source.view/index` address the original catalogs; these positions also stay the
-same in the prepared catalog. The input dictionaries are not modified.
-
-A flat target catalog is supported and remains flat. Recovering a grouped device
-catalog requires grouped documentation.
+The parser then consumes **the same original device catalog**, without a recovery
+step. `prepare_catalogs()` is also supported: it returns an unchanged copy of the
+target catalog plus the same mapping. It does not recover transitions or emit a
+`hierarchy` section by default. Formats, record ordering, IDs and slots are preserved.
+Flat or mixed inputs retain global matching; documentation-to-documentation works too.
 
 ```bash
 python3.13 manual_format_matcher_test.py \
   --patterns device_grouped.json --documents documentation_grouped.json \
-  --save-catalog runtime_catalog.json --save mapping.json --summary
+  --save mapping.json --summary
 ```
 
-Without `--save-catalog`, the script retains its previous `compile_catalogs()` mode:
-matching and candidate collection without runtime catalog preparation.
+All four matching cases and parameter type checks remain in use within the selected
+scope. [Semantic lookup](semantic-lookup.md) explains how to retrieve `creates` and
+`requires` after parsing, including alternative matches and partial bindings.
 
 ## Compute and save
 
@@ -196,10 +88,9 @@ result = FormatMatcher().compile_catalogs(device, documentation)
 data = result.to_dict()
 ```
 
-Matching considers structure, type compatibility, and the **entry view pair**.
+Matching considers structure, type compatibility, and the two search scopes.
 If both catalogs have `type="grouped"`, a command from `device.entry_view` searches
-for documentation within `documentation.entry_view` and declared `shared_views`.
-These groups may have
+only within `documentation.entry_view`. These groups may have
 different names; the initial pair is defined by `entry_view`, not names such as
 `system`/`System view` or the order of groups in JSON.
 
@@ -215,13 +106,11 @@ With `documentation.entry_view="System view"`, the intersection with the first r
 is selected. The exact gRPC match does not participate in the search. If nothing is
 found in these scopes, the search does not expand to other concrete views.
 
-Context correspondence is still unknown for other device views, so the entire
-documentation catalog is searched. Search is also global if at least one catalog is
-`flat`. Thus `matched` for these records confirms a format match, **not a view
-correspondence**. This also applies to documentation → documentation. The matcher
-does not score or rank view correspondences. Context recovery and `switch_to_view`
-transfer are handled by `prepare_catalogs()` as described above; `compile_catalogs()`
-only collects evidence.
+Other device views search all non-system documentation groups together. There is
+no fallback into the documentation entry view. Search is global if at least one
+catalog is flat. `matched` confirms a format relationship, not a concrete view or
+semantic interpretation. Hierarchy recovery is available only through explicit
+`FormatMatcher(context_mode="hierarchy")`.
 
 The search scope is part of the grouping key for identical target formats: global
 search results are not reused for entry-view commands. ASTs and programs are still
@@ -266,13 +155,14 @@ The legacy `compile()` and `compile_formats()` methods retain their existing JSO
 
 ## View relations and documentation transitions
 
-For two `grouped` catalogs, `compile_catalogs()` automatically prepares
+With `FormatMatcher(context_mode="hierarchy")` and two grouped catalogs,
+`compile_catalogs()` prepares
 `result.hierarchy` and adds a `hierarchy` section to JSON. Documentation →
 documentation is also supported. For flat or mixed inputs, `hierarchy` is `None`
 in Python and absent from JSON.
 
 ```python
-result = FormatMatcher().compile_catalogs(device, documentation)
+result = FormatMatcher(context_mode="hierarchy").compile_catalogs(device, documentation)
 hierarchy = result.hierarchy
 assert hierarchy is not None
 evidence = hierarchy.evidence
@@ -329,7 +219,7 @@ automata are not rebuilt; bindings and graphs are not copied.
 
 ## Resolving transition targets
 
-This section describes the basic `compile_catalogs()` result. `prepare_catalogs()`
+This section describes the optional hierarchy mode of `compile_catalogs()`. `prepare_catalogs()`
 additionally resolves targets through full coverage and known transitions;
 `hierarchy.resolved_views` shows the final correspondences.
 
@@ -471,7 +361,7 @@ In documentation slots, `type_id` contains the annotation from `parameter_types`
 or `null` when it was not supplied. `null` and `unknown` both mean no known type.
 Identical strings with different annotations are not merged in caches.
 
-After `prepare_catalogs()`, checked entries in `hierarchy.view_links` also expose
+After `prepare_catalogs()` in hierarchy mode, checked entries in `hierarchy.view_links` also expose
 `coverage`: `covered` means that the device view covers the local documentation
 sample, `partial` means that it does not, and `unknown` means that types or analysis
 limits prevented a conclusion. These are not confidence scores. Multiple covered
@@ -783,3 +673,147 @@ Code is split by responsibility: `preparation/compiler.py` is the public API;
 full pairs and performs prefix fallback; `preparation/pairs.py` analyzes one pair;
 `preparation/programs.py` handles programs and node correspondences. The package has
 no predicates, artifact readers, or alternative search modes.
+
+## Optional hierarchy recovery
+
+With explicit `context_mode="hierarchy"`, use `prepare_catalogs(device, documentation)`.
+The second input is documentation **with a prepared hierarchy**. In this method,
+an omitted documentation `switch_to_view` means context preservation. Known gaps,
+including parameter-dependent targets without a single transition, must be marked
+explicitly with `"switch_to_view": {"status": "unresolved"}`.
+In the original grouped device input, an omitted field still means unknown.
+For documentation → documentation, both inputs are treated as prepared hierarchies.
+The reference may contain only a sample of commands: prepared transition annotations
+do not require a complete command inventory.
+
+```python
+prepared = FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, documentation)
+Path("runtime_catalog.json").write_text(
+    json.dumps(prepared.catalog, ensure_ascii=False),
+    encoding="utf-8",
+)
+Path("mapping.json").write_text(
+    json.dumps(prepared.mapping.to_dict(), ensure_ascii=False),
+    encoding="utf-8",
+)
+print(prepared.catalog["type"], len(prepared.unresolved))
+```
+
+`prepared.catalog` is the runtime parser's only input. Your external code uses the
+mapping and original documentation after configuration parsing. `prepared.unresolved`
+contains the `pattern_id` values of commands whose single effect on context cannot
+yet be established. These can include ordinary commands if view preservation could
+not be confirmed.
+
+Processing order:
+
+1. Match formats and check parameter type categories.
+2. Require a device view to cover every local format in the documentation sample.
+   Extra device commands are allowed. Existing `equivalent` and `document_subset`
+   proofs are used first; otherwise check inclusion in the union of suitable device
+   formats **from the same view**. Prefix matches do not prove full coverage.
+   Explicit `shared_views` and copies of their typed formats are excluded from view
+   identification. The entry pair is an anchor, not a competing candidate.
+3. Select a target only when exactly one device view covers that sample and no
+   competitor has unknown coverage. Several documentation groups may refer to the
+   same device group; all their mappings are retained. Empty or shared-only samples
+   supply no identity. View names, weights and match counts are not used. Missing
+   coverage retains the existing partial evidence without promoting a target.
+4. Propagate explicitly known transitions from the entry view pair. They distinguish
+   identical command sets in documentation → documentation and when device transitions
+   are already known. Conflicting paths are not selected by traversal order. Relations
+   established through known transitions take precedence over similarity of complete
+   group contents.
+5. Transfer a transition only when the **entire device format** is covered, all
+   applicable full pairs have one documented effect, and the target is unambiguous.
+   Coverage may be collective: several documentation records with the same effect
+   can cover the entire format together. A conflict, even with a partial or still
+   unresolved match, prevents a format-wide `switch_to_view`. When a device scope
+   has several documentation references, each must establish a whole-format effect
+   and those effects must resolve to the same runtime destination. Missing evidence
+   in one reference does not imply a stay.
+6. Restrict the final pairs to established views. Full pairs and their bindings are
+   reused; if restriction removes a full match, run prefix fallback within the
+   allowed view.
+
+For example, `c { a | b } <id>` is covered by `c a <first>` and `c b <second>` when
+parameter types agree. Both original pairs, their bindings, and their applicability
+scopes are preserved. For transition transfer the collective check must prove that
+no device commands remain uncovered: a missing branch, optional omission or `{}*`
+permutation prevents assigning an effect to the entire device format. Such extra
+device routes do not prevent identification of the containing view from a smaller
+documentation sample.
+
+The union does not copy graphs or enumerate routes: traversal keeps the source
+automaton ID and its current states with repetition registers. States from different
+formats are not merged. ASTs and compiled programs are reused; languages with
+identical typed structure share a check result. Binding calculation and the four
+existing matching cases for individual formats remain unchanged.
+
+Inclusion checks are bounded by `comparison_states` and `analysis_steps`. Exhausting
+a limit means unknown, not uncovered; such a competitor cannot falsely make another
+view unique. Unknown parameter categories do not prove equality either. Proven
+coverage can still be used if additional unresolved pairs introduce no different
+context effect.
+
+This recovers a hierarchy using the agreed structural criterion; it does not confirm
+device behavior. Numeric ranges and string lengths are still not compared.
+In JSON, `hierarchy.resolved_views` contains device-view → documentation-view
+relations with a single reference. When several documentation groups map to one
+device view, `hierarchy.targets` retains each resolved target and `view_links`
+retains the corresponding pair references. No documentation group is selected by
+order. Unresolved views retain their positive candidates.
+
+For example, a sample containing `server enable` and an IPv4 `source-ip` format
+can identify an IPv4 server scope even when the device has additional commands.
+Removing `source-ip` may leave both IPv4 and IPv6 scopes possible. Resolving one
+scope never assigns another by elimination. If syntax differs between releases,
+even one-sided full coverage can fail; partial matches remain available, but are
+not silently discarded to manufacture uniqueness.
+
+The optional grouped-catalog field `"shared_views": ["common-scope-id"]` declares
+shared scopes explicitly. Names are local references and have no built-in meaning.
+Shared formats remain available to scoped matching and effect checks; declarations
+do not add or reorder command records. This field does not implement parser global
+inheritance: a runtime producer must still place commands in their usable views,
+as the documentation recovery pipeline does. Without the field, scopes are ordinary.
+
+The prepared grouped catalog preserves **original device view IDs**, groups, and
+known transitions. Documentation names are not copied into the device catalog.
+An unknown effect is marked directly on the command record:
+
+```json
+{"format": "interface STRING<1-64>", "switch_to_view": {"status": "unresolved"}}
+```
+
+The parser with `context_mode="hierarchy"` uses the established hierarchy. Only the child block after such
+a command is parsed without view restrictions; leaving it restores the known parent
+context. For manual refinement, replace the marker with a device view ID or `null`.
+Documentation alternatives are in `hierarchy.transitions[pattern_id]` and reference
+the original pairs and their bindings; target candidates are in `hierarchy.targets`.
+They do not need to be duplicated in every runtime catalog record.
+
+If different parts of a device format correspond to documentation commands with
+different transitions, no single `switch_to_view` is assigned: the record stays
+`unresolved`, and all pairs and their applicability scopes are preserved. Splitting
+documentation into formats with constant targets helps retain these differences,
+but does not itself create a conditional transition for a shared device format.
+Execution of rules based on parameter values is not implemented yet. Name
+normalization cannot recover a missing target-selection rule.
+
+Formats, record order, `pattern_id`, `slot_id`, and bindings are preserved.
+`source.view/index` address the original catalogs; these positions also stay the
+same in the prepared catalog. The input dictionaries are not modified.
+
+A flat target catalog is supported and remains flat. Recovering a grouped device
+catalog requires grouped documentation.
+
+```bash
+python3.13 manual_format_matcher_test.py \
+  --context-mode hierarchy \
+  --patterns device_grouped.json --documents documentation_grouped.json \
+  --save-catalog runtime_catalog.json --save mapping.json --summary
+```
+
+Without `--save-catalog`, the script retains its previous `compile_catalogs()` mode:
+matching and candidate collection without runtime catalog preparation.

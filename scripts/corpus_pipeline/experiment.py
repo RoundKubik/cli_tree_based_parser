@@ -39,7 +39,7 @@ def compatible_documentation(document):
 def parse_catalog(args):
     document = read_json(args.catalog)
     start = time.monotonic()
-    parser = CommandLineParser(document)
+    parser = CommandLineParser(document, context_mode=args.context_mode)
     compilation = time.monotonic() - start
     print(
         f"Compiled {parser.command_count} format occurrences in {compilation:.3f}s",
@@ -55,6 +55,12 @@ def parse_catalog(args):
         if document["source"] == "documentation" and not args.flat:
             for line in parsed.lines:
                 expected = case.get("views", {}).get(str(line.line_number), ...)
+                if (
+                    args.context_mode == "system"
+                    and expected is not ...
+                    and expected != document.get("entry_view")
+                ):
+                    expected = None
                 if expected is not ... and getattr(line, "view", None) != expected:
                     mismatches.append(
                         {
@@ -89,6 +95,7 @@ def parse_catalog(args):
         "catalog": str(args.catalog),
         "format_occurrences": parser.command_count,
         "flat": args.flat,
+        "context_mode": args.context_mode,
         "compile_seconds": compilation,
         "cases": results,
     }
@@ -98,7 +105,9 @@ def match_catalogs(args):
     document = read_json(args.documentation)
     device = read_json(args.device)
     # Validate the original contract before performing any large AST compilation.
-    commands = CommandCatalog.read(document).commands
+    commands = CommandCatalog.read(
+        document, validate_transitions=args.context_mode == "hierarchy"
+    ).commands
     errors = []
     for index, command in enumerate(commands):
         try:
@@ -126,13 +135,16 @@ def match_catalogs(args):
             last_update = now
 
     start = time.monotonic()
-    prepared = FormatMatcher().prepare_catalogs(device, document, on_progress=progress)
+    prepared = FormatMatcher(context_mode=args.context_mode).prepare_catalogs(
+        device, document, on_progress=progress
+    )
     matching_seconds = time.monotonic() - start
     mapping = prepared.mapping
-    write_json(
-        args.output_dir / "hierarchy_report.json",
-        hierarchy_diagnostics(prepared, document),
-    )
+    if mapping.hierarchy is not None:
+        write_json(
+            args.output_dir / "hierarchy_report.json",
+            hierarchy_diagnostics(prepared, document),
+        )
     statuses = Counter(d.status for d in mapping.devices.values())
     stages, relations = Counter(), Counter()
     bindings = 0
@@ -150,6 +162,7 @@ def match_catalogs(args):
     hierarchy = mapping.hierarchy
     return {
         "status": "completed",
+        "context_mode": args.context_mode,
         "matching_seconds": matching_seconds,
         "compatible_subset": args.compatible_only,
         "invalid_documentation_occurrences": len(errors),
@@ -181,6 +194,9 @@ def main():
         default=Path(__file__).with_name("samples") / "configuration_cases.json",
     )
     parser.add_argument("--flat", action="store_true")
+    parser.add_argument(
+        "--context-mode", choices=("system", "hierarchy"), default="system"
+    )
     parser.add_argument("--device", type=Path)
     parser.add_argument("--documentation", type=Path)
     parser.add_argument("--compatible-only", action="store_true")

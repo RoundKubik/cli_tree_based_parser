@@ -27,7 +27,9 @@ class CommandCatalog:
     locations: tuple[CommandLocation, ...]
 
     @classmethod
-    def read(cls, source: Mapping[str, Any]) -> CommandCatalog:
+    def read(
+        cls, source: Mapping[str, Any], *, validate_transitions: bool = True
+    ) -> CommandCatalog:
         if not isinstance(source, Mapping):
             raise FormatError("catalog must be an object")
         if (
@@ -61,7 +63,7 @@ class CommandCatalog:
             if not isinstance(entry_view, str) or entry_view not in views:
                 raise FormatError("catalog entry_view must reference an existing view")
             shared = source.get("shared_views", [])
-            if (
+            if validate_transitions and (
                 not isinstance(shared, list)
                 or not all(isinstance(name, str) and name in views for name in shared)
                 or len(set(shared)) != len(shared)
@@ -103,7 +105,9 @@ class CommandCatalog:
                     )
                 if source["source"] == "device" and "parameter_types" in record:
                     raise FormatError(f"{location}: device types belong in the format")
-                if "switch_to_view" in record:
+                if (
+                    validate_transitions or view is None
+                ) and "switch_to_view" in record:
                     target = record["switch_to_view"]
                     if (
                         view is None

@@ -113,7 +113,8 @@ def test_grouped_validation_selects_the_transition_and_preserves_context():
                 "number": [annotated("rule <id>", id="integer")],
                 "name": [annotated("label <id>", id="string")],
             },
-        }
+        },
+        context_mode="hierarchy",
     )
     report = ConfigurationParser(parser).parse("acl 2018\n rule 5\nacl named\n label x")
     assert not report.has_errors and not report.has_unresolved
@@ -134,7 +135,8 @@ def test_foreign_view_fallback_validates_annotated_parameters():
                 "system": [{"format": "keep"}],
                 "other": [annotated("acl <id>", id="integer")],
             },
-        }
+        },
+        context_mode="hierarchy",
     )
     assert isinstance(parser.parse("acl incorrect"), ErrorLine)
     valid = parser.parse("acl 2018")

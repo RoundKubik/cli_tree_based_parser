@@ -29,7 +29,12 @@ class CommandMatcher:
         self._errors = CommandErrorFactory(CommandSuggester(automaton, parameter_types))
 
     def match(
-        self, text: str, *, span_offset: int = 0, valid_only: bool = False
+        self,
+        text: str,
+        *,
+        span_offset: int = 0,
+        valid_only: bool = False,
+        retain_all: bool = False,
     ) -> ResolvedMatch | ParseError:
         diagnostics = MatchDiagnostics()
         candidates = CommandRecognition(
@@ -47,6 +52,9 @@ class CommandMatcher:
                 candidates = valid
         if candidates:
             return self._resolver.resolve(
-                candidates, self._automaton, span_offset=span_offset
+                candidates,
+                self._automaton,
+                span_offset=span_offset,
+                retain_all=retain_all,
             )
         return self._errors.create(text, diagnostics, span_offset=span_offset)

@@ -53,7 +53,7 @@ def main() -> None:
     arguments.add_argument(
         "--patterns",
         type=Path,
-        help="Flat patterns or a grouped catalog with prepared transitions",
+        help="Flat patterns or a grouped catalog with an entry_view",
     )
     input_lines = arguments.add_mutually_exclusive_group()
     input_lines.add_argument(
@@ -65,10 +65,15 @@ def main() -> None:
     arguments.add_argument(
         "--flat", action="store_true", help="Search all views without a context stack"
     )
+    arguments.add_argument(
+        "--context-mode", choices=("system", "hierarchy"), default="system"
+    )
     args = arguments.parse_args()
     pattern, examples = EXAMPLES[args.case]
     if args.patterns:
-        parser = CommandLineParser.from_json_file(args.patterns)
+        parser = CommandLineParser.from_json_file(
+            args.patterns, context_mode=args.context_mode
+        )
     else:
         parser = CommandLineParser({"commands": [pattern]})
     content = (

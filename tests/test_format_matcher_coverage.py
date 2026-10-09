@@ -90,7 +90,7 @@ def test_union_inclusion_agrees_with_exhaustive_runtime_recognition():
     ]
     languages = []
     for pattern in patterns:
-        parser = CommandLineParser({"commands": [pattern]})
+        parser = CommandLineParser({"commands": [pattern]}, context_mode="hierarchy")
         languages.append(
             {line for line in lines if isinstance(parser.parse(line), ParsedCommand)}
         )

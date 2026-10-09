@@ -44,7 +44,9 @@ class PatternCatalog:
     entry_view: str | None = None
 
     @classmethod
-    def read(cls, document: Mapping[str, Any]) -> PatternCatalog:
+    def read(
+        cls, document: Mapping[str, Any], *, validate_transitions: bool = True
+    ) -> PatternCatalog:
         if not isinstance(document, Mapping):
             raise PatternDocumentError("pattern document must be an object")
         layout = document.get("type", "flat")
@@ -89,7 +91,7 @@ class PatternCatalog:
                     if isinstance(record, Mapping)
                     else None
                 )
-                if target is None:
+                if not validate_transitions and view is not None or target is None:
                     child_view = view
                 elif view is not None and target == {"status": "unresolved"}:
                     child_view = None
@@ -109,5 +111,7 @@ class PatternCatalog:
         if not commands:
             raise PatternDocumentError("commands cannot be empty")
         return cls(
-            tuple(commands), tuple(view for view in groups if view is not None), entry
+            tuple(commands),
+            tuple(view for view in groups if view is not None),
+            entry,
         )

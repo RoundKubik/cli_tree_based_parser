@@ -45,7 +45,7 @@ def hierarchy():
 
 
 def test_grouped_parsing_prefers_requested_view_and_marks_foreign_matches():
-    parser = CommandLineParser(hierarchy())
+    parser = CommandLineParser(hierarchy(), context_mode="hierarchy")
     assert parser.parse("same").primary_match.pattern_index == 4
     assert parser.parse("same", view="child").primary_match.pattern_index == 7
     outside = parser.parse("child-only")
@@ -72,7 +72,7 @@ def test_valid_parameters_from_another_view_keep_captures_and_slot_ids(value):
             "child": [command("set STRING<1-9>")],
         },
     )
-    parser = CommandLineParser(data)
+    parser = CommandLineParser(data, context_mode="hierarchy")
     result = parser.parse(f"set {value}")
     assert isinstance(result, UnresolvedCommand)
     assert result.context_issue.code == "outside_view"
@@ -85,7 +85,9 @@ def test_valid_parameters_from_another_view_keep_captures_and_slot_ids(value):
 
 
 def test_nested_blocks_dedents_separators_blanks_and_new_sessions():
-    parser = ConfigurationParser(CommandLineParser(hierarchy()))
+    parser = ConfigurationParser(
+        CommandLineParser(hierarchy(), context_mode="hierarchy")
+    )
     report = parser.parse(
         "enter\n child-only\n nested\n  leaf-only\n\n child-only\n#\nroot-only\n"
     )
@@ -105,9 +107,9 @@ def test_nested_blocks_dedents_separators_blanks_and_new_sessions():
 
 
 def test_missing_transition_keeps_the_prepared_context():
-    report = ConfigurationParser(CommandLineParser(hierarchy())).parse(
-        "unknown\n same\nroot-only"
-    )
+    report = ConfigurationParser(
+        CommandLineParser(hierarchy(), context_mode="hierarchy")
+    ).parse("unknown\n same\nroot-only")
     assert not report.has_errors
     assert [r.view for r in report.lines] == ["root", "root", "root"]
     assert report.lines[1].status == MatchStatus.UNIQUE
@@ -116,7 +118,7 @@ def test_missing_transition_keeps_the_prepared_context():
 def test_explicit_unknown_transition_only_disables_context_in_its_child_block():
     data = hierarchy()
     data["views"]["root"][2]["switch_to_view"] = {"status": "unresolved"}
-    parser = CommandLineParser(json.loads(json.dumps(data)))
+    parser = CommandLineParser(json.loads(json.dumps(data)), context_mode="hierarchy")
     report = ConfigurationParser(parser).parse(
         "unknown\n same\n  leaf-only\nenter\n child-only\nroot-only"
     )
@@ -138,18 +140,22 @@ def test_explicit_unknown_transition_only_disables_context_in_its_child_block():
 def test_manual_resolution_restores_context_without_a_mapping_file():
     data = hierarchy()
     data["views"]["root"][2]["switch_to_view"] = {"status": "unresolved"}
-    unresolved = CommandLineParser(data).parse("unknown").primary_match
+    unresolved = (
+        CommandLineParser(data, context_mode="hierarchy").parse("unknown").primary_match
+    )
     data["views"]["root"][2]["switch_to_view"] = "child"
-    report = ConfigurationParser(CommandLineParser(data)).parse("unknown\n same")
+    report = ConfigurationParser(
+        CommandLineParser(data, context_mode="hierarchy")
+    ).parse("unknown\n same")
     assert report.lines[0].primary_match == unresolved
     assert report.lines[1].view == "child"
     assert report.lines[1].status == MatchStatus.UNIQUE
 
 
 def test_foreign_match_does_not_change_the_context_of_siblings():
-    report = ConfigurationParser(CommandLineParser(hierarchy())).parse(
-        "enter\n leaf-only\n  root-only\n child-only"
-    )
+    report = ConfigurationParser(
+        CommandLineParser(hierarchy(), context_mode="hierarchy")
+    ).parse("enter\n leaf-only\n  root-only\n child-only")
     assert isinstance(report.lines[1], UnresolvedCommand)
     assert report.lines[1].view is None
     assert report.lines[1].context_issue.code == "outside_view"
@@ -160,7 +166,9 @@ def test_foreign_match_does_not_change_the_context_of_siblings():
 
 
 def test_null_transition_keeps_context_with_one_space_per_nested_level():
-    parser = ConfigurationParser(CommandLineParser(hierarchy()))
+    parser = ConfigurationParser(
+        CommandLineParser(hierarchy(), context_mode="hierarchy")
+    )
     report = parser.parse("keep\n enter\n  child-only\n#\nroot-only")
     assert not report.has_errors
     assert [r.view for r in report.lines if isinstance(r, ParsedCommand)] == [
@@ -179,7 +187,7 @@ def test_conflicting_parses_do_not_choose_a_target_but_matching_stays_agree():
         {"format": "enter", "switch_to_view": "leaf"},
         {"format": "keep"},
     ]
-    parser = CommandLineParser(data)
+    parser = CommandLineParser(data, context_mode="hierarchy")
     assert parser.child_view(parser.parse("enter")) is None
     assert parser.child_view(parser.parse("keep")) == "root"
     report = ConfigurationParser(parser).parse("enter\n same\nroot-only")
@@ -189,12 +197,17 @@ def test_conflicting_parses_do_not_choose_a_target_but_matching_stays_agree():
 
 
 def test_explicit_flat_mode_keeps_legacy_line_handling():
-    parser = ConfigurationParser(CommandLineParser(hierarchy()), contextual=False)
+    parser = ConfigurationParser(
+        CommandLineParser(hierarchy(), context_mode="hierarchy"), contextual=False
+    )
     report = parser.parse("root-only\n leaf-only\n#")
     assert all(r.view is None for r in report.lines)
     assert isinstance(report.lines[2], ErrorLine)
     with pytest.raises(ValueError, match="grouped catalog"):
-        ConfigurationParser(CommandLineParser({"commands": ["same"]}), contextual=True)
+        ConfigurationParser(
+            CommandLineParser({"commands": ["same"]}, context_mode="hierarchy"),
+            contextual=True,
+        )
 
 
 def test_external_mapping_keeps_global_ids_and_runtime_slot_locations():
@@ -208,12 +221,12 @@ def test_external_mapping_keeps_global_ids_and_runtime_slot_locations():
         },
     )
     flat = catalog("device", [record(pattern), record(pattern)])
-    parser = CommandLineParser(grouped)
+    parser = CommandLineParser(grouped, context_mode="hierarchy")
     parsed = parser.parse(" c 1 2", view="second")
-    flat_parsed = CommandLineParser(flat).parse(" c 1 2")
+    flat_parsed = CommandLineParser(flat, context_mode="hierarchy").parse(" c 1 2")
     assert parsed.primary_match == flat_parsed.matches[1]
     mapping = (
-        FormatMatcher()
+        FormatMatcher(context_mode="hierarchy")
         .compile_catalogs(
             grouped, catalog("documentation", [document("c <id> &<1-3>")])
         )
@@ -246,7 +259,7 @@ def test_annotations_preserve_explicit_device_syntax_and_ignore_semantics(source
             }
         ],
     }
-    parser = CommandLineParser(data)
+    parser = CommandLineParser(data, context_mode="hierarchy")
     result = parser.parse("set 5 label")
     assert isinstance(result, ParsedCommand)
     assert result.parameters[0].normalized == 5
@@ -256,13 +269,15 @@ def test_annotations_preserve_explicit_device_syntax_and_ignore_semantics(source
 
 def test_json_only_adds_a_known_view_and_keeps_existing_null_parameter_values():
     data = catalog("device", [command("set INTEGER<1-9>")])
-    legacy = ConfigurationParser(CommandLineParser({"commands": ["set INTEGER<1-9>"]}))
-    flat = ConfigurationParser(CommandLineParser(data))
+    legacy = ConfigurationParser(
+        CommandLineParser({"commands": ["set INTEGER<1-9>"]}, context_mode="hierarchy")
+    )
+    flat = ConfigurationParser(CommandLineParser(data, context_mode="hierarchy"))
     assert (
         flat.parse("set 5\nwrong").to_dict() == legacy.parse("set 5\nwrong").to_dict()
     )
     report = (
-        ConfigurationParser(CommandLineParser(hierarchy()))
+        ConfigurationParser(CommandLineParser(hierarchy(), context_mode="hierarchy"))
         .parse("unknown\n same\n#\nwrong")
         .to_dict()
     )
@@ -296,7 +311,7 @@ def test_malformed_grouped_catalogs_raise_document_errors(change):
     data = hierarchy()
     data.update(change)
     with pytest.raises(PatternDocumentError):
-        CommandLineParser(data)
+        CommandLineParser(data, context_mode="hierarchy")
 
 
 @pytest.mark.parametrize(
@@ -306,12 +321,12 @@ def test_invalid_transition_references_are_rejected(target):
     data = hierarchy()
     data["views"]["root"][0]["switch_to_view"] = target
     with pytest.raises(PatternDocumentError):
-        CommandLineParser(data)
+        CommandLineParser(data, context_mode="hierarchy")
 
 
 def test_only_patterns_and_hierarchy_are_needed_and_input_is_not_retained():
     data = hierarchy()
-    parser = CommandLineParser(data)
+    parser = CommandLineParser(data, context_mode="hierarchy")
     data["views"]["root"][0]["switch_to_view"] = "leaf"
     data["views"]["root"][0]["format"] = "changed"
     data["views"]["child"].clear()
@@ -323,7 +338,7 @@ def test_only_patterns_and_hierarchy_are_needed_and_input_is_not_retained():
 def test_line_and_file_api_read_one_grouped_document(tmp_path):
     source = tmp_path / "patterns.json"
     source.write_text(json.dumps(hierarchy()), encoding="utf-8")
-    parser = CommandLineParser.from_json_file(source)
+    parser = CommandLineParser.from_json_file(source, context_mode="hierarchy")
     assert parser.child_view(parser.parse("enter")) == "child"
     assert parser.child_view(parser.parse("child-only", view="child")) == "child"
 
@@ -332,7 +347,7 @@ def test_context_fallback_keeps_best_valid_formats_without_switching_views():
     data = hierarchy()
     data["views"]["child"].append({"format": "set INTEGER<1-9>"})
     data["views"]["leaf"].append({"format": "set <value>"})
-    parser = CommandLineParser(data)
+    parser = CommandLineParser(data, context_mode="hierarchy")
 
     result = parser.parse("set 5")
 
@@ -350,7 +365,11 @@ def test_context_fallback_keeps_best_valid_formats_without_switching_views():
 def test_context_diagnostics_require_a_complete_match_with_valid_parameters(line):
     data = hierarchy()
     data["views"]["child"].append({"format": "set INTEGER<1-9>"})
-    result = ConfigurationParser(CommandLineParser(data)).parse(line).to_dict()
+    result = (
+        ConfigurationParser(CommandLineParser(data, context_mode="hierarchy"))
+        .parse(line)
+        .to_dict()
+    )
 
     error = result["lines"][0]["error"]
     assert error["catalog_matches"] == []
@@ -372,7 +391,7 @@ def test_unknown_context_keeps_its_origin_through_nested_successes_and_errors(
     data = hierarchy()
     data["views"]["root"][2]["switch_to_view"] = {"status": "unresolved"}
     data["views"]["root"].append({"format": "enter", "switch_to_view": "leaf"})
-    parser = ConfigurationParser(CommandLineParser(data))
+    parser = ConfigurationParser(CommandLineParser(data, context_mode="hierarchy"))
 
     report = parser.parse(f"{parent}\n child-only\n  absent\n   leaf-only\nroot-only")
 
@@ -397,9 +416,9 @@ def test_unknown_context_keeps_its_origin_through_nested_successes_and_errors(
 @pytest.mark.parametrize("grouped", [False, True])
 def test_flat_parsing_omits_context_diagnostics_even_after_errors(grouped):
     data = hierarchy() if grouped else {"commands": ["root-only"]}
-    report = ConfigurationParser(CommandLineParser(data), contextual=False).parse(
-        "absent\n root-only"
-    )
+    report = ConfigurationParser(
+        CommandLineParser(data, context_mode="hierarchy"), contextual=False
+    ).parse("absent\n root-only")
 
     assert isinstance(report.lines[0], ErrorLine)
     assert report.lines[0].error.catalog_matches is None

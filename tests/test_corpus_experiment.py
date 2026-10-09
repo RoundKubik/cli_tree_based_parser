@@ -76,7 +76,9 @@ def test_hierarchy_report_distinguishes_ambiguity_partial_coverage_and_unknown_t
             "C": [record],
         },
     )
-    report = hierarchy_diagnostics(FormatMatcher().prepare_catalogs(device, docs), docs)
+    report = hierarchy_diagnostics(
+        FormatMatcher(context_mode="hierarchy").prepare_catalogs(device, docs), docs
+    )
     assert report["target_statuses"] == {
         "resolved": 1,
         "ambiguous": 1,
